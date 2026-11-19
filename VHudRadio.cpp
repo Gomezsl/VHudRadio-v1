@@ -817,6 +817,9 @@ static bool g_menuDrawn = false;      // CMenuManager::DrawFrontEnd se llamo en 
 static bool* g_slowActive = nullptr;  // CTimer::bSlowMotionActive (slow-motion propio del juego)
 static float* g_slowScale = nullptr;  // CTimer::ms_fSlowMotionScale
 static float* g_timeScale = nullptr;  // CTimer::ms_fTimeScale (respaldo si no hay slow-motion)
+// v1: reproductor de User Tracks propio (minimp3 + OpenSL). Se incluye aqui
+// porque usa las globales de arriba (g_startTrack, g_userPause, g_inVehicle...).
+#include "UserTracks.h"
 static void (*DrawFrontEnd_orig)() = nullptr;
 static void DrawFrontEnd_hook() {
     g_menuDrawn = true;
@@ -1005,6 +1008,8 @@ static void ApplyStation(int id) {
     // SAUserTracks puede arrancar su MP3 a ritmo lento al interceptar
     // StartRadio(12).
     if (g_slowScale) *g_slowScale = 1.0f;
+    // v1: vehiculo sin radio -> la 12 es Radio Off (misma lista que SAUserTracks).
+    if (id == 12 && UT_VehicleBlocked()) { id = 13; Log("rueda: vehiculo sin radio (modelo %d): User Tracks -> Radio Off", UT_BlockedModel()); }
     // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
     // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
     if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0)", id, kStationName[id]); g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); }
@@ -2370,6 +2375,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
 
 static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
     DrawFrame(d, s);
+    UT_Frame();  // v1: reproductor de User Tracks propio (pausa/reanuda/para)
     return Swap_orig(d, s);
 }
 
@@ -2436,6 +2442,7 @@ extern "C" void OnModLoad() {
     if (dfe) aml->Hook(dfe, (void*)DrawFrontEnd_hook, (void**)&DrawFrontEnd_orig);
     #undef SYM
     Log("  globales: AudioEngine=%p AERadioTrackManager=%p", g_audioEngine, g_trackManager);
+    UT_InstallHooks();  // v1: engancha StartRadio para el reproductor de User Tracks propio
     if (!g_audioEngine || !g_trackManager) Log("  !! falta un objeto global de radio: no se llamara a ninguna funcion de radio");
     if (!g_retuneAudio && !g_retuneTrack && !g_startAudio && !g_startTrack)
         Log("!! ningun Retune/Start resolvio: la rueda se dibujara pero no cambiara la radio. Ver VHudRadioProbe.txt");
