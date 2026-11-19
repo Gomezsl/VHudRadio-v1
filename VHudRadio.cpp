@@ -2081,10 +2081,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     }
     // v1 (diagnostico): buscar el campo de estacion en el manager/audio engine.
     // Cuando la estacion nativa se asienta 3 s en un valor, volcar los primeros
-    // 64 bytes de ambos objetos. El byte que vale lo mismo que la estacion en
+    // 256 bytes de ambos objetos. El byte que vale lo mismo que la estacion en
     // todos los volcados es el campo que lee DisplayRadioStationName (el getter
     // esta inlined y el hook del getter no le afecta: el juego sigue llamando
     // "Radio Off" a la 12 aunque los getters devuelvan 12 en esa llamada).
+    // En los primeros 64 bytes NO esta (ningun byte/uint16/uint32 sigue a la
+    // estacion en los volcados del log VHudRadioLog_1_wuro.txt).
     {
         static int lastNative = -1;
         static auto settleAt = std::chrono::steady_clock::now();
@@ -2095,11 +2097,11 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (va != lastNative) { lastNative = va; settleAt = std::chrono::steady_clock::now() + std::chrono::seconds(3); }
             else if (va >= 1 && va <= 13 && va != dumpedFor && std::chrono::steady_clock::now() >= settleAt) {
                 dumpedFor = va;
-                char hx[64*3+1], ax[64*3+1];
-                HexDump(hx, sizeof hx, g_trackManager, 64);
-                HexDump(ax, sizeof ax, g_audioEngine, 64);
-                Log("UT: mgr estacion audio=%d track=%d bytes[0x00..0x3F]=%s", va, vt, hx);
-                Log("UT: eng estacion audio=%d track=%d bytes[0x00..0x3F]=%s", va, vt, ax);
+                char hx[256*3+1], ax[256*3+1];
+                HexDump(hx, sizeof hx, g_trackManager, 256);
+                HexDump(ax, sizeof ax, g_audioEngine, 256);
+                Log("UT: mgr256 estacion audio=%d track=%d bytes[0x00..0xFF]=%s", va, vt, hx);
+                Log("UT: eng256 estacion audio=%d track=%d bytes[0x00..0xFF]=%s", va, vt, ax);
             }
         }
     }
