@@ -1018,10 +1018,16 @@ static void ApplyStation(int id) {
     else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
     else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
     g_current = id;
-    // verificar lo que el juego dice que suena ahora (diagnostico v1.2)
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == id ? "" : "  <-- NO COINCIDE"); }
+    // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
+    // v1: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que no
+    // es "NO COINCIDE" cuando la nativa lee 13.
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
 }
 static void RefreshCurrent() {
+    // v1: en la 12 manda el reproductor, no la radio nativa. La nativa NUNCA
+    // cambia a la 12 (queda en la anterior), asi que sin esta guarda la rueda
+    // mostraba el anillo en otra estacion aunque User Tracks siguiera sonando.
+    if (ut_active || g_current == 12) return;
     if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); if (v >= 1 && v <= 13) g_current = v; return; }
     if (g_getStationTrack && g_trackManager) { int v = (int)g_getStationTrack(g_trackManager); if (v >= 1 && v <= 13) g_current = v; }
 }

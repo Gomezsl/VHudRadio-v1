@@ -176,12 +176,6 @@ static pthread_mutex_t ut_cbMutex = PTHREAD_MUTEX_INITIALIZER;
 // ---- hook de StartRadio ----
 static StartRadioTrackFn ut_origStartRadio = nullptr;
 static bool ut_hookInstalled = false;
-// StopRadio nativo (CAERadioTrackManager::StopRadio, sacado del binario de
-// SAUserTracks): apaga la salida de radio del juego. Con los parches la 12 ya
-// es estacion normal, pero la emisora anterior quedaba sonando bajito por
-// debajo de las canciones; SAUserTracks llamaba StopRadio antes de StartRadio(12).
-typedef void (*StopRadioFn)(void*, void*, unsigned char);
-static StopRadioFn g_stopRadio = nullptr;
 
 // ---- utilidades ----
 static const char* UT_Basename(const char* path) {
@@ -538,8 +532,12 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         }
         UT_Start();
         g_current = 12;
-        ut_origStartRadio(trackMgr, 12, a2, a3, a4);
-        if (g_stopRadio) g_stopRadio(trackMgr, nullptr, 0);  // v1: apaga el audio nativo DESPUES de poner la 12 (antes no lo apagaba)
+        // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
+        // nativa audio=10/11/13 con la rueda en 12), asi que se queda sonando
+        // la emisora anterior por debajo de las canciones. Se le pide Radio
+        // Off (13) a la nativa: silencio, y la musica la pone el reproductor.
+        Log("UT: 12 -> nativa 13 (Radio Off; la musica la pone el reproductor)");
+        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -600,7 +598,5 @@ static void UT_InstallHooks() {
     if (h) {
         ut_loadingActive = (bool*)aml->GetSym(h, "_ZN14CLoadingScreen9m_bActiveE");
         Log("UT: CLoadingScreen::m_bActive %s", ut_loadingActive ? "ok" : "no resolvio (sin pausa en carga)");
-        g_stopRadio = (StopRadioFn)aml->GetSym(h, "_ZN20CAERadioTrackManager9StopRadioEP21tVehicleAudioSettingsh");
-        Log("UT: StopRadio %s", g_stopRadio ? "ok" : "no resolvio (sin apagar audio nativo)");
     }
 }
