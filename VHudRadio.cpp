@@ -1,0 +1,2453 @@
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.0.0-beta.
+// Repo aparte: Gomezsl/VHudRadio-aml-mod. ARCX no se toca.
+// Idea: v-hud de PC leia los iconos de VHud\radio\radio_1..13.png sin importarlos.
+// Aqui igual: el plugin lee radio_1.png ... radio_13.png de files del juego (vhud/radio/),
+// (+ radio_current.png) al arrancar, con stb_image, y los dibuja con ImGui.
+// La rueda es NUEVA (en PC la radio no era rueda, solo un icono 2 s al cambiar):
+// 13 segmentos en circulo, se abre con un boton flotante dentro de un vehiculo,
+// se arrastra el dedo y al soltar cambia la estacion.
+//
+// Simbolos de radio: VERIFICADOS por VHudRadioProbe 1.0.0 en el telefono de Daniel
+// (VHudRadioProbe.txt, 2026-11-16, 18/23 ok): TODOS los candidatos moviles resolvieron,
+// las variantes de PC dieron FALTA (como se esperaba).
+// v2.29: ICONOS INCRUSTADOS EN EL .SO (YA NO HACE FALTA LA CARPETA)
+// - Los 28 PNG (14 normales + 14 a color) van dentro del .so en base64
+//   (icons_embedded.h, generado por script). Al arrancar se cargan de
+//   memoria con stb_image; la carpeta (radio/ o radio_color/) ya es
+//   opcional: solo sirve para reemplazar un icono por uno propio. Si el
+//   PNG no esta en la carpeta, se usa el incrustado. El log dice de donde
+//   salio cada icono ("archivo" o "en el .so"). El .so crece ~0.5 MB.
+// v2.28: DOS JUEGOS DE ICONOS (NORMALES Y A COLOR) CON INTERRUPTOR
+// - Las emisoras tienen dos versiones: las normales (blancas, de radio/) y
+//   las de color (de radio_color/). Un interruptor en el panel ("Iconos de las
+//   emisoras a color") cambia entre un juego y otro sin reemplazar archivos.
+//   El ajuste se guarda como iconosColor=0/1 en el .ini. Si a un icono a color
+//   le falta, se usa el normal de esa emisora. El boton flotante tambien cambia.
+// v2.27: YA NO SE CREAN LAS CARPETAS vhud VIEJAS
+// - Al arrancar, el plugin creaba tambien las carpetas viejas vhud/
+//   (/storage/emulated/0/vhud/ y files/vhud/), un resto de cuando ahi
+//   vivian los iconos y horn_pos.txt. Ya no se guarda nada ahi, asi que
+//   solo se crea VHudRadio/ (y VHudRadio/radio/). Las carpetas viejas se
+//   siguen LEYENDO como respaldo si existen (iconos y horn_pos.txt), pero
+//   ya no se crean vacias.
+// v2.26: LOG JUNTO AL .INI + CREDITO EN LOS 6 IDIOMAS
+// - El log (VHudRadioLog.txt) se creaba en files/ (junto al juego) y el
+//   .ini vive en files/VHudRadio/. Ahora el log tambien se crea en
+//   files/VHudRadio/, junto al .ini. La carpeta se crea antes de abrir el
+//   log (si no, fopen fallaba porque la carpeta aun no existia).
+// - El credito "rueda de radio GTAV de Hunter09" era un texto fijo en
+//   espanol; ahora es una cuerda mas de la tabla (STR_CREDIT, 18 en total)
+//   y cambia con el idioma elegido, como el resto del panel.
+// v2.25: LAS BARRAS NO SE REGRESAN AL TOCAR OTRA PARTE DEL PANEL
+// - PanelSlider guardaba el valor al pulsar (savedPtr/savedVal) para
+//   restaurarlo si el arrastre acababa siendo un desplazamiento del panel.
+//   Pero ese valor guardado NUNCA se olvidaba: quedaba apuntando a la
+//   ultima barra ajustada, asi que al desplazar el panel despues (tocando
+//   otra parte), la barra se restauraba a su valor anterior al ajuste y
+//   volvia a su mismo lugar. Ahora al soltar el dedo se olvida el valor
+//   guardado (savedPtr = nullptr), asi que solo se restaura durante el
+//   mismo arrastre que empezo en esa barra.
+// v2.24: DESPLAZAR CON EL SELECTOR ABIERTO + BARRA DE TONO QUE NO SE REGRESA
+// - La v2.20-v2.23 no permitia desplazar el panel con el selector de color
+//   abierto (para no robarle sus arrastres verticales), asi que con el
+//   selector abierto no se llegaba a los ajustes de abajo. Ahora se puede
+//   desplazar salvo si el arrastre empieza SOBRE el cuadro de saturacion/
+//   valor o la barra de tono (esos arrastres son del color, como antes).
+// - La barra de tono se regresaba sola: con un color gris/blanco (S=0, como
+//   el texto blanco por defecto) el tono no se ve, y al soltar, la
+//   sincronizacion RGB->HSV borraba el tono elegido (un gris no tiene tono y
+//   volvia a 0/rojo). Ahora la sincronizacion no borra el tono si el color
+//   es gris, y al mover la barra de tono con S casi 0 se pone saturado para
+//   que el color cambie de verdad.
+// - Credito al final del panel: "rueda de radio GTAV de Hunter09" (abajo
+//   del todo, centrado y en gris, como el "By Hunter09" de ARCX).
+// v2.23: CABECERA CON FONDO OPACO + X ACOMODADA + INTERRUPTOR + REDISENO
+// - La v2.22 dibujaba la cabecera fija en primer plano pero SIN fondo: al
+//   bajar, el contenido se veia por detras del titulo (se veian las funciones
+//   en la parte que no se desplaza). Ahora la cabecera lleva un fondo opaco
+//   (el mismo azul del panel, con las esquinas de arriba redondeadas) que
+//   tapa el contenido que pasa por debajo.
+// - La X era muy grande y colgaba por debajo de la linea del titulo; ahora
+//   es mas chica y esta centrada en la linea del titulo.
+// - "Bloquear posicion del boton" ya no es un boton con ON/OFF: es un
+//   INTERRUPTOR (pastilla azul con circulo, como los de ARCX).
+// - Se quita el boton "Cerrar" de abajo (ya esta la X arriba).
+// - Rediseno como la imagen de referencia: iconos a la izquierda de cada
+//   ajuste (sol, expandir, globo, opacidad), el valor en una pastilla a la
+//   derecha, y los botones en rejilla de 2 columnas con icono.
+// v2.22: CABECERA FIJA ESTILO ARCX (X PARA CERRAR) + BOTONES REDISENADOS
+// - La cabecera ("Personalizar rueda de radio" + subtitulo) ya no se desplaza
+//   con el contenido: se dibuja en primer plano (como la cabecera del menu de
+//   ARCX) y el contenido se desliza por debajo. Arrastrar la cabecera sigue
+//   moviendo el panel.
+// - X para cerrar arriba a la derecha (circulo oscuro con anillo azul y X
+//   blanca, como ARCX): ya no hay que bajar hasta "Cerrar" para cerrar el
+//   panel (el boton "Cerrar" sigue abajo por si acaso).
+// - Botones redisenados (Bloquear posicion, Restablecer posicion, Vista
+//   previa, Restablecer todo, Cerrar): esquinas redondeadas, brillo superior
+//   y borde claro, como las filas de ARCX; ya no son simples rectangulos
+//   planos de ImGui.
+// v2.21: DESPLAZAMIENTO ESTILO ARCX (SOLO DENTRO DEL PANEL + INERCIA)
+// - La v2.20 no comprobaba donde empezaba el arrastre y un arrastre vertical
+//   en el juego (fuera del panel) tambien desplazaba el panel. Ahora, como
+//   el menu de ARCX (ListView), el desplazamiento solo responde a toques
+//   DENTRO del panel (inView al pulsar) y sigue al dedo desde donde se pulso
+//   (scroll = scroll al pulsar - dy), con inercia al soltar (la velocidad se
+//   multiplica x0.93 por frame, como ARCX). La direccion sigue como en la
+//   v2.20: vertical = desplaza, horizontal = deslizador (que guarda su valor
+//   al pulsar y lo restaura si el arrastre acaba siendo desplazamiento).
+// - Aviso "Desliza para ver mas" (como ARCX, en el idioma elegido) en la
+//   parte inferior del panel cuando el contenido no cabe y queda mas abajo;
+//   al empezar a desplazar se quita para no tapar los ajustes.
+// v2.20: DESPLAZAMIENTO POR DIRECCION + TAMANO POR DEFECTO MEDIANO OTRA VEZ
+// - La v2.19 solo desplazaba si el arrastre empezaba en el fondo, pero casi
+//   todo el panel son deslizadores ("las barras") y se movian en vez de
+//   bajar; solo se podia por la barra de la esquina, que es tediosa. Ahora
+//   el desplazamiento es por DIRECCION: si el arrastre es mas vertical que
+//   horizontal, desplaza el panel; si es mas horizontal, ajusta el
+//   deslizador. El deslizador guarda su valor al pulsar y, si el arrastre
+//   acaba siendo desplazamiento, lo restaura (asi no se mueve al empezar a
+//   desplazar). Con el selector de color abierto no hay desplazamiento por
+//   direccion (sus arrastres son en vertical y son del color).
+// - El tamano por defecto vuelve a ser MEDIANO (0.44 de ancho x alto
+//   automatico); la v2.19 lo habia puesto grande (0.60 x 0.90) y a Daniel
+//   no le gusto. Un .ini con los valores grandes de la v2.19 (0.60 x 0.90,
+//   nunca se redimensiono o se restablecio en la v2.19) vuelve al mediano;
+//   un tamano ajustado a mano se respeta.
+// v2.19: PANEL DESLIZABLE CON EL DEDO + TAMANO POR DEFECTO GRANDE (NO MEDIANO)
+// - El panel ahora se puede DESLIZAR con el dedo: arrastrar sobre el fondo
+//   del panel desplaza el contenido, asi que cuando el panel es mas chico
+//   que los ajustes se llega a los de abajo. No se activa si el arrastre
+//   empezo en un control (deslizador, recuadro, boton, selector de color),
+//   en el titulo (que mueve el panel) ni en la esquina (que lo redimensiona).
+//   (ImGui ya muestra la barra de desplazamiento cuando el contenido no
+//   cabe, pero con el tacto no hay rueda del raton para usarla.)
+// - El tamano por defecto ya no es mediano (0.44 de ancho x alto automatico)
+//   sino GRANDE (0.60 x 0.90) para que se vean todos los ajustes sin
+//   desplazar. Un .ini con los valores viejos exactos (0.44 y alto
+//   automatico, o sea nunca se redimensiono o se restablecio) toma los
+//   nuevos valores; un tamano ajustado a mano se respeta.
+// v2.18: LA RUEDA VUELVE A CAMBIAR DE ESTACION + PANEL REDIMENSIONABLE EN ALTO Y ANCHO
+// - La v2.17 rompio el cambio de estacion: la rueda detectaba el segmento
+//   ("rueda: segmento 11") pero se cerraba "sin cambiar". Causa: en la v2.17
+//   el soltar se encolaba SIN su posicion (solo {2}), y la v2.16 encolaba
+//   {pos, soltar} - la posicion del soltar era lo que rearmaba g_wheelTouch
+//   justo antes de aplicar el cambio. Ademas el bajar (kind-1) leia el
+//   segmento con io.MousePos, que llega con un frame de retraso (NewFrame
+//   corre DESPUES del bucle de eventos) y casi siempre es (-FLT_MAX) o la
+//   posicion del toque anterior, asi que el bajar borraba g_wheelTouch.
+//   Arreglo en dos partes: (1) el soltar vuelve a encolar su posicion
+//   ({pos, soltar}, como en la v2.16; el soltar sigue llegando siempre, el
+//   arreglo del doble toque de la v2.17 se mantiene); (2) el bucle de eventos
+//   lleva su propia posicion (g_touchX/g_touchY, actualizada en cada evento
+//   de posicion) y el bajar la usa para el segmento, la zona del claxon, el
+//   registro de toques y el boton flotante, en vez de io.MousePos.
+// - El panel ahora se redimensiona en ALTO y en ANCHO (la v2.17 solo cambiaba
+//   el ancho): el grip actualiza panelAncho y panelAlto (fraccion de H, -1 =
+//   alto automatico) y se dibuja en primer plano en la esquina de la ventana
+//   con arrastre a mano, para que nunca se pierda al hacer scroll (el
+//   contenido puede ser mas alto que el panel). "Restablecer todo" devuelve
+//   el alto a automatico.
+// v2.17: PANEL MOVIBLE Y REDIMENSIONABLE (COMO ARCX) + DOBLE TOQUE FIABLE + COLOR DE FONDO
+// - Panel movible y con ancho ajustable, como el menu de ARCX: se arrastra
+//   desde el titulo (InvisibleButton ##panelDrag + IsMouseDragging como en
+//   arcx_ui.h) y se cambia el ancho desde la esquina inferior derecha
+//   (grip ##panelGrip con 3 rayas en diagonal, como en ARCX). La posicion
+//   y el ancho se guardan en el .ini (panelX/panelY/panelAncho, fraccion de
+//   W; -1 = centrado, ancho por defecto 0.44, entre 0.36 y 0.70). El alto
+//   sigue automatico segun el contenido, como hasta ahora. Al empezar a
+//   arrastrar con la posicion en -1 se toma la posicion real de la ventana
+//   para que el panel no salte a la esquina.
+// - Doble toque al boton mas fiable: el log de la v2.16 mostro que los
+//   toques se clasificaban como arrastres (el boton se movia en vez de
+//   cambiar de estacion) y a veces el doble toque no abria el panel.
+//   Tres arreglos: (1) Touch_hook encola SIEMPRE el soltar (antes solo
+//   cuando la rueda/panel estaban abiertos, y un toque rapido podia perder
+//   su soltar si DrawFrame aun no habia procesado el bajar); (2) la
+//   ventana de doble toque pasa de 400 a 600 ms; (3) el umbral de arrastre
+//   pasa de 0.012H a 0.02H (el temblor del dedo ya no cancela el toque).
+//   Ademas el log "rueda bloqueada" ya no repite en cada toque (maximo una
+//   vez cada 2 segundos).
+// - Color de fondo de la rueda: el fondo oscuro ya no es solo negro con
+//   oscuridad ajustable; ahora tiene su propio color (fondoColor=r,g,b,
+//   por defecto 0,0,0) con un tercer recuadro "Fondo" en el panel que abre
+//   el mismo selector RGB tactil (objetivo 2 del picker).
+// v2.16: SIN RADIO NO HAY BOTON NI PANEL + BOTON MOVIBLE + IDIOMAS + CARPETA VHudRadio
+// - En vehiculos sin radio el boton flotante NO se ve y el panel NO se puede
+//   abrir (antes el boton se veia y el panel se abria igual; ahora ambos
+//   requieren g_hasRadio). El claxon sigue bloqueado como en la v2.15.
+// - Boton flotante movible: se arrastra con el dedo (X e Y) a cualquier
+//   lugar de la pantalla; la etiqueta cambia de lado si el boton queda a la
+//   izquierda. En el panel: tamano (50-150%), opacidad (30-100%), boton de
+//   bloqueo (fijo/libre) y restablecer posicion. La posicion se guarda en
+//   el .ini al soltar el arrastre. El toque se resuelve al soltar: si el
+//   dedo no se movio es un toque (siguiente estacion / doble toque = panel).
+//   Los eventos de mover/soltar llegan al arrastre porque Touch_hook tambien
+//   los encola mientras g_btnDrag.
+// - Idiomas: espanol, ingles, indonesio, portugues (BR), frances y aleman.
+//   Todo el panel y los generos se traducen (los nombres de las estaciones
+//   no, son nombres propios). Se elige en el panel (Combo) y se guarda
+//   como idioma=es/en/id/pt/fr/de en el .ini.
+// - Carpeta: las texturas ya no van en vhud/ sino en VHudRadio/ dentro de
+//   files del juego (files/VHudRadio/radio/), y el .ini tambien vive ahi
+//   (files/VHudRadio/VHudRadio.ini). Se migran solos los .ini viejos de
+//   data/configs y files/configs; los iconos se buscan primero en la
+//   carpeta nueva y luego en las viejas.
+// - Misiones: no hizo falta cambiar nada, la rueda ya funciona en misiones
+//   (solo depende de estar en un vehiculo con radio y no estar en pausa).
+//   En cinematicas el juego pausa la entrada y la UI se oculta, como antes.
+// v2.15: BLOQUEO POR LISTA DE MODELOS (la funcion del juego CIERRA el juego)
+// - La v2.14 se CERRO al entrar a una bici (y a un carro de policia):
+//   crashlog SIGILL (ILL_ILLOPC) con PC en libGTASA.so+0x4895A4, justo en
+//   la PRIMERA instruccion de GetVehicleAudioSettings (X0=509, la bici).
+//   El simbolo resuelve (ok) pero NO es codigo llamable en este telefono
+//   (apunta a datos o a un stub que atrapa); llamarlo = cerrar el juego.
+//   Con el carro 445 la llamada devolvio "sin lectura" sin cerrarse, con
+//   la bici 509 se cerro al entrar a la funcion: no se por que una si y
+//   la otra no, pero la conclusion es firme: ESA FUNCION NO SE LLAMA.
+// - El bloqueo ahora es por LISTA DE MODELOS (la via manual que Daniel
+//   cuestiono, pero es la segura: usa solo el modelo en 0x32, verificado
+//   por el log v2.13, sin llamar a ninguna funcion del juego). Bicis
+//   481/509/510, emergencia 407/416/427/432/433/490/497/523/528/544,
+//   patrullas 596-599 + SWAT 601, especiales/RC/trabajo 441/449/457/464/
+//   465/485/501/530/531/532/537/538/539/564/568/571/572/583/594.
+//   Fail-open igual que antes: modelo fuera de rango -> la rueda ABRE.
+// v2.14: BLOQUEO POR MODELO + RADIOTYPE OFICIAL (el log v2.13 lo probo)
+// - El log v2.13 (VHudRadioLog_0_poj4.txt) registro PERFECTO: 2 entradas,
+//   carro Admiral modelo 445 y bici modelo 509. El modelo esta en 0x32, el
+//   UNICO uint16 en 400..611 en los dos volcados (y el unico uint32); los
+//   bytes 0x30-0x31 cambian al azar (RandomSeed) y 0x32-0x33 son el modelo,
+//   justo el patron CEntity RandomSeed+ModelIndex. Los vtables difieren
+//   (CAutomobile vs CBike). Mi 0x2E estaba mal (+12): el desplazamiento real
+//   es +16 sobre PC (0x22 -> 0x32); la otra IA tambien fallo (0x26/0x2A).
+//   Por eso la v2.13 fue solo diagnostico: bloquear con 0x2E habria sido
+//   otra v2.11. La funcion GetVehicleAudioSettings SI resolvio (ok) y la
+//   tabla gVehicleAudioSettings NO (FALTA los dos nombres): se usa la
+//   funcion, que es la que da el RadioType oficial por modelo (+0x1B).
+// - Bloqueo: g_hasRadio = (RadioType == 0), calculado UNA VEZ por vehiculo
+//   (al cambiar veh, no cada frame: asi no parpadea como en la v2.11).
+//   Fail-open en todo: sin vehiculo, modelo fuera de rango o sin lectura
+//   de tabla -> la rueda ABRE. Panel y vista previa siguen disponibles
+//   sin radio (como en la v2.11). El log registra modelo/radioType al entrar.
+// v2.13: DIAGNOSTICO DE RADIO POR MODELO (SIN BLOQUEO TODAVIA)
+// - Daniel paso el chat con otra IA (Google Modo IA). Su idea final es buena:
+//   preguntarle al juego por el RadioType OFICIAL del modelo (tabla interna)
+//   en vez de una lista manual. Pero sus offsets estaban mal:
+//   * m_nModelIndex NO esta en 0x26 (ni en 0x2A, que dijo primero): por los
+//     headers plugin-sdk (CPlaceable: vtable 8 + placement 16 + m_matrix 8 =
+//     0x20; CEntity: m_pRwObject 8 en 0x20, flags 4 en 0x28, RandomSeed 2 en
+//     0x2C) el modelo esta en 0x2E en ARM64 (PC 0x22 + 3 punteros x 4).
+//     Su error: no conto que m_pRwObject tambien es puntero y se ensancha.
+//   * m_nRadioType dentro de tVehicleAudioSettings NO esta en +0x22: esta en
+//     +0x1B (VALIDATE_OFFSET del header). Su struct leeria otro byte.
+//   * GetVehicleAudioSettings NO aparece en el header plugin-sdk; lo que SI
+//     existe es la tabla global gVehicleAudioSettings[232] (indice =
+//     modelId - 400, entrada 0x24 bytes). Se prueban las dos vias por GetSym
+//     y el log dice ok/FALTA.
+//   * Esa IA dijo haber leido nuestro codigo, pero en su propio chat los
+//     archivos salen como "no disponibles": sus numeros de linea son
+//     inventados, no de nuestro archivo. Y sus primeras respuestas
+//     (CPad/ShockButtonL, IsTouchDown(7,0,0)) ya las probamos y no sirven en
+//     este telefono: el claxon ya funciona por el byte 84 del widget 7.
+// - Esta version SOLO registra: los 3 candidatos de modelo (0x26/0x2A/0x2E),
+//   y el RadioType de la tabla del juego para el modelo 0x2E. NO bloquea
+//   nada: el log de una prueba (carro + bici) dira que offset es el modelo
+//   real y que RadioType tiene cada modelo; con eso la v2.14 bloquea.
+// v2.12: QUITAR EL BLOQUEO POR rid + BUSCAR EL MODELO DEL VEHICULO
+// - La v2.11 salio AL REVES: bloqueo dos carros y dejo pasar la bici. El log
+//   lo explica: rid(0x9A) NO es estable, en un mismo carro dio 0, 2, 0, 0 en
+//   lecturas seguidas (es un byte que cambia, no la radio asignada). Asi que
+//   el bloqueo por rid se quita por completo: la rueda vuelve a abrir en
+//   todos los vehiculos como en la v2.10. El audio queda solo como
+//   diagnostico (registra rt/rid solo cuando cambian).
+// - Para bloquear de forma fiable se usara el MODELO del vehiculo (estable:
+//   bici 481/509/510, tractor 531, patrulla 596-599). Esta version vuelca los
+//   primeros 64 bytes del vehiculo al entrar, para encontrar m_nModelIndex.
+// v2.11: BLOQUEO DE LA RUEDA EN VEHICULOS SIN RADIO
+// - La v2.10 confirmo el discriminador: en una bici rid(0x9A)=0 (sin radio)
+//   y en un carro rid=2; rt(0x9B)=0 en los dos, asi que el que distingue es
+//   rid. Al entrar se asume sin radio hasta que la lectura lo confirme; si
+//   en 120 frames no aparece el puntero se asume que si tiene (no dejar la
+//   rueda bloqueada por un fallo de lectura). La rueda no se abre (ni por
+//   claxon ni por zona) y el boton flotante no cambia de estacion cuando el
+//   vehiculo no tiene radio. El panel de personalizacion sigue disponible.
+// v2.10: LECTURA PERSISTENTE DE LA ENTIDAD DE AUDIO
+// - La v2.9 SI registro todo y NO se cerro: 3 entradas, escaneo completo.
+//   El candidato 0x458 es la entidad de audio (estable por vehiculo, zona
+//   de ajustes en +0x90..0xAF, byte 0x9B = 0 = radio civil en un carro).
+//   Pero en la entrada 1 (otro carro) el puntero 0x458 no aparecia todavia:
+//   puede no estar puesto en el primer frame al entrar. Ahora se reintenta
+//   cada frame hasta que aparece, y se registra RadioType (0x9B) y radioID
+//   (0x9A). Se prueban 0x458 y 0x1B0 (los dos apuntaron al mismo objeto).
+//   Aun no bloquea nada: falta una bici para confirmar que rt=-1 o 3.
+// v2.9: ESCANEO SEGURO (mincore) - LA v2.8 CERRO EL JUEGO
+// - La v2.8 se cerro (SIGSEGV en libVHudRadio64.so) al entrar a un auto de
+//   policia: el escaneo leyo un valor (0x23F800000) que "parecia" un puntero
+//   (cae en el rango 2^32..2^48) pero no esta mapeado, y al leerlo el juego
+//   se cerro. Ahora cada puntero se valida con mincore (IsMapped) ANTES de
+//   leerlo, y tambien la ventana que se vuelca. Rango mas amplio (0x100..
+//   0x500) y hasta 20 candidatos. Aun no bloquea nada.
+// - CEntity::GetModelIndex NO existe como simbolo en 2.10 (FALTA en las dos
+//   formas): se quito; el modelo se sabe por el orden (carro primero, bici
+//   despues) hasta encontrar la entidad de audio.
+// v2.8: BUSCAR LA ENTIDAD DE AUDIO (ESCANEO DE CVehicle) + MODELO DEL VEHICULO
+// - La v2.7 no encontro el puntero de audio en 0x138/0x140/0x148 (todo ceros
+//   en 0x120..0x15F, y un flotante pequeno en 0x120): el offset del telefono
+//   es otro. Ahora se escanea CVehicle (0x100..0x380) buscando punteros a
+//   objetos reales (puntero creible + vtable creible) y se vuelca la zona de
+//   ajustes de cada uno (0x70..0xAF); el que tenga el byte 0 en un carro y -1
+//   en una bici es la entidad de audio (RadioType). Aun no bloquea nada.
+// - La ralentizacion de la v2.7 SI se mantiene: el log mostro
+//   "escala leida=0.30 activa=1", o sea que el juego no borra los valores.
+// - Nuevo: CEntity::GetModelIndex para registrar el modelo del vehiculo en
+//   el log (481 BMX, 509 bici, 510 bici de montana, 531 tractor, 596-599
+//   patrullas...) y saber si es carro o bici sin preguntar.
+// v2.7: RALENTIZACION DE VERDAD (CADA FRAME) + RADIOTYPE POR PUNTERO
+// - La v2.6 decia "ralentizacion: activada" en el log pero NO se veia nada:
+//   solo escribia los valores al abrir/cerrar y el juego los borraba en el
+//   siguiente frame (como el opcode 015D de CLEO, la velocidad se pone en un
+//   bucle, no una vez). Ahora se escriben EN CADA FRAME mientras la rueda
+//   esta abierta (bandera + escala del slow-motion + escala de tiempo), y al
+//   cerrar se restauran los valores que habia antes. El log lee la escala
+//   cada segundo para ver si el juego la esta borrando.
+// - RadioType: la v2.6 leia veh+0x1D3 directo y salio todo ceros (el radioID
+//   debia ser 5): el audio NO esta dentro de CVehicle, es un PUNTERO en
+//   CVehicle (0x138 en PC) a CAEVehicleAudioEntity. Ahora se lee ese puntero
+//   (probando 0x138/0x140/0x148) y se vuelca la zona de ajustes de la entidad.
+// - La pausa YA funciona (el log de la v2.6 la detecto por m_UserPause=1).
+// v2.6: PANEL PROPIO AZUL + 2 COLORES + RALENTIZACION + PAUSA DE VERDAD + RADIOTYPE
+// - La pausa SEGUIA sin esconder la UI en la v2.5: ahora se detecta por varias
+//   senales a la vez (byte 0x5C de CMenuManager, CTimer::m_UserPause /
+//   m_CodePause, y si CMenuManager::DrawFrontEnd se llamo en este frame), y el
+//   log registra que senal disparo y que bytes del objeto CMenuManager cambian
+//   (para encontrar el byte real de pausa en este telefono).
+// - El panel ya no es la ventana de ImGui por defecto: es un panel propio azul
+//   casi oscuro, sin barra de titulo, con deslizadores, recuadros y botones
+//   dibujados a mano (como ARCX, no como ImGui).
+// - El color del anillo ya no tiene el panel RGB siempre abierto: se toca un
+//   recuadro pequeno para abrirlo, y hay un segundo recuadro para el color del
+//   texto del centro de la rueda (nuevo ajuste texto=r,g,b en el .ini).
+// - Al abrir la rueda el juego va lento (ralentizacion estilo GTA V, con el
+//   slow-motion propio del juego: CTimer::bSlowMotionActive /
+//   ms_fSlowMotionScale, o ms_fTimeScale si no resuelven); al cerrarla vuelve
+//   a velocidad normal.
+// - RadioType (del texto de la imagen): se lee el byte candidato
+//   (CVehicle 0x138 + audio 0x80 + radio 0x1B = 0x1D3) y se registra en el
+//   log al entrar a un vehiculo, con una ventana de bytes y la estacion
+//   actual, para confirmar el offset del telefono antes de bloquear la rueda
+//   en bicis/tractores/patrullas (en la v2.6 aun no bloquea nada).
+// v2.5: PANEL ESTILO ARCX + PANEL RGB TACTIL
+// - El panel ahora usa el diseno de ARCX (3.1.35-3.1.40): violeta ARCX
+//   (0.45, 0.30, 0.95), fondo oscuro tintado, titulo centrado y borde en
+//   degradado azul -> morado alrededor de toda la ventana.
+// - Los 8 colores predeterminados y el ColorEdit3 se quitaron: ahora hay un
+//   panel RGB tactil como el selector de ARCX 3.1.38 - cuadro grande de
+//   saturacion/valor + barra vertical de tono, se arrastra con el dedo, con
+//   muestra del color y valores R G B + hexadecimal. El color se guarda al
+//   soltar (y al cerrar), como los deslizadores.
+// - El anillo sigue siendo el color que elija el usuario (por defecto cian);
+//   el violeta es solo el diseno del panel.
+// v2.4: PANEL FUNCIONAL + PAUSA DE VERDAD
+// - El panel NO funcionaba: Touch_hook solo pasaba los eventos de soltar/mover
+//   a ImGui cuando la rueda estaba abierta (g_open || g_cap, y g_cap nunca se
+//   pone en true). Con el panel abierto y la rueda cerrada, ImGui recibia el
+//   toque de bajar pero nunca el de soltar: los botones no se disparaban, los
+//   deslizadores no se movian y "Cerrar" no funcionaba. Ahora tambien se pasan
+//   cuando el panel o la vista previa estan abiertos.
+// - La pausa no escondia la UI: FrontEndMenuManager es una REFERENCIA (puntero
+//   al objeto), no el objeto; hay que desreferenciarla. Ademas, si el claxon
+//   se pulsa mientras el byte de menu dice 1, el offset 0x5C no es el menu en
+//   este telefono y la deteccion se desactiva sola (con mensaje en el log).
+// v2.3: APAGAR ARRIBA DEL ANILLO + PANEL USABLE + SIN UI EN PAUSA
+// - Apagar NO va en el centro: vuelve al anillo, arriba (donde Daniel lo marco
+//   con el circulo en la captura de la v2.1); el centro vuelve a ser el nombre
+//   y el genero de la estacion. El anillo vuelve a tener 13 segmentos.
+// - Panel redisenado para usarse al tacto: letra grande (32 px), etiquetas
+//   ENCIMA de los deslizadores, colores rapidos (8 botones grandes) + color
+//   propio, botones a todo lo ancho y ventana mas estrecha.
+// - La rueda, el boton y el panel ya no se ven en el menu de pausa del juego
+//   (se lee CMenuManager::m_bMenuActive, en 0x5C segun plugin-sdk).
+// v2.2: APAGAR AL CENTRO + BOTON CON ETIQUETA + SONIDO + PANEL DE PERSONALIZACION
+// - La estacion 13 (Radio Off) ya no va en el anillo: va AL CENTRO de la rueda
+//   (tocarla apaga la radio); el anillo queda con 12 estaciones.
+// - Boton flotante mas abajo (0.86H) y con etiqueta: nombre de la estacion y su
+//   genero a la izquierda del icono. Un toque = siguiente estacion; dos toques
+//   = panel de personalizacion (la rueda ya solo se abre con el claxon).
+// - Sonido: clic corto al abrir la rueda y al seleccionar una estacion, generado
+//   con OpenSL ES (sin depender del juego).
+// - Panel de personalizacion: oscuridad del fondo, tamano de la rueda, color del
+//   anillo de seleccion, vista previa (solo se ve, no cambia la estacion) y
+//   restablecer todo. Se guarda en data/configs/VHudRadio.ini.
+// v2.1: LOGOS CON AIRE + MEJOR LETRA + BOTON CON OTRA FUNCION + ICONOS EN FILES
+// - Los logos se veian muy juntos: anillo mas grande (0.83R) e iconos mas chicos
+//   (0.175R) para que no se toquen.
+// - Letra del centro: Roboto Condensed negrita de /system/fonts (la mas parecida
+//   a la de GTA V que trae el telefono); si no esta, Roboto Bold o la de ImGui.
+// - Boton flotante: un toque = siguiente estacion; dos toques = abrir la rueda.
+// - Iconos: ahora se buscan primero en files del juego
+//   (Android/data/com.rockstargames.gtasa/files/VHudRadio/radio/) y si no estan ahi,
+//   en files/vhud/radio/ o en /storage/emulated/0/vhud/radio/ como antes.
+// v2.0: DISENO GTA V + SIN CALIBRAR - el claxon ya se detecta por el boton 7
+// (confirmado en el log de la v1.9: 11 aperturas por "boton 7"), asi que el boton
+// "Calibrar claxon" bajo la rueda se quito (la zona tactil queda solo de
+// respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
+// sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
+// centro el nombre de la estacion + su genero.
+// v1.9: CLAXON POR BOTON 7 - la sonda de la v1.8 lo confirmo: el byte 84 (0x54)
+// del widget m_pWidgets[7] es su bandera de "tocado" (1 al pulsarlo, 0 al
+// soltarlo; 16/17 volcados con 1 caen a +-1 volcado de un toque al claxon, y
+// el float de 80-83 es el tiempo que lleva pulsado en segundos). Esta version
+// lee esa bandera cada frame y el doble toque al claxon abre/cierra la rueda
+// sin depender de la posicion del boton. La zona tactil queda
+// como respaldo por si el arreglo no resuelve o el widget 7 es null.
+// v1.8: BOTON 7 DIRECTO - el escaneo de la v1.7 revelo que IsTouchDown(int)
+// cuenta DEDOS (indice multi-touch 0..7), no botones: solo el 0 se encendia
+// con cualquier toque. El claxon SI es el widget 7 (GTAForums: 7 = claxon/horn),
+// asi que esta version lee el boton 7 directo del arreglo CTouchInterface::
+// m_pWidgets[7] y vuelca sus primeros 128 bytes (y los del widget 2, acelerar,
+// como control) para encontrar su bandera de "tocado". Si aparece, la v1.9 la
+// leera directo y el claxon sera independiente de la posicion del boton.
+// v1.7: CLAXON POR WIDGET - verificado desensamblando el mod de rueda de armas que
+// mando Daniel (libweapwheeldliiartworks64.so, 1.5 MB): ese mod resuelve por GetSym
+// CTouchInterface::IsTouchDown(int) y lo llama como funcion estatica con el id del
+// widget en w0 (sin 'this': en su bucle lo llama con w0 = 0..7 y tambien
+// GetTouchPosition(id) e IsReleased(id,...) igual). El claxon seria el widget 7
+// (WIDGET_HORN, segun la otra IA; se confirma con el escaneo de widgets que trae
+// esta version: registra que ids estan pulsados cuando cambia el conjunto).
+// La zona tactil/calibrada queda como respaldo. Si mueves el boton de claxon, el
+// widget 7 lo sigue detectando igual.
+// v1.6: CALIBRAR CLAXON - el volcado CPad de la v1.5 salio IDENTICO en los 120
+// volcados: el estado del claxon NO esta en los primeros 256 bytes de CPad (o no
+// esta en CPad). Mientras se sigue buscando (volcado ampliado a 2048 bytes), la
+// v1.6 (retirado en v2.0): la rueda traia un boton "Calibrar claxon"
+// del juego, y la zona queda guardada en /storage/emulated/0/vhud/horn_pos.txt.
+// Si mueves el boton de claxon en los controles del juego, lo recalibras con un
+// toque. La zona ya no es fija: es la que tu calibraste.
+// v1.5: la rueda ahora se queda ABIERTA hasta tocar una estacion (antes solo el
+// arrastre elegia: un toque directo a un segmento no lo seleccionaba, asi que habia
+// que mantener el dedo puesto). Tocar un segmento lo aplica y cierra; tocar fuera
+// de la rueda la cierra sin cambiar; el arrastre sigue funcionando.
+// v1.5 tambien vuelca la memoria de CPad para encontrar donde el juego guarda el
+// estado del claxon: si se mueve el boton de claxon en los controles del juego, la
+// zona tactil (v1.2-v1.4) deja de funcionar; leer el claxon desde CPad no depende
+// de la posicion del boton. El volcado es solo diagnostico para la v1.6.
+// v1.2: RetuneRadio NO cambia a una estacion concreta (en la prueba de Daniel la
+// radio se quedo en 10 aunque se llamo RetuneRadio(4/7/13/6/3): parece que solo
+// avanza/retrocede un paso). El cambio real es StartRadio: primero TrackManager
+// (Eaafh, el que usa el mod GTA6Radio 4.0 en 2.10), luego AudioEngine (Eaa),
+// y RetuneRadio queda solo como ultimo recurso.
+// v1.3: BUG DE LA v1.2 - las funciones de radio son metodos C++ y necesitan 'this'
+// (el objeto global AudioEngine / AERadioTrackManager). Sin 'this', el id de la
+// estacion caia en el registro de 'this' y la funcion tocaba memoria basura:
+// por eso StartRadio(12) cerro el juego en la prueba de Daniel, y por eso
+// RetuneRadio nunca cambio nada (su argumento real era basura) y GetCurrent
+// devolvia valores raros (10, 13...). Ahora todo se llama con su 'this' real.
+// NO usar los mangleds de PC (Ea vs Ec, Eific...). CMenuManager::RetuneRadio NO existe.
+// Por eso la v1 NUNCA llama a una funcion que no resolvio con GetSym: si RetuneRadio
+// falta, la rueda se abre, se ve, pero al soltar solo lo registra en el log.
+// El mini-plugin VHudRadioProbe (probe/) prueba estos mismos simbolos y escribe
+// ok/FALTA en VHudRadioProbe.txt; la v1 se ajusta a lo que el probe diga.
+#include <mod/config.h>
+#include <mod/amlmod.h>
+#include <android/log.h>
+#include <EGL/egl.h>
+#include <SLES/OpenSLES.h>  // v2.2: sonido (la libreria se abre con dlopen, no se enlaza)
+#include <SLES/OpenSLES_Android.h>  // v2.2: SLDataLocator_AndroidSimpleBufferQueue vive aqui, no en OpenSLES.h
+#include <GLES2/gl2.h>
+#include <dlfcn.h>
+#include <link.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <vector>
+#include "imgui.h"
+#include "imgui_impl_opengl3.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#define STBI_NO_SIMD
+#define STBI_ONLY_PNG
+#include "stb_image.h"
+#include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
+
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.0.0-beta, Hunter09)
+NEEDGAME(com.rockstargames.gtasa)
+#define VHUDRADIO_VERSION "1.0.0-beta"
+
+// ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
+static std::string g_logPath;
+static std::string g_gameFilesDir;  // files del juego (se resuelve en OnModLoad)
+static std::string g_gameDataDir;  // v2.3: carpeta data del juego (padre de files) - el .ini va en data/configs
+static void Log(const char* fmt, ...) {
+    // v1.7: buf 8192 (antes 600 y el volcado CPad de 2048 bytes se truncaba a ~295)
+    char buf[8192];
+    va_list ap; va_start(ap, fmt); vsnprintf(buf, sizeof buf, fmt, ap); va_end(ap);
+    __android_log_print(ANDROID_LOG_INFO, "VHudRadio", "%s", buf);
+    if (!g_logPath.empty()) { FILE* f = fopen(g_logPath.c_str(), "a"); if (f) { fprintf(f, "%s\n", buf); fclose(f); } }
+}
+
+// ---- sonido (v2.2): clic corto generado con OpenSL ES (sin depender del juego) ----
+static void* g_slHandle = nullptr;
+typedef SLresult (*SlCreateEngineFn)(SLObjectItf*, SLuint32, const SLEngineOption*, SLuint32, const SLInterfaceID*, const SLboolean*);
+static SlCreateEngineFn g_slCreateEngine = nullptr;
+static SLObjectItf g_slEngine = nullptr, g_slMix = nullptr, g_slPlayer = nullptr;
+static SLEngineItf g_slEngineItf = nullptr;
+static SLPlayItf g_slPlay = nullptr;
+static SLBufferQueueItf g_slQueue = nullptr;
+static short g_clickLo[1600];
+static short g_clickHi[1600];
+static bool g_soundTried = false, g_soundOk = false;
+static void SoundInit() {
+    if (g_soundTried) return; g_soundTried = true;
+    g_slHandle = dlopen("libOpenSLES.so", RTLD_NOW);
+    if (!g_slHandle) { Log("  sonido: libOpenSLES.so no disponible"); return; }
+    g_slCreateEngine = (SlCreateEngineFn)dlsym(g_slHandle, "slCreateEngine");
+    if (!g_slCreateEngine) { Log("  sonido: slCreateEngine no disponible"); return; }
+    if (g_slCreateEngine(&g_slEngine, 0, nullptr, 0, nullptr, nullptr) != SL_RESULT_SUCCESS || !g_slEngine) return;
+    if ((*g_slEngine)->Realize(g_slEngine, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+    if ((*g_slEngine)->GetInterface(g_slEngine, SL_IID_ENGINE, &g_slEngineItf) != SL_RESULT_SUCCESS || !g_slEngineItf) return;
+    if ((*g_slEngineItf)->CreateOutputMix(g_slEngineItf, &g_slMix, 0, nullptr, nullptr) != SL_RESULT_SUCCESS) return;
+    if ((*g_slMix)->Realize(g_slMix, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+    SLDataLocator_AndroidSimpleBufferQueue locBuf = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
+    SLDataFormat_PCM fmt = {SL_DATAFORMAT_PCM, 1, SL_SAMPLINGRATE_22_05, SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16, SL_SPEAKER_FRONT_CENTER, SL_BYTEORDER_LITTLEENDIAN};
+    SLDataSource src = {&locBuf, &fmt};
+    SLDataLocator_OutputMix locMix = {SL_DATALOCATOR_OUTPUTMIX, g_slMix};
+    SLDataSink sink = {&locMix, nullptr};
+    const SLInterfaceID ids[1] = {SL_IID_BUFFERQUEUE};
+    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
+    if ((*g_slEngineItf)->CreateAudioPlayer(g_slEngineItf, &g_slPlayer, &src, &sink, 1, ids, req) != SL_RESULT_SUCCESS) return;
+    if ((*g_slPlayer)->Realize(g_slPlayer, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+    if ((*g_slPlayer)->GetInterface(g_slPlayer, SL_IID_PLAY, &g_slPlay) != SL_RESULT_SUCCESS) return;
+    if ((*g_slPlayer)->GetInterface(g_slPlayer, SL_IID_BUFFERQUEUE, &g_slQueue) != SL_RESULT_SUCCESS) return;
+    if ((*g_slPlay)->SetPlayState(g_slPlay, SL_PLAYSTATE_PLAYING) != SL_RESULT_SUCCESS) return;
+    for (int i = 0; i < 1600; i++) {
+        float t = (float)i / 22050.0f;
+        float env = expf(-t * 60.0f);
+        g_clickLo[i] = (short)(sinf(2.0f * 3.14159265f * 880.0f * t) * env * 12000.0f);
+        g_clickHi[i] = (short)(sinf(2.0f * 3.14159265f * 1318.0f * t) * env * 12000.0f);
+    }
+    g_soundOk = true;
+    Log("  sonido: OpenSL ES listo");
+}
+static void PlayClick(bool hi) {
+    SoundInit();
+    if (!g_soundOk || !g_slQueue) return;
+    (*g_slQueue)->Clear(g_slQueue);
+    (*g_slQueue)->Enqueue(g_slQueue, hi ? g_clickHi : g_clickLo, 1600 * 2);
+}
+
+// ---- estaciones 1..13 (VERIFIED por plugin-sdk eRadioID + GTAMods + v-hud) ----
+static const char* kStationName[14] = { "", "Playback FM", "K-Rose", "K-DST", "Bounce FM", "SF-UR",
+    "Radio Los Santos", "Radio X", "CSR 103.9", "K-Jah West", "Master Sounds 98.3",
+    "WCTR", "User tracks", "Radio Off" };
+
+// v2.16: idiomas - toda la interfaz (panel + generos) en 6 idiomas.
+// Los nombres de las estaciones no se traducen (son nombres propios del juego);
+// los generos y los textos del panel si. Sin acentos (como el resto del codigo).
+enum LangId { L_ES = 0, L_EN, L_ID, L_PT, L_FR, L_DE, L_COUNT };
+static const char* kLangNames[L_COUNT] = { "Español", "English", "Bahasa Indonesia", "Portugues (BR)", "Francais", "Deutsch" };
+static const char* kLangCodes[L_COUNT] = { "es", "en", "id", "pt", "fr", "de" };
+enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_COUNT };
+static const char* kUI[L_COUNT][STR_COUNT] = {
+    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante" },
+    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button" },
+    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang" },
+    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante" },
+    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant" },
+    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen" },
+};
+// v2.0: genero de cada estacion, para el centro de la rueda estilo GTA V
+static const char* kGenre[L_COUNT][14] = {
+    { "", "Hip hop clasico", "Country", "Rock clasico", "Funk y disco", "House", "Hip hop", "Rock alternativo", "R&B y soul", "Reggae", "Groove y funk", "Charlas y noticias", "Tu propia musica", "Radio apagada" },
+    { "", "Classic hip hop", "Country", "Classic rock", "Funk and disco", "House", "Hip hop", "Alternative rock", "R&B and soul", "Reggae", "Groove and funk", "Talk and news", "Your own music", "Radio off" },
+    { "", "Hip hop klasik", "Country", "Rock klasik", "Funk dan disko", "House", "Hip hop", "Rock alternatif", "R&B dan soul", "Reggae", "Groove dan funk", "Obrolan dan berita", "Musikmu sendiri", "Radio mati" },
+    { "", "Hip hop classico", "Country", "Rock classico", "Funk e disco", "House", "Hip hop", "Rock alternativo", "R&B e soul", "Reggae", "Groove e funk", "Conversa e noticias", "Sua propria musica", "Radio desligado" },
+    { "", "Hip-hop classique", "Country", "Rock classique", "Funk et disco", "House", "Hip-hop", "Rock alternatif", "R&B et soul", "Reggae", "Groove et funk", "Debats et infos", "Ta propre musique", "Radio eteinte" },
+    { "", "Klassischer Hip-Hop", "Country", "Klassischer Rock", "Funk und Disco", "House", "Hip-Hop", "Alternativer Rock", "R&B und Soul", "Reggae", "Groove und Funk", "Talk und Nachrichten", "Deine eigene Musik", "Radio aus" },
+};
+
+// ---- funciones del juego (resueltas por GetSym, nunca llamadas si faltan) ----
+static void* (*FindPlayerPed)(int);
+static void* (*FindPlayerVehicle)(int, bool);
+// Las funciones de radio son metodos C++: el primer argumento es 'this', el objeto
+// global del juego (resuelto por GetSym, el Probe ya confirmo que existen).
+static void* g_audioEngine = nullptr;   // global CAudioEngine
+static void* g_trackManager = nullptr;  // global CAERadioTrackManager
+typedef signed char (*RetuneFn)(void*, signed char);  // en la practica devuelve void/char; solo se llama si resolvio
+static RetuneFn g_retuneAudio = nullptr, g_retuneTrack = nullptr;
+typedef signed char (*GetStationFn)(void*);
+static GetStationFn g_getStationAudio = nullptr, g_getStationTrack = nullptr;
+typedef void (*StartRadioAudioFn)(void*, signed char, signed char);
+static StartRadioAudioFn g_startAudio = nullptr;
+typedef void (*StartRadioTrackFn)(void*, signed char, signed char, float, unsigned char);
+static StartRadioTrackFn g_startTrack = nullptr;  // el que usa el mod GTA6Radio 4.0 en 2.10 (verificado por Probe: ok)
+
+// ---- claxon por boton 7 directo (v1.8): CTouchInterface::m_pWidgets[7] ----
+// IsTouchDown resulto ser indice de dedo, no de boton (v1.7). El claxon es el
+// widget 7 (GTAForums: 7 = claxon/horn); aqui se lee directo del arreglo de
+// botones del juego y se vuelca su memoria para encontrar su bandera de "tocado".
+static void** g_widgets = nullptr;  // CTouchInterface::m_pWidgets
+static const int kHornWidgetId = 7;  // WIDGET_HORN (GTAForums: 7 = claxon/horn)
+
+// ---- claxon: doble toque al boton de claxon del juego abre/cierra la rueda ----
+// v1.1 intento CPad::GetHorn, pero NO existe en libGTASA.so 2.10 (FALTA en el log).
+// v1.2 uso una zona estimada (y 0.40-0.62H) y fallo: los toques reales de Daniel
+// (log v1.3, toques #1-7) caen en (2258, 735) en 2408x1080, o sea (0.938W, 0.683H),
+// justo DEBAJO de la zona estimada. v1.4: circulo centrado en ese punto real.
+// v1.6 (boton "Calibrar claxon" retirado en v2.0: el claxon ya se detecta por el
+// boton 7 del juego): el centro de la zona se guarda en horn_pos.txt y se sigue
+// cargando al inicio por si se calibro antes; la zona solo es respaldo del boton 7.
+static float g_hornCx = 0.938f, g_hornCy = 0.683f;  // centro del claxon (fraccion de W/H)
+static bool InHornRegion(float x, float y, float W, float H) {
+    float cx = W*g_hornCx, cy = H*g_hornCy, r = H*0.07f;
+    float dx = x - cx, dy = y - cy;
+    return dx*dx + dy*dy <= r*r;
+}
+static void LoadHornPos() {
+    // v2.1: horn_pos.txt tambien se busca primero en files del juego
+    const std::string hpPaths[2] = {g_gameFilesDir + "/vhud/horn_pos.txt", "/storage/emulated/0/vhud/horn_pos.txt"};
+    for (const std::string& hp : hpPaths) {
+        FILE* f = fopen(hp.c_str(), "r");
+        if (!f) continue;
+        float x = 0, y = 0;
+        if (fscanf(f, "%f %f", &x, &y) == 2 && x > 0.05f && x < 0.99f && y > 0.05f && y < 0.99f) { g_hornCx = x; g_hornCy = y; }
+        fclose(f);
+        return;
+    }
+}
+
+// ---- ajustes de la rueda (v2.2): se guardan en data/configs/VHudRadio.ini (v2.36) ----
+// [VHudRadio] fondo=30 (0..100, oscuridad del fondo) tamano=36 (25..45, % de H)
+// anillo=0,210,255 (color del anillo de seleccion, 0..255)
+// texto=255,255,255 (color del texto del centro de la rueda, 0..255) (v2.6)
+// idioma=es (es/en/id/pt/fr/de) botonX/botonY=-1 (posicion del boton flotante,
+//   fraccion de W/H; -1 = abajo a la derecha) botonTam=100 (50..150, %)
+// botonOpac=100 (30..100, %) botonBloq=0 (0 = se puede mover, 1 = fijo) (v2.16)
+// fondoColor=0,0,0 (color del fondo oscuro de la rueda) panelX/panelY=-1
+//   (posicion del panel, fraccion de W/H; -1 = centrado) panelAncho=0.44
+//   (ancho del panel, fraccion de W, 0.36..0.70) (v2.17)
+// iconosColor=0 (0 = iconos normales de radio/, 1 = iconos a color de radio_color/) (v2.28)
+struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; };
+static WheelCfg g_cfg;
+static const char* S(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 0 || id >= STR_COUNT) return ""; return kUI[l][id]; }  // v2.16: texto del panel en el idioma elegido
+static const char* Genre(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 1 || id > 13) return ""; return kGenre[l][id]; }  // v2.16: genero en el idioma elegido
+static bool g_settings = false;   // v2.2: panel de personalizacion abierto
+static bool g_preview = false;    // v2.2: vista previa de la rueda (solo se ve, no cambia la estacion)
+static std::string CfgPath() { return g_gameDataDir + "/configs/VHudRadio.ini"; }  // v2.36: el .ini vuelve a data/configs (v2.3-2.15); la carpeta VHudRadio ya no existe
+static void SaveCfg() {
+    mkdir((g_gameDataDir + "/configs").c_str(), 0777);
+    FILE* f = fopen(CfgPath().c_str(), "w");
+    if (!f) return;
+    fprintf(f, "[VHudRadio]\n");
+    fprintf(f, "fondo=%d\n", g_cfg.fondo);
+    fprintf(f, "tamano=%d\n", g_cfg.tamano);
+    fprintf(f, "anillo=%d,%d,%d\n", g_cfg.ringR, g_cfg.ringG, g_cfg.ringB);
+    fprintf(f, "texto=%d,%d,%d\n", g_cfg.textoR, g_cfg.textoG, g_cfg.textoB);
+    fprintf(f, "idioma=%s\n", kLangCodes[(g_cfg.idioma >= 0 && g_cfg.idioma < L_COUNT) ? g_cfg.idioma : 0]);
+    fprintf(f, "botonX=%.3f\n", g_cfg.btnX);
+    fprintf(f, "botonY=%.3f\n", g_cfg.btnY);
+    fprintf(f, "botonTam=%d\n", g_cfg.btnTam);
+    fprintf(f, "botonOpac=%d\n", g_cfg.btnOpac);
+    fprintf(f, "botonBloq=%d\n", g_cfg.btnBloq);
+    fprintf(f, "fondoColor=%d,%d,%d\n", g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB);
+    fprintf(f, "panelX=%.3f\n", g_cfg.panelX);
+    fprintf(f, "panelY=%.3f\n", g_cfg.panelY);
+    fprintf(f, "panelAncho=%.3f\n", g_cfg.panelAncho);
+    fprintf(f, "panelAlto=%.3f\n", g_cfg.panelAlto);
+    fprintf(f, "iconosColor=%d\n", g_cfg.iconosColor);
+    fprintf(f, "camaraLenta=%d\n", g_cfg.camaraLenta);
+    fprintf(f, "botonVisible=%d\n", g_cfg.botonVisible);
+    fclose(f);
+}
+static void LoadCfg() {
+    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1;
+    bool fromOld = false;
+    FILE* f = fopen(CfgPath().c_str(), "r");
+    if (!f) {
+        // v2.36: antes estaba en files/VHudRadio (v2.16-2.35) - mudarlo si existe ahi
+        std::string old = g_gameFilesDir + "/VHudRadio/VHudRadio.ini";
+        f = fopen(old.c_str(), "r");
+        if (f) { fromOld = true; Log("  ajustes: mudando el .ini viejo de %s", old.c_str()); }
+    }
+    if (!f) {
+        // v2.2: el primer .ini estaba en files/configs - mudarlo si existe ahi
+        std::string old2 = g_gameFilesDir + "/configs/VHudRadio.ini";
+        f = fopen(old2.c_str(), "r");
+        if (f) { fromOld = true; Log("  ajustes: mudando el .ini viejo de %s", old2.c_str()); }
+    }
+    if (!f) { SaveCfg(); Log("  ajustes: creando %s con valores por defecto", CfgPath().c_str()); return; }  // no existe: crearlo con los valores por defecto
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        char* eq = strchr(line, '=');
+        if (!eq) continue;
+        *eq = 0;
+        char* k = line;
+        while (*k == ' ' || *k == '\t') k++;
+        size_t kl = strlen(k);
+        while (kl > 0 && (k[kl-1] == ' ' || k[kl-1] == '\t' || k[kl-1] == '\n' || k[kl-1] == '\r')) k[--kl] = 0;
+        const char* v = eq + 1;
+        if (strcmp(k, "fondo") == 0) g_cfg.fondo = atoi(v);
+        else if (strcmp(k, "tamano") == 0) g_cfg.tamano = atoi(v);
+        else if (strcmp(k, "anillo") == 0) {
+            int r = 0, g = 0, b = 0;
+            if (sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) { g_cfg.ringR = r; g_cfg.ringG = g; g_cfg.ringB = b; }
+        }
+        else if (strcmp(k, "texto") == 0) {
+            int r = 255, g = 255, b = 255;
+            if (sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) { g_cfg.textoR = r; g_cfg.textoG = g; g_cfg.textoB = b; }
+        }
+        else if (strcmp(k, "idioma") == 0) {
+            g_cfg.idioma = 0;
+            for (int i = 0; i < L_COUNT; i++) if (strncmp(v, kLangCodes[i], 2) == 0) { g_cfg.idioma = i; break; }
+        }
+        else if (strcmp(k, "botonX") == 0) g_cfg.btnX = (float)atof(v);
+        else if (strcmp(k, "botonY") == 0) g_cfg.btnY = (float)atof(v);
+        else if (strcmp(k, "botonTam") == 0) g_cfg.btnTam = atoi(v);
+        else if (strcmp(k, "botonOpac") == 0) g_cfg.btnOpac = atoi(v);
+        else if (strcmp(k, "botonBloq") == 0) g_cfg.btnBloq = atoi(v);
+        else if (strcmp(k, "fondoColor") == 0) {
+            int r = 0, g = 0, b = 0;
+            if (sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) { g_cfg.fondoR = r; g_cfg.fondoG = g; g_cfg.fondoB = b; }
+        }
+        else if (strcmp(k, "panelX") == 0) g_cfg.panelX = (float)atof(v);
+        else if (strcmp(k, "panelY") == 0) g_cfg.panelY = (float)atof(v);
+        else if (strcmp(k, "panelAncho") == 0) g_cfg.panelAncho = (float)atof(v);
+        else if (strcmp(k, "panelAlto") == 0) g_cfg.panelAlto = (float)atof(v);
+        else if (strcmp(k, "iconosColor") == 0) g_cfg.iconosColor = atoi(v);
+        else if (strcmp(k, "camaraLenta") == 0) g_cfg.camaraLenta = atoi(v);
+        else if (strcmp(k, "botonVisible") == 0) g_cfg.botonVisible = atoi(v);
+    }
+    fclose(f);
+    if (g_cfg.fondo < 0) g_cfg.fondo = 0; if (g_cfg.fondo > 100) g_cfg.fondo = 100;
+    if (g_cfg.tamano < 25) g_cfg.tamano = 25; if (g_cfg.tamano > 45) g_cfg.tamano = 45;
+    if (g_cfg.ringR < 0) g_cfg.ringR = 0; if (g_cfg.ringR > 255) g_cfg.ringR = 255;
+    if (g_cfg.ringG < 0) g_cfg.ringG = 0; if (g_cfg.ringG > 255) g_cfg.ringG = 255;
+    if (g_cfg.ringB < 0) g_cfg.ringB = 0; if (g_cfg.ringB > 255) g_cfg.ringB = 255;
+    if (g_cfg.textoR < 0) g_cfg.textoR = 0; if (g_cfg.textoR > 255) g_cfg.textoR = 255;
+    if (g_cfg.textoG < 0) g_cfg.textoG = 0; if (g_cfg.textoG > 255) g_cfg.textoG = 255;
+    if (g_cfg.textoB < 0) g_cfg.textoB = 0; if (g_cfg.textoB > 255) g_cfg.textoB = 255;
+    if (g_cfg.idioma < 0) g_cfg.idioma = 0; if (g_cfg.idioma >= L_COUNT) g_cfg.idioma = 0;
+    if (g_cfg.btnX < -1.0f) g_cfg.btnX = -1.0f; if (g_cfg.btnX > 1.0f) g_cfg.btnX = 1.0f;
+    if (g_cfg.btnY < -1.0f) g_cfg.btnY = -1.0f; if (g_cfg.btnY > 1.0f) g_cfg.btnY = 1.0f;
+    if (g_cfg.btnTam < 50) g_cfg.btnTam = 50; if (g_cfg.btnTam > 150) g_cfg.btnTam = 150;
+    if (g_cfg.btnOpac < 30) g_cfg.btnOpac = 30; if (g_cfg.btnOpac > 100) g_cfg.btnOpac = 100;
+    if (g_cfg.btnBloq != 0 && g_cfg.btnBloq != 1) g_cfg.btnBloq = 0;
+    if (g_cfg.fondoR < 0) g_cfg.fondoR = 0; if (g_cfg.fondoR > 255) g_cfg.fondoR = 255;
+    if (g_cfg.fondoG < 0) g_cfg.fondoG = 0; if (g_cfg.fondoG > 255) g_cfg.fondoG = 255;
+    if (g_cfg.fondoB < 0) g_cfg.fondoB = 0; if (g_cfg.fondoB > 255) g_cfg.fondoB = 255;
+    if (g_cfg.panelX < -1.0f) g_cfg.panelX = -1.0f; if (g_cfg.panelX > 1.0f) g_cfg.panelX = 1.0f;
+    if (g_cfg.panelY < -1.0f) g_cfg.panelY = -1.0f; if (g_cfg.panelY > 1.0f) g_cfg.panelY = 1.0f;
+    if (g_cfg.panelAncho < 0.36f) g_cfg.panelAncho = 0.36f; if (g_cfg.panelAncho > 0.70f) g_cfg.panelAncho = 0.70f;
+    if (g_cfg.panelAlto < -1.0f) g_cfg.panelAlto = -1.0f; if (g_cfg.panelAlto >= 0.0f && g_cfg.panelAlto < 0.30f) g_cfg.panelAlto = 0.30f; if (g_cfg.panelAlto > 0.95f) g_cfg.panelAlto = 0.95f;
+    if (g_cfg.iconosColor != 0 && g_cfg.iconosColor != 1) g_cfg.iconosColor = 0;
+    if (g_cfg.camaraLenta != 0 && g_cfg.camaraLenta != 1) g_cfg.camaraLenta = 1;
+    if (g_cfg.botonVisible != 0 && g_cfg.botonVisible != 1) g_cfg.botonVisible = 1;
+    // v2.20: el tamano por defecto vuelve a ser mediano (0.44 x automatico);
+    // un .ini con los valores grandes de la v2.19 (0.60 x 0.90, nunca se
+    // redimensiono o se restablecio en la v2.19) vuelve al mediano
+    if (g_cfg.panelAncho == 0.60f && g_cfg.panelAlto == 0.90f) { g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; }
+    if (fromOld) SaveCfg();  // escribirlo ya en la ruta nueva
+    Log("  ajustes: %s (fondo=%d tamano=%d anillo=%d,%d,%d texto=%d,%d,%d idioma=%s boton=%.2f,%.2f tam=%d%% opac=%d%% bloq=%d fondoColor=%d,%d,%d panel=%.2f,%.2f ancho=%.2f alto=%.2f color=%d lenta=%d btnVis=%d)", CfgPath().c_str(), g_cfg.fondo, g_cfg.tamano, g_cfg.ringR, g_cfg.ringG, g_cfg.ringB, g_cfg.textoR, g_cfg.textoG, g_cfg.textoB, kLangCodes[g_cfg.idioma], g_cfg.btnX, g_cfg.btnY, g_cfg.btnTam, g_cfg.btnOpac, g_cfg.btnBloq, g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB, g_cfg.panelX, g_cfg.panelY, g_cfg.panelAncho, g_cfg.panelAlto, g_cfg.iconosColor, g_cfg.camaraLenta, g_cfg.botonVisible);
+}
+
+static std::string g_vhudDir;   // /storage/emulated/0/vhud
+static int g_current = 1;       // estacion actual conocida (1..13)
+static int g_selected = 1;      // segmento bajo el dedo mientras la rueda esta abierta
+static bool g_open = false;
+static bool g_btnPending = false;  // v2.1: un toque al boton flotante esperando (siguiente estacion si no hay segundo toque)
+static std::chrono::steady_clock::time_point g_btnPendingAt;
+static bool g_btnDrag = false;   // v2.16: el toque actual empezo en el boton flotante (puede ser arrastre)
+static bool g_btnMoved = false;  // v2.16: el arrastre supero el umbral (ya no es un toque)
+static float g_dragSX = 0, g_dragSY = 0;  // v2.16: donde empezo el dedo
+static float g_dragBX = 0, g_dragBY = 0;  // v2.16: posicion del boton al empezar (fraccion de W/H)
+static bool g_wheelTouch = false;   // v1.5: el toque actual empezo/sobre el anillo de la rueda
+static bool g_centerTap = false;    // v2.31: el toque actual empezo en el centro de la rueda (abre el panel al soltar)
+static bool g_ignoreNextUp = false; // v1.5: el toque que ABRIO la rueda no debe cerrarla al soltar
+static float g_touchX = -1.0f, g_touchY = -1.0f;  // v2.18: ultima posicion de toque (io.MousePos llega con un frame de retraso y el bajar leia una posicion vieja)
+static bool g_panelScrolling = false;  // v2.20: el arrastre actual es un desplazamiento del panel (no un deslizador)
+
+// v2.2: geometria de la rueda segun los ajustes (fondo/tamano/anillo)
+static float WheelR(float H) { return H * g_cfg.tamano / 100.0f; }
+static float WheelRi(float H) { return WheelR(H) * 0.83f; }
+static float WheelIconS(float H) { return WheelR(H) * 0.175f; }
+static ImU32 RingColor() { return IM_COL32(g_cfg.ringR, g_cfg.ringG, g_cfg.ringB, 255); }
+
+// v2.3: segmento bajo un punto (13 segmentos; apagar va arriba del anillo, no en el centro)
+static int SegmentAt(float x, float y, float W, float H) {
+    float dx = x - W*0.5f, dy = y - H*0.5f;
+    float dist = sqrtf(dx*dx + dy*dy);
+    float Ri = WheelRi(H), s = WheelIconS(H);
+    if (dist < Ri - s*1.3f || dist > Ri + s*1.3f) return 0;  // centro o fuera de la rueda
+    float ang = atan2f(dy, dx) + 3.14159265f/2; if (ang < 0) ang += 2*3.14159265f;
+    int seg = (int)(ang / (2*3.14159265f/13.0f)) + 1; if (seg > 13) seg = 13;
+    return seg;
+}
+// v2.31: true si el toque cae en el centro de la rueda (dentro del anillo,
+// donde va el nombre de la estacion). SegmentAt devuelve 0 tanto para el
+// centro como para fuera de la rueda; esto los distingue.
+static bool InWheelCenter(float x, float y, float W, float H) {
+    float dx = x - W*0.5f, dy = y - H*0.5f;
+    float dist = sqrtf(dx*dx + dy*dy);
+    float Ri = WheelRi(H), s = WheelIconS(H);
+    return dist < Ri - s*1.3f;
+}
+static bool g_inVehicle = false;
+static bool g_hasRadio = true;  // v2.14: el vehiculo actual tiene radio civil (RadioType == 0); true hasta que se compruebe
+static void* g_menuManager = nullptr;  // v2.3: global CMenuManager (FrontEndMenuManager)
+static bool g_paused = false;          // v2.3: menu de pausa (o cualquier menu) abierto
+static int g_menuCheck = 0;            // v2.4: 0 = sin verificar, 1 = offset valido, -1 = offset no valido (pausa desactivada)
+static bool MenuActive() {
+    if (!g_menuManager || g_menuCheck == -1) return false;
+    return ((const unsigned char*)g_menuManager)[0x5C] != 0;  // m_bMenuActive (plugin-sdk CMenuManager)
+}
+// v2.6: mas senales de pausa (el byte 0x5C solo no basto en la v2.5) y ralentizacion
+static bool* g_userPause = nullptr;   // CTimer::m_UserPause (pausa del usuario)
+static bool* g_codePause = nullptr;   // CTimer::m_CodePause (pausa por codigo/cinematica)
+static bool g_menuDrawn = false;      // CMenuManager::DrawFrontEnd se llamo en este frame
+static bool* g_slowActive = nullptr;  // CTimer::bSlowMotionActive (slow-motion propio del juego)
+static float* g_slowScale = nullptr;  // CTimer::ms_fSlowMotionScale
+static float* g_timeScale = nullptr;  // CTimer::ms_fTimeScale (respaldo si no hay slow-motion)
+static void (*DrawFrontEnd_orig)() = nullptr;
+static void DrawFrontEnd_hook() {
+    g_menuDrawn = true;
+    if (DrawFrontEnd_orig) DrawFrontEnd_orig();
+}
+// v2.6: diagnostico - registra que bytes del objeto CMenuManager cambian, para
+// encontrar el byte real de pausa en este telefono (el 0x5C no basto en la v2.5)
+static unsigned char g_menuSnap[96];
+static bool g_menuSnapInit = false;
+static int g_menuSnapTick = 0;
+static void MenuSnapCheck() {
+    if ((++g_menuSnapTick % 30) != 0) return;
+    const unsigned char* m = (const unsigned char*)g_menuManager;
+    if (!g_menuSnapInit) { memcpy(g_menuSnap, m, 96); g_menuSnapInit = true; return; }
+    char buf[1024]; int n = 0;
+    n += snprintf(buf + n, sizeof buf - (size_t)n, "menu: bytes que cambiaron:");
+    bool diff = false;
+    for (int i = 0; i < 96; i++) {
+        if (m[i] != g_menuSnap[i]) { diff = true; n += snprintf(buf + n, sizeof buf - (size_t)n, " [%02X]=%02X", i, m[i]); }
+    }
+    if (diff) Log("%s", buf);
+    memcpy(g_menuSnap, m, 96);
+}
+// v2.4: FrontEndMenuManager es una REFERENCIA (puntero al objeto) en plugin-sdk:
+// GetSym devuelve la direccion del puntero, hay que desreferenciarla. Si el
+// simbolo ya es el objeto, sus primeros 8 bytes no son una direccion valida
+// del juego (son ~0 o un float desplazado), asi que se distingue solo.
+static void* ResolveMenuManager(void* sym) {
+    if (!sym) return nullptr;
+    uintptr_t v = *(uintptr_t*)sym;
+    if (v > 0x100000000ULL && v < 0x1000000000000ULL) return (void*)v;  // es una referencia: desreferenciar
+    return sym;  // el simbolo ya es el objeto
+}
+
+// ---- texturas ImGui de los iconos (se crean en el primer frame, con contexto GL) ----
+static GLuint g_tex[14] = {0};  // 1..13 + radio_current en [0] como marco
+static GLuint g_texColor[14] = {0};  // v2.28: a color (radio_color/), 1..13 + radio_current en [0]
+static bool g_texTried = false;
+// v2.29: decodifica base64 (los PNG incrustados vienen en base64)
+static int B64Val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+static std::vector<unsigned char> B64Decode(const char* s) {
+    std::vector<unsigned char> out;
+    int val = 0, bits = 0;
+    for (const char* p = s; *p; p++) {
+        int v = B64Val(*p);
+        if (v < 0) continue;  // ignora '=' y saltos
+        val = (val << 6) | v;
+        bits += 6;
+        if (bits >= 8) { bits -= 8; out.push_back((unsigned char)((val >> bits) & 0xFF)); }
+    }
+    return out;
+}
+static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len) {
+    int w = 0, h = 0, ch = 0;
+    unsigned char* px = stbi_load_from_memory(buf, (int)len, &w, &h, &ch, 4);
+    if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return 0; }
+    // v2.35: los iconos a color son de 256x256 y se dibujan a ~94 px sin
+    // mipmaps; achicarlos a 128x128 (como los normales) antes de subirlos.
+    unsigned char* pxSmall = nullptr;
+    unsigned char* upPx = px;
+    int upW = w, upH = h;
+    if (w > 128 || h > 128) {
+        int nw = w > 128 ? 128 : w, nh = h > 128 ? 128 : h;
+        pxSmall = (unsigned char*)malloc((size_t)nw * nh * 4);
+        if (pxSmall) {
+            for (int y = 0; y < nh; y++) {
+                for (int x = 0; x < nw; x++) {
+                    int sx = x * w / nw, sy = y * h / nh;
+                    int ex = (x + 1) * w / nw, ey = (y + 1) * h / nh;
+                    if (ex <= sx) ex = sx + 1; if (ey <= sy) ey = sy + 1;
+                    for (int c = 0; c < 4; c++) {
+                        int sum = 0, cnt = 0;
+                        for (int yy = sy; yy < ey && yy < h; yy++)
+                            for (int xx = sx; xx < ex && xx < w; xx++) { sum += px[(yy * w + xx) * 4 + c]; cnt++; }
+                        pxSmall[(y * nw + x) * 4 + c] = (unsigned char)(cnt ? sum / cnt : 0);
+                    }
+                }
+            }
+            upPx = pxSmall; upW = nw; upH = nh;
+        }
+    }
+    GLint last = 0; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last);
+    GLuint tex = 0; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
+    // Mipmaps solo si el tamano es potencia de 2 (en ES 2.0 no hay mipmaps
+    // para tamanos no potencia de 2; en ES 3.x si, pero asi no se rompe nada).
+    bool pot = (upW & (upW - 1)) == 0 && (upH & (upH - 1)) == 0;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, pot ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, upW, upH, 0, GL_RGBA, GL_UNSIGNED_BYTE, upPx);
+    if (pot) glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)last);
+    if (pxSmall) free(pxSmall);
+    stbi_image_free(px);
+    return glGetError() == GL_NO_ERROR ? tex : 0;
+}
+static GLuint LoadPngToGl(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
+    if (len <= 0 || len > 4*1024*1024) { fclose(f); return 0; }
+    std::vector<unsigned char> buf((size_t)len);
+    if (fread(buf.data(), 1, buf.size(), f) != buf.size()) { fclose(f); return 0; }
+    fclose(f);
+    return LoadPngFromMemory(buf.data(), buf.size());
+}
+// v2.29: un icono: primero la carpeta (si el usuario puso su propio PNG, manda),
+// si no esta, el PNG incrustado en el .so. srcOut dice de donde salio.
+static GLuint LoadIconFileOrEmbedded(int set, int idx, const std::string& path, const char** srcOut) {
+    GLuint t = LoadPngToGl(path);
+    if (t) { if (srcOut) *srcOut = "archivo"; return t; }
+    const char* b64 = EmbeddedIconB64(set, idx);
+    if (b64) {
+        std::vector<unsigned char> raw = B64Decode(b64);
+        if (!raw.empty()) t = LoadPngFromMemory(raw.data(), raw.size());
+    }
+    if (t) { if (srcOut) *srcOut = "en el .so"; return t; }
+    if (srcOut) *srcOut = "-";
+    return 0;
+}
+// v2.28: carga un juego de iconos (normales de radio/ o a color de radio_color/)
+// con los mismos respaldos de carpeta que antes.
+// v2.29: la carpeta ya es opcional: si el PNG no esta en la carpeta, se usa el
+// incrustado en el .so (icons_embedded.h). La carpeta sigue mandando si existe.
+static void LoadIconSet(GLuint* tex, const char* subdir, const char* etiqueta, int set) {
+    // v2.36: la carpeta VHudRadio/ ya no existe; los iconos se buscan en
+    // las carpetas vhud/ viejas y si no, van los incrustados en el .so.
+    std::string dir = g_gameFilesDir + "/vhud/" + subdir;
+    { struct stat st; if (stat((dir + "/radio_1.png").c_str(), &st) != 0) dir = g_vhudDir + "/" + subdir; }
+    Log("carpeta de iconos %s: %s/ (si falta, va el incrustado en el .so)", etiqueta, dir.c_str());
+    int ok = 0;
+    for (int i = 1; i <= 13; i++) {
+        const char* src = "-";
+        std::string p = dir + "/radio_" + std::to_string(i) + ".png";
+        tex[i] = LoadIconFileOrEmbedded(set, i, p, &src);
+        if (tex[i]) ok++;
+        Log("  %s %s radio_%d.png (%s)", etiqueta, tex[i] ? "ok    " : "FALTA ", i, src);
+    }
+    const char* src0 = "-";
+    tex[0] = LoadIconFileOrEmbedded(set, 0, dir + "/radio_current.png", &src0);
+    Log("  %s %s radio_current.png (%s)", etiqueta, tex[0] ? "ok    " : "FALTA ", src0);
+    Log("iconos %s cargados: %d/13 (+marco %s)", etiqueta, ok, tex[0] ? "si" : "no");
+}
+static void LoadRadioTextures() {
+    if (g_texTried) return; g_texTried = true;
+    // v2.16: iconos normales en files del juego (Android/data/.../files/VHudRadio/radio/);
+    // si no estan ahi, se busca en la carpeta de antes (files/vhud/radio) y
+    // luego en /storage/emulated/0/vhud/radio/.
+    LoadIconSet(g_tex, "radio", "normales", 0);
+    // v2.28: iconos a color en VHudRadio/radio_color/ (mismos respaldos); si a
+    // alguno le falta, se usa el normal de esa emisora para que la rueda no se rompa.
+    LoadIconSet(g_texColor, "radio_color", "a color", 1);
+    for (int i = 0; i <= 13; i++) if (!g_texColor[i]) g_texColor[i] = g_tex[i];
+    int ok = 0; for (int i = 1; i <= 13; i++) if (g_tex[i]) ok++;
+    if (ok == 0) Log("  !! sin iconos ni en carpeta ni incrustados en el .so (no deberia pasar)");
+}
+// v2.28: el icono que se dibuja segun el interruptor (a color si esta activo y existe)
+static GLuint IconTex(int i) {
+    if (i < 0 || i > 13) return 0;
+    if (g_cfg.iconosColor && g_texColor[i]) return g_texColor[i];
+    return g_tex[i];
+}
+
+// ---- cambiar de estacion: solo con funciones que resolvieron ----
+static void ApplyStation(int id) {
+    if (id < 1 || id > 13) return;
+    // v2.32: restaurar la escala de tiempo ANTES de cambiar la estacion.
+    // El mod de User Tracks (SAUserTracks) arranca su reproductor al
+    // llamar StartRadio; si lo hace con la camara lenta puesta (0.30),
+    // su decodificador MP3 arranca a ritmo lento y la cancion se escucha
+    // trabada aunque la rueda ya se haya cerrado. Con la escala en 1.00
+    // el mod arranca a ritmo normal. La rueda se cierra justo despues,
+    // asi que el efecto visual no cambia.
+    if (g_timeScale) *g_timeScale = 1.0f;
+    if (g_slowActive) *g_slowActive = false;
+    // v2.47 (Google AI Mode): restaurar TAMBIEN ms_fSlowMotionScale.
+    // La v2.32 solo restauraba dos de las tres; con g_slowScale en 0.30
+    // SAUserTracks puede arrancar su MP3 a ritmo lento al interceptar
+    // StartRadio(12).
+    if (g_slowScale) *g_slowScale = 1.0f;
+    // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
+    // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
+    if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0)", id, kStationName[id]); g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); }
+    else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
+    else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
+    else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
+    else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
+    g_current = id;
+    // verificar lo que el juego dice que suena ahora (diagnostico v1.2)
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == id ? "" : "  <-- NO COINCIDE"); }
+}
+static void RefreshCurrent() {
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); if (v >= 1 && v <= 13) g_current = v; return; }
+    if (g_getStationTrack && g_trackManager) { int v = (int)g_getStationTrack(g_trackManager); if (v >= 1 && v <= 13) g_current = v; }
+}
+
+// Abrir/cerrar la rueda con periodo refractario: el doble toque al claxon llega
+// por DOS caminos a la vez (widget 7 y zona tactil) y sin esto la abriria y la
+// cerraria en el mismo instante.
+static void ToggleWheel(const char* why) {
+    static auto lastToggle = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+    auto now = std::chrono::steady_clock::now();
+    if (now - lastToggle < std::chrono::milliseconds(600)) return;
+    lastToggle = now;
+    if (!g_open) { g_open = true; g_ignoreNextUp = true; RefreshCurrent(); g_selected = g_current; Log("rueda abierta por %s (estacion actual %d %s)", why, g_current, kStationName[g_current]); PlayClick(false); }
+    else { g_open = false; g_centerTap = false; Log("rueda cerrada por %s", why); }
+}
+
+
+// ---- toque: como ARCX (type 2 = pulsar, 3 = mover, 1/4 = soltar) ----
+static std::mutex g_inMtx;
+struct TouchEv { int kind; float x, y; };
+static std::vector<TouchEv> g_evs;
+static bool g_cap = false;
+static uintptr_t (*Touch_orig)(int, int, int, int);
+static uintptr_t Touch_hook(int type, int idx, int x, int y) {
+    bool down = (type == 2), up = (type == 1 || type == 4);
+    if (idx == 0) {
+        std::lock_guard<std::mutex> lk(g_inMtx);
+        if (down) { g_evs.push_back({0, (float)x, (float)y}); g_evs.push_back({1, 0, 0}); }
+        // v2.18: el soltar SIEMPRE se encola CON su posicion - la v2.17 lo
+        // encolaba sin posicion (solo {2}) y la rueda se cerraba sin cambiar:
+        // la posicion del soltar era lo que rearmaba g_wheelTouch justo antes
+        // de aplicar el cambio (como en la v2.16). El soltar sigue llegando
+        // siempre (el arreglo del doble toque de la v2.17 se mantiene).
+        else if (up) { g_evs.push_back({0, (float)x, (float)y}); g_evs.push_back({2, 0, 0}); }
+        // v2.4: sin esto el panel no funcionaba - los eventos de mover solo
+        // llegaban a ImGui con la rueda abierta; con el panel abierto (rueda cerrada)
+        // ImGui recibia el toque de bajar pero nunca el de mover
+        else if (g_open || g_cap || g_settings || g_preview || g_btnDrag) { g_evs.push_back({0, (float)x, (float)y}); }
+    }
+    return Touch_orig ? Touch_orig(type, idx, x, y) : 0;
+}
+
+// ---- dibujo ImGui justo antes de eglSwapBuffers (patron ARCX) ----
+static bool g_inited = false, g_failed = false;
+static EGLBoolean (*Swap_orig)(EGLDisplay, EGLSurface);
+static bool PatchGot(const char* libName, const char* sym, void* repl, void** orig) {
+    struct Ctx { const char* lib; uintptr_t base; const ElfW(Phdr)* ph; int n; } c = {libName, 0, nullptr, 0};
+    dl_iterate_phdr([](struct dl_phdr_info* i, size_t, void* d) -> int {
+        Ctx* x = (Ctx*)d;
+        if (i->dlpi_name && strstr(i->dlpi_name, x->lib)) { x->base = i->dlpi_addr; x->ph = i->dlpi_phdr; x->n = i->dlpi_phnum; return 1; }
+        return 0; }, &c);
+    if (!c.ph) return false;
+    const ElfW(Dyn)* dyn = nullptr;
+    for (int i = 0; i < c.n; i++) if (c.ph[i].p_type == PT_DYNAMIC) dyn = (const ElfW(Dyn)*)(c.base + c.ph[i].p_vaddr);
+    if (!dyn) return false;
+    auto fix = [&](uintptr_t p) { return p < c.base ? p + c.base : p; };
+    const ElfW(Sym)* symtab = nullptr; const char* strtab = nullptr;
+    const ElfW(Rela)* jmprel = nullptr; size_t jmpsz = 0; const ElfW(Rela)* rela = nullptr; size_t relasz = 0;
+    for (; dyn->d_tag != DT_NULL; dyn++) switch (dyn->d_tag) {
+        case DT_SYMTAB: symtab = (const ElfW(Sym)*)fix(dyn->d_un.d_ptr); break;
+        case DT_STRTAB: strtab = (const char*)fix(dyn->d_un.d_ptr); break;
+        case DT_JMPREL: jmprel = (const ElfW(Rela)*)fix(dyn->d_un.d_ptr); break;
+        case DT_PLTRELSZ: jmpsz = dyn->d_un.d_val; break;
+        case DT_RELA: rela = (const ElfW(Rela)*)fix(dyn->d_un.d_ptr); break;
+        case DT_RELASZ: relasz = dyn->d_un.d_val; break;
+        default: break; }
+    if (!symtab || !strtab) return false;
+    auto scan = [&](const ElfW(Rela)* r, size_t bytes) -> bool {
+        if (!r) return false;
+        for (size_t k = 0; k < bytes / sizeof(ElfW(Rela)); k++) {
+            unsigned type = ELF64_R_TYPE(r[k].r_info); unsigned si = ELF64_R_SYM(r[k].r_info);
+            if ((type != 1026 && type != 1025) || si == 0) continue;
+            if (strcmp(strtab + symtab[si].st_name, sym) != 0) continue;
+            void** slot = (void**)(c.base + r[k].r_offset);
+            long pg = sysconf(_SC_PAGESIZE); uintptr_t page = (uintptr_t)slot & ~((uintptr_t)pg - 1);
+            if (mprotect((void*)page, (size_t)pg, PROT_READ | PROT_WRITE) != 0) return false;
+            *orig = *slot; *slot = repl; return true; }
+        return false; };
+    return scan(jmprel, jmpsz) || scan(rela, relasz);
+}
+
+static ImFont* g_fontTitle = nullptr;  // v2.1: letra del centro (Roboto Condensed negrita del sistema)
+static ImFont* g_fontUI = nullptr;  // v2.3: letra del panel (32 px, legible al tacto)
+
+// v2.16: tamano y posicion del boton flotante (se arrastra con el dedo y se
+// bloquea desde el panel; la etiqueta va a la izquierda, o a la derecha si
+// el boton esta en la mitad izquierda de la pantalla para que no se salga).
+static float BtnSize(float H) { return H * 0.06f * g_cfg.btnTam / 100.0f; }
+static ImVec2 BtnPos(float W, float H, float bs) {
+    if (g_cfg.btnX >= 0.0f && g_cfg.btnY >= 0.0f) return ImVec2(g_cfg.btnX * W, g_cfg.btnY * H);
+    return ImVec2(W - bs * 1.15f, H * 0.86f);  // v2.2: mas abajo (defecto)
+}
+// v2.2: geometria del boton flotante (icono + etiqueta con estacion y genero).
+// El toque vale en todo el conjunto (icono o etiqueta).
+static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, ImVec2& labelSize, float& bs) {
+    bs = BtnSize(H);
+    iconPos = BtnPos(W, H, bs);
+    ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
+    float ns = H * 0.022f, ts = H * 0.018f;
+    ImVec2 nsz = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, kStationName[g_current], nullptr);
+    ImVec2 tsz = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, Genre(g_current), nullptr);
+    float lw = (nsz.x > tsz.x ? nsz.x : tsz.x) + H * 0.02f;
+    float lh = ns + ts + H * 0.02f;
+    labelSize = ImVec2(lw, lh);
+    if (iconPos.x < W * 0.5f) labelPos = ImVec2(iconPos.x + bs + H * 0.015f, iconPos.y + bs * 0.5f - lh * 0.5f);
+    else labelPos = ImVec2(iconPos.x - H * 0.015f - lw, iconPos.y + bs * 0.5f - lh * 0.5f);
+}
+static bool FloatBtnHit(float x, float y, float W, float H) {
+    if (!g_hasRadio) return false;  // v2.16: sin radio no hay boton que tocar
+    ImVec2 ip, lp, ls; float bs;
+    FloatBtnGeom(W, H, ip, lp, ls, bs);
+    if (x >= ip.x && x <= ip.x + bs && y >= ip.y && y <= ip.y + bs) return true;
+    if (x >= lp.x && x <= lp.x + ls.x && y >= lp.y && y <= lp.y + ls.y) return true;
+    return false;
+}
+
+// v2.33: boton flotante con OpenGL directo (sin ImGui) para no hacer un
+// cuadro ImGui cada cuadro solo por el boton. El decodificador MP3 de
+// SAUserTracks se quedaba sin CPU en el A14; ARCX no dibuja ImGui cuando
+// su menu esta cerrado. La rueda/panel/vista previa siguen con ImGui.
+struct GLBtnVert { float x, y, u, v, r, g, b, a; };
+static GLuint g_glBtnProg = 0, g_glBtnVBO = 0, g_glBtnWhite = 0, g_glBtnVAO = 0;
+static bool g_glBtnTried = false, g_glBtnOk = false, g_glBtnUseVAO = false;
+#ifndef GL_VERTEX_ARRAY_BINDING
+#define GL_VERTEX_ARRAY_BINDING 0x85B5
+#endif
+typedef void (*PFNGLGENVA)(GLsizei, GLuint*);
+typedef void (*PFNGLBINDVA)(GLuint);
+static PFNGLGENVA g_pGenVA = nullptr;
+static PFNGLBINDVA g_pBindVA = nullptr;
+static GLuint GLBtnCompile(GLenum type, const char* src) {
+    GLuint sh = glCreateShader(type);
+    glShaderSource(sh, 1, &src, nullptr);
+    glCompileShader(sh);
+    GLint ok = 0; glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) { char buf[512]; glGetShaderInfoLog(sh, sizeof(buf), nullptr, buf); Log("  !! boton GL: shader no compilo: %s", buf); glDeleteShader(sh); return 0; }
+    return sh;
+}
+static bool GLBtnInit() {
+    if (g_glBtnTried) return g_glBtnOk;
+    g_glBtnTried = true;
+    const char* vs = "attribute vec2 aPos; attribute vec2 aUV; attribute vec4 aColor;\n"
+        "varying vec2 vUV; varying vec4 vColor; uniform mat4 uProj;\n"
+        "void main() { gl_Position = uProj * vec4(aPos, 0.0, 1.0); vUV = aUV; vColor = aColor; }\n";
+    const char* fs = "precision mediump float; varying vec2 vUV; varying vec4 vColor;\n"
+        "uniform sampler2D uTex;\n"
+        "void main() { vec4 t = texture2D(uTex, vUV); gl_FragColor = vec4(vColor.rgb * t.rgb, vColor.a * t.a); }\n";
+    GLuint vsh = GLBtnCompile(GL_VERTEX_SHADER, vs);
+    GLuint fsh = GLBtnCompile(GL_FRAGMENT_SHADER, fs);
+    if (!vsh || !fsh) { if (vsh) glDeleteShader(vsh); if (fsh) glDeleteShader(fsh); return false; }
+    g_glBtnProg = glCreateProgram();
+    glAttachShader(g_glBtnProg, vsh); glAttachShader(g_glBtnProg, fsh);
+    glBindAttribLocation(g_glBtnProg, 0, "aPos");
+    glBindAttribLocation(g_glBtnProg, 1, "aUV");
+    glBindAttribLocation(g_glBtnProg, 2, "aColor");
+    glLinkProgram(g_glBtnProg);
+    GLint ok = 0; glGetProgramiv(g_glBtnProg, GL_LINK_STATUS, &ok);
+    glDeleteShader(vsh); glDeleteShader(fsh);
+    if (!ok) { char buf[512]; glGetProgramInfoLog(g_glBtnProg, sizeof(buf), nullptr, buf); Log("  !! boton GL: programa no enlazo: %s", buf); glDeleteProgram(g_glBtnProg); g_glBtnProg = 0; return false; }
+    glGenBuffers(1, &g_glBtnVBO);
+    // v2.34: VAO propio. Sin el, glVertexAttribPointer toca el VAO del
+    // juego (ES 3.x) y la pantalla se pone en negro al subir a un auto.
+    g_pGenVA = (PFNGLGENVA)eglGetProcAddress("glGenVertexArrays");
+    g_pBindVA = (PFNGLBINDVA)eglGetProcAddress("glBindVertexArray");
+    if (g_pGenVA && g_pBindVA) {
+        g_pGenVA(1, &g_glBtnVAO);
+        g_pBindVA(g_glBtnVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+        glEnableVertexAttribArray(0); glEnableVertexAttribArray(1); glEnableVertexAttribArray(2);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)0);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)8);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)16);
+        g_pBindVA(0);
+        g_glBtnUseVAO = true;
+        Log("boton GL: VAO %u listo", (unsigned)g_glBtnVAO);
+    } else {
+        // Sin VAO (ES 2.0): no hay VAO que corromper; los atributos se
+        // ponen cada cuadro en DrawButtonGL.
+        g_glBtnUseVAO = false;
+        Log("boton GL: sin VAO (ES 2.0)");
+    }
+    unsigned char px[4] = {255, 255, 255, 255};
+    glGenTextures(1, &g_glBtnWhite);
+    glBindTexture(GL_TEXTURE_2D, g_glBtnWhite);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    g_glBtnOk = true;
+    Log("boton GL listo (programa %u)", (unsigned)g_glBtnProg);
+    return true;
+}
+// Decodifica un caracter UTF-8. Devuelve los bytes consumidos (1-4), 0 si es invalido.
+// (ImTextCharFromUtf8 es interna de ImGui y no esta en imgui.h de la v1.89.7.)
+static int GLBtnUtf8(unsigned int* out, const char* p) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 0x80) { *out = c; return 1; }
+    if ((c & 0xE0) == 0xC0) {
+        unsigned char c1 = (unsigned char)p[1];
+        if ((c1 & 0xC0) != 0x80) return 0;
+        *out = ((c & 0x1F) << 6) | (c1 & 0x3F);
+        return 2;
+    }
+    if ((c & 0xF0) == 0xE0) {
+        unsigned char c1 = (unsigned char)p[1], c2 = (unsigned char)p[2];
+        if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) return 0;
+        *out = ((c & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+        return 3;
+    }
+    if ((c & 0xF8) == 0xF0) {
+        unsigned char c1 = (unsigned char)p[1], c2 = (unsigned char)p[2], c3 = (unsigned char)p[3];
+        if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) return 0;
+        *out = ((c & 0x07) << 18) | ((c1 & 0x3F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+        return 4;
+    }
+    return 0;
+}
+// Dibuja el boton flotante con OpenGL directo. Devuelve false si no se pudo
+// (entonces el llamador usa ImGui como antes). W/H en pixeles.
+static bool DrawButtonGL(float W, float H) {
+    if (!GLBtnInit()) return false;
+    ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
+    if (!font) return false;
+    ImTextureID atlas = ImGui::GetIO().Fonts->TexID;
+    if (!atlas) return false;
+    GLuint atlasTex = (GLuint)(uintptr_t)atlas;
+    ImVec2 bp, lp, ls; float bs;
+    FloatBtnGeom(W, H, bp, lp, ls, bs);
+    float ns = H * 0.022f, ts = H * 0.018f;
+    int op = g_cfg.btnOpac * 255 / 100;
+    float opF = op / 255.0f;
+    std::vector<GLBtnVert> vBg, vTxt, vIco;
+    auto quadTo = [&](std::vector<GLBtnVert>& dst, float x0, float y0, float x1, float y1, float u0, float vv0, float u1, float v1, float r, float g, float b, float a) {
+        dst.push_back({x0, y0, u0, vv0, r, g, b, a});
+        dst.push_back({x1, y0, u1, vv0, r, g, b, a});
+        dst.push_back({x1, y1, u1, v1, r, g, b, a});
+        dst.push_back({x0, y0, u0, vv0, r, g, b, a});
+        dst.push_back({x1, y1, u1, v1, r, g, b, a});
+        dst.push_back({x0, y1, u0, v1, r, g, b, a});
+    };
+    // Fondo de la etiqueta (negro semitransparente, textura blanca 1x1).
+    quadTo(vBg, lp.x, lp.y, lp.x + ls.x, lp.y + ls.y, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 140.0f * opF / 255.0f);
+    // Texto: nombre y genero con los glifos del atlas de ImGui (UTF-8).
+    auto drawText = [&](const char* str, float x, float y, float size, float r, float g, float b, float a) {
+        float scale = size / font->FontSize;
+        float cx = x;
+        const char* p = str;
+        while (*p) {
+            unsigned int cp = 0;
+            int n = GLBtnUtf8(&cp, p);
+            if (n <= 0) break;
+            p += n;
+            const ImFontGlyph* gl = font->FindGlyph((ImWchar)cp);
+            if (!gl) continue;
+            float x0 = cx + gl->X0 * scale, y0 = y + gl->Y0 * scale;
+            float x1 = cx + gl->X1 * scale, y1 = y + gl->Y1 * scale;
+            quadTo(vTxt, x0, y0, x1, y1, gl->U0, gl->V0, gl->U1, gl->V1, r, g, b, a);
+            cx += gl->AdvanceX * scale;
+        }
+    };
+    drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
+    drawText(Genre(g_current), lp.x + H * 0.01f, lp.y + H * 0.008f + ns, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+    // Icono de la estacion.
+    GLuint it = IconTex(g_current);
+    if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
+    // Guardar estado GL del juego (incluido el VAO y el framebuffer).
+    GLint prevProg = 0, prevTex = 0, prevArr = 0, prevElem = 0, prevActive = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArr);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &prevElem);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
+    GLint prevVAO = 0, prevFB = 0;
+    if (g_glBtnUseVAO) glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean prevDepth = glIsEnabled(GL_DEPTH_TEST);
+    GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+    // Proyeccion ortografica (pixeles -> NDC, Y hacia abajo).
+    float proj[16] = {0};
+    proj[0] = 2.0f / W; proj[5] = -2.0f / H; proj[10] = -1.0f; proj[12] = -1.0f; proj[13] = 1.0f; proj[15] = 1.0f;
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (g_glBtnUseVAO) g_pBindVA(g_glBtnVAO);
+    else {
+        glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+        glEnableVertexAttribArray(0); glEnableVertexAttribArray(1); glEnableVertexAttribArray(2);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)0);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)8);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)16);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(g_glBtnProg);
+    GLint uProj = glGetUniformLocation(g_glBtnProg, "uProj");
+    GLint uTex = glGetUniformLocation(g_glBtnProg, "uTex");
+    glUniformMatrix4fv(uProj, 1, GL_FALSE, proj);
+    glUniform1i(uTex, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+    auto drawVerts = [&](const std::vector<GLBtnVert>& verts, GLuint tex) {
+        if (verts.empty()) return;
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(GLBtnVert), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    };
+    drawVerts(vBg, g_glBtnWhite);
+    drawVerts(vTxt, atlasTex);
+    drawVerts(vIco, it ? it : g_glBtnWhite);
+    // Circulo blanco alrededor del icono (linea).
+    {
+        const int SEG = 40;
+        std::vector<GLBtnVert> circ;
+        float cx = bp.x + bs / 2, cy = bp.y + bs / 2, rr = bs / 2;
+        for (int i = 0; i <= SEG; i++) {
+            float a = (float)i / SEG * 2.0f * 3.14159265f;
+            circ.push_back({cx + cosf(a) * rr, cy + sinf(a) * rr, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 200.0f * opF / 255.0f});
+        }
+        if (!circ.empty()) {
+            glBindTexture(GL_TEXTURE_2D, g_glBtnWhite);
+            glBufferData(GL_ARRAY_BUFFER, circ.size() * sizeof(GLBtnVert), circ.data(), GL_STREAM_DRAW);
+            glDrawArrays(GL_LINE_STRIP, 0, (GLsizei)circ.size());
+        }
+    }
+    // Restaurar estado.
+    if (g_glBtnUseVAO) g_pBindVA((GLuint)prevVAO);
+    else { glDisableVertexAttribArray(0); glDisableVertexAttribArray(1); glDisableVertexAttribArray(2); }
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFB);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArr);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)prevElem);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
+    glActiveTexture((GLenum)prevActive);
+    glUseProgram((GLuint)prevProg);
+    if (prevBlend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (prevScissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    if (prevDepth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    return true;
+}
+
+static void DrawWheel(float W, float H) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
+    // v2.2: boton flotante + etiqueta con estacion y genero; v2.16: sin radio
+    // el boton no se ve (y el panel tampoco se puede abrir); con opacidad ajustable
+    if (g_hasRadio && g_cfg.botonVisible) {
+        ImVec2 bp, lp, ls; float bs;
+        FloatBtnGeom(W, H, bp, lp, ls, bs);
+        float ns = H * 0.022f, ts = H * 0.018f;
+        int op = g_cfg.btnOpac * 255 / 100;
+        dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
+        dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
+        dl->AddText(font, ts, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f + ns), IM_COL32(200,225,235,230 * op / 255), Genre(g_current));
+        { GLuint it = IconTex(g_current); if (it) dl->AddImage((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op)); else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
+        dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
+    }
+
+    if (!g_open) return;
+    // v2.2: rueda estilo GTA V - 12 logos en circulo + apagar la radio en el centro
+    ImVec2 c(W * 0.5f, H * 0.5f);
+    float R = WheelR(H);
+    float Ri = WheelRi(H);
+    float s = WheelIconS(H);
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB, g_cfg.fondo * 255 / 100));  // v2.17: color de fondo ajustable (oscuridad = alfa)
+    dl->AddCircle(c, Ri, IM_COL32(255, 255, 255, 70), 64, 2.0f);          // anillo fino
+    for (int i = 1; i <= 13; i++) {
+        float a0 = -3.14159265f/2 + (i-1) * 2*3.14159265f/13.0f;
+        float a1 = a0 + 2*3.14159265f/13.0f;
+        float am = (a0 + a1) * 0.5f;
+        ImVec2 p(c.x + cosf(am) * Ri, c.y + sinf(am) * Ri);
+        bool sel = (i == g_selected);
+        float si = sel ? s * 1.12f : s;
+        GLuint it = IconTex(i);
+        if (it) {
+            ImVec4 tint = sel ? ImVec4(1, 1, 1, 1) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f);
+            dl->AddImage((ImTextureID)(uintptr_t)it, ImVec2(p.x-si, p.y-si), ImVec2(p.x+si, p.y+si), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint));
+        } else dl->AddCircleFilled(p, si*0.5f, IM_COL32(255,255,255,120));
+        if (sel) dl->AddCircle(p, si, RingColor(), 48, 3.5f);              // anillo de seleccion (color ajustable)
+        else if (i == g_current) dl->AddCircle(p, si, IM_COL32(255, 255, 255, 220), 48, 2.0f);
+    }
+    // centro: nombre de la estacion seleccionada + genero (estilo GTA V)
+    float nameSize = H * 0.05f, tagSize = H * 0.024f;
+    const char* name = kStationName[g_selected];
+    const char* tag = Genre(g_selected);
+    ImVec2 nsz = font->CalcTextSizeA(nameSize, FLT_MAX, 0.0f, name, nullptr);
+    ImVec2 tsz = font->CalcTextSizeA(tagSize, FLT_MAX, 0.0f, tag, nullptr);
+    // v2.6: el texto del centro usa el color elegido (por defecto blanco)
+    ImU32 txtCol = IM_COL32(g_cfg.textoR, g_cfg.textoG, g_cfg.textoB, 255);
+    ImU32 tagCol = IM_COL32((int)(g_cfg.textoR * 0.8f), (int)(g_cfg.textoG * 0.8f), (int)(g_cfg.textoB * 0.8f), 230);
+    dl->AddText(font, nameSize, ImVec2(c.x - nsz.x*0.5f, c.y - nsz.y*0.5f - H*0.015f), txtCol, name);
+    dl->AddText(font, tagSize, ImVec2(c.x - tsz.x*0.5f, c.y + nsz.y*0.5f + H*0.005f), tagCol, tag);
+    // v2.2: marca de vista previa
+    if (g_preview) {
+        const char* pv = S(STR_PREVIEW_LABEL);
+        ImVec2 ps = font->CalcTextSizeA(H * 0.03f, FLT_MAX, 0.0f, pv, nullptr);
+        dl->AddText(font, H * 0.03f, ImVec2(c.x - ps.x*0.5f, H * 0.03f), IM_COL32(255,255,255,230), pv);
+    }
+}
+
+// ---- diseno del panel (azul casi oscuro + degradado azul -> azul claro) --------
+static ImVec4 Mix(const ImVec4& a, const ImVec4& b, float t) {
+    return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w);
+}
+static float Clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+static const ImVec4 kPanelAccent(0.10f, 0.45f, 1.0f, 1.0f);   // azul (v2.6: el panel ya no es violeta)
+static const ImVec4 kPanelGradBlue(0.05f, 0.55f, 1.00f, 1.0f); // azul del degradado del logo
+static const ImVec4 kPanelGradCyan(0.10f, 0.65f, 1.0f, 1.0f); // azul claro del degradado
+static ImVec4 PanelGradL() { return Mix(kPanelAccent, kPanelGradBlue, 0.55f); }
+static ImVec4 PanelGradR() { return Mix(kPanelAccent, kPanelGradCyan, 0.55f); }
+// Borde con degradado (izquierda -> derecha) siguiendo un rectangulo redondeado.
+// Se dibuja como segmentos de linea gruesa con el color interpolado por la x;
+// un circulo en cada union evita huecos en las esquinas (igual que en ARCX).
+static void AddGradientBorder(ImDrawList* dl, const ImVec2& p0, const ImVec2& p1, float radius, float thick, const ImVec4& colL, const ImVec4& colR) {
+    const float w = p1.x - p0.x, h = p1.y - p0.y;
+    const float r = fminf(radius, fminf(w, h) * 0.5f);
+    const int ES = 8, AS = 5;
+    ImVec2 pts[64];
+    int n = 0;
+    auto push = [&](float x, float y) { if (n < 64) pts[n++] = ImVec2(x, y); };
+    for (int i = 0; i <= ES; i++) push(p0.x + r + (w - 2.0f * r) * i / (float)ES, p0.y);
+    for (int i = 1; i <= AS; i++) { float a = -1.5707963f + 1.5707963f * i / (float)AS; push(p1.x - r + cosf(a) * r, p0.y + r + sinf(a) * r); }
+    for (int i = 1; i <= ES; i++) push(p1.x, p0.y + r + (h - 2.0f * r) * i / (float)ES);
+    for (int i = 1; i <= AS; i++) { float a = 1.5707963f * i / (float)AS; push(p1.x - r + cosf(a) * r, p1.y - r + sinf(a) * r); }
+    for (int i = 1; i <= ES; i++) push(p1.x - r - (w - 2.0f * r) * i / (float)ES, p1.y);
+    for (int i = 1; i <= AS; i++) { float a = 1.5707963f + 1.5707963f * i / (float)AS; push(p0.x + r + cosf(a) * r, p1.y - r + sinf(a) * r); }
+    for (int i = 1; i <= ES; i++) push(p0.x, p1.y - r - (h - 2.0f * r) * i / (float)ES);
+    for (int i = 1; i <= AS; i++) { float a = 3.14159265f + 1.5707963f * i / (float)AS; push(p0.x + r + cosf(a) * r, p0.y + r + sinf(a) * r); }
+    for (int i = 0; i < n; i++) {
+        ImVec2 a = pts[i], b = pts[(i + 1) % n];
+        float f = ((a.x + b.x) * 0.5f - p0.x) / w;
+        if (f < 0.0f) f = 0.0f; if (f > 1.0f) f = 1.0f;
+        ImU32 col = ImGui::GetColorU32(ImVec4(colL.x + (colR.x - colL.x) * f, colL.y + (colR.y - colL.y) * f,
+                                              colL.z + (colR.z - colL.z) * f, colL.w + (colR.w - colL.w) * f));
+        dl->AddLine(a, b, col, thick);
+        dl->AddCircleFilled(a, thick * 0.5f, col, 6);
+    }
+}
+// ---- panel RGB tactil (como el selector de ARCX 3.1.38) ----------------------
+// El anillo se guarda en RGB (g_cfg), pero el panel trabaja en HSV: el cuadro
+// grande es saturacion (X) / valor (Y) para el tono actual, y la barra vertical
+// es el tono. El HSV se guarda aparte; cuando no se esta arrastrando, se
+// sincroniza desde g_cfg (asi refleja tambien el restablecer).
+static float g_pickH = 0.52f, g_pickS = 1.0f, g_pickV = 1.0f;
+static bool g_cfgDirty = false;  // v2.5: algo cambio y aun no se guardo en el .ini
+static int g_pickTarget = -1;  // v2.6: -1 = selector cerrado, 0 = anillo, 1 = texto del centro
+static void PickerSyncFromRGB() {
+    int r, g, b;
+    if (g_pickTarget == 1) { r = g_cfg.textoR; g = g_cfg.textoG; b = g_cfg.textoB; }
+    else if (g_pickTarget == 2) { r = g_cfg.fondoR; g = g_cfg.fondoG; b = g_cfg.fondoB; }  // v2.17: color del fondo
+    else { r = g_cfg.ringR; g = g_cfg.ringG; b = g_cfg.ringB; }
+    float h, s, v;
+    ImGui::ColorConvertRGBtoHSV(r / 255.0f, g / 255.0f, b / 255.0f, h, s, v);
+    // v2.24: un color gris/blanco no tiene tono (S~0); no se borra el tono
+    // elegido por el usuario (si no, la barra de tono volvia sola a rojo)
+    if (s > 0.02f) g_pickH = h;
+    g_pickS = s; g_pickV = v;
+}
+// v2.24: rect del selector (cuadro SV + barra de tono) del frame anterior;
+// el desplazamiento lo usa para no robar los arrastres del color
+static ImVec2 g_pickRect0, g_pickRect1;
+static void PickerApplyToRGB() {
+    float r, g, b;
+    ImGui::ColorConvertHSVtoRGB(g_pickH, g_pickS, g_pickV, r, g, b);
+    int ri = (int)(r * 255.0f + 0.5f), gi = (int)(g * 255.0f + 0.5f), bi = (int)(b * 255.0f + 0.5f);
+    if (g_pickTarget == 1) { g_cfg.textoR = ri; g_cfg.textoG = gi; g_cfg.textoB = bi; }
+    else if (g_pickTarget == 2) { g_cfg.fondoR = ri; g_cfg.fondoG = gi; g_cfg.fondoB = bi; }  // v2.17: color del fondo
+    else { g_cfg.ringR = ri; g_cfg.ringG = gi; g_cfg.ringB = bi; }
+}
+// ---- controles propios del panel (no los de ImGui por defecto) ----------------
+// Deslizador propio: etiqueta a la izquierda, valor a la derecha, pista
+// redondeada con relleno azul y tirador blanco. Se arrastra con el dedo.
+// v2.23: iconos de la imagen de referencia (sol, expandir, globo, opacidad,
+// candado, restablecer, ojo) - se dibujan con primitivas de ImGui
+enum PanelIcon { IC_NONE = 0, IC_SUN, IC_SIZE, IC_GLOBE, IC_OPAC, IC_LOCK, IC_RESET, IC_EYE };
+static void DrawPanelIcon(ImDrawList* dl, float cx, float cy, float r, int kind, ImU32 col, float H) {
+    float th = H * 0.002f;  // grosor de las lineas
+    switch (kind) {
+    case IC_SUN: {  // sol: circulo + 8 rayos
+        dl->AddCircle(ImVec2(cx, cy), r * 0.45f, col, 16, th);
+        for (int k = 0; k < 8; k++) {
+            float a = (float)k * 3.14159f / 4.0f;
+            dl->AddLine(ImVec2(cx + cosf(a) * r * 0.62f, cy + sinf(a) * r * 0.62f), ImVec2(cx + cosf(a) * r, cy + sinf(a) * r), col, th);
+        }
+        break; }
+    case IC_SIZE: {  // expandir: flecha doble en diagonal (arriba-derecha y abajo-izquierda)
+        float o = r * 0.55f, a = r * 0.35f;
+        dl->AddLine(ImVec2(cx - o, cy + o), ImVec2(cx + o, cy - o), col, th);
+        dl->AddLine(ImVec2(cx + o, cy - o), ImVec2(cx + o - a, cy - o), col, th);
+        dl->AddLine(ImVec2(cx + o, cy - o), ImVec2(cx + o, cy - o + a), col, th);
+        dl->AddLine(ImVec2(cx - o, cy + o), ImVec2(cx - o + a, cy + o), col, th);
+        dl->AddLine(ImVec2(cx - o, cy + o), ImVec2(cx - o, cy + o - a), col, th);
+        break; }
+    case IC_GLOBE: {  // globo: circulo + meridiano + ecuador
+        dl->AddCircle(ImVec2(cx, cy), r * 0.8f, col, 24, th);
+        dl->AddLine(ImVec2(cx, cy - r * 0.8f), ImVec2(cx, cy + r * 0.8f), col, th);
+        dl->AddLine(ImVec2(cx - r * 0.8f, cy), ImVec2(cx + r * 0.8f, cy), col, th);
+        break; }
+    case IC_OPAC: {  // opacidad: cuadro 2x2 (dos cuadros llenos en diagonal)
+        float s = r * 0.7f;
+        dl->AddRectFilled(ImVec2(cx - s, cy - s), ImVec2(cx, cy), col, 0.0f);
+        dl->AddRectFilled(ImVec2(cx, cy), ImVec2(cx + s, cy + s), col, 0.0f);
+        dl->AddRect(ImVec2(cx - s, cy - s), ImVec2(cx + s, cy + s), col, 0.0f, 0, th);
+        break; }
+    case IC_LOCK: {  // candado: arco + cuerpo
+        dl->PathArcTo(ImVec2(cx, cy - r * 0.05f), r * 0.40f, 3.14159f, 6.28318f);
+        dl->PathStroke(col, 0, th);
+        dl->AddRectFilled(ImVec2(cx - r * 0.55f, cy - r * 0.05f), ImVec2(cx + r * 0.55f, cy + r * 0.70f), col, r * 0.15f);
+        break; }
+    case IC_RESET: {  // restablecer: arco casi completo + punta de flecha
+        float r0 = r * 0.70f, a0 = 0.6f, a1 = 5.6f;
+        dl->PathArcTo(ImVec2(cx, cy), r0, a0, a1);
+        dl->PathStroke(col, 0, th);
+        float ex = cx + cosf(a1) * r0, ey = cy + sinf(a1) * r0;
+        float tx = -sinf(a1), ty = cosf(a1), ah = r * 0.40f;
+        dl->AddLine(ImVec2(ex, ey), ImVec2(ex - tx * ah + ty * ah * 0.5f, ey - ty * ah - tx * ah * 0.5f), col, th);
+        dl->AddLine(ImVec2(ex, ey), ImVec2(ex - tx * ah - ty * ah * 0.5f, ey - ty * ah + tx * ah * 0.5f), col, th);
+        break; }
+    case IC_EYE: {  // ojo: circulo + pupila
+        dl->AddCircle(ImVec2(cx, cy), r * 0.70f, col, 24, th);
+        dl->AddCircleFilled(ImVec2(cx, cy), r * 0.30f, col, 16);
+        break; }
+    default: break;
+    }
+}
+static bool PanelSlider(const char* label, int* v, int vmin, int vmax, const char* fmt, float H, int icon) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float w = ImGui::GetContentRegionAvail().x;
+    ImVec2 lp = ImGui::GetCursorScreenPos();
+    // v2.23: icono a la izquierda + valor en pastilla a la derecha (como la imagen)
+    float ir = H * 0.013f;
+    float lx = lp.x;
+    if (icon != IC_NONE) {
+        DrawPanelIcon(dl, lp.x + ir, lp.y + ImGui::GetTextLineHeight() * 0.5f, ir, icon, IM_COL32(150, 190, 255, 255), H);
+        lx = lp.x + ir * 2.0f + H*0.008f;
+    }
+    dl->AddText(ImVec2(lx, lp.y), IM_COL32(150, 190, 255, 255), label);
+    char vb[16]; snprintf(vb, sizeof vb, fmt, *v);
+    ImVec2 vs = ImGui::CalcTextSize(vb);
+    dl->AddRectFilled(ImVec2(lp.x + w - vs.x - H*0.016f, lp.y - H*0.002f), ImVec2(lp.x + w, lp.y + vs.y + H*0.002f), IM_COL32(10, 18, 40, 255), H*0.006f);
+    dl->AddRect(ImVec2(lp.x + w - vs.x - H*0.016f, lp.y - H*0.002f), ImVec2(lp.x + w, lp.y + vs.y + H*0.002f), IM_COL32(120, 180, 255, 90), H*0.006f, 0, H*0.001f);
+    dl->AddText(ImVec2(lp.x + w - vs.x - H*0.008f, lp.y), IM_COL32(255, 255, 255, 255), vb);
+    ImGui::Dummy(ImVec2(w, ImGui::GetTextLineHeight()));
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    float zoneH = H * 0.045f;
+    ImGui::InvisibleButton(label, ImVec2(w, zoneH));
+    bool active = ImGui::IsItemActive();
+    ImGuiIO& io = ImGui::GetIO();
+    bool changed = false;
+    // v2.20: valor antes de pulsar (si el arrastre acaba siendo un
+    // desplazamiento del panel, se restaura para que la barra no se mueva)
+    static int* savedPtr = nullptr; static int savedVal = 0;
+    if (ImGui::IsItemActivated()) { savedPtr = v; savedVal = *v; }
+    if (g_panelScrolling && savedPtr == v) *v = savedVal;
+    // v2.25: al soltar se olvida el valor guardado; si no, un desplazamiento
+    // posterior (tocando otra parte del panel) restauraba la ultima barra
+    // ajustada a su valor anterior y se regresaba a su mismo lugar
+    if (!io.MouseDown[0]) savedPtr = nullptr;
+    if (active && io.MouseDown[0] && !g_panelScrolling) {
+        float f = (io.MousePos.x - p0.x) / w;
+        int nv = vmin + (int)(f * (float)(vmax - vmin) + 0.5f);
+        if (nv < vmin) nv = vmin; if (nv > vmax) nv = vmax;
+        if (nv != *v) { *v = nv; changed = true; }
+    }
+    float cy = p0.y + zoneH * 0.5f;
+    float r = H * 0.013f;
+    dl->AddRectFilled(ImVec2(p0.x, cy - r), ImVec2(p0.x + w, cy + r), IM_COL32(8, 14, 32, 255), r);
+    float f = (float)(*v - vmin) / (float)(vmax - vmin);
+    if (f > 0.0f) dl->AddRectFilled(ImVec2(p0.x, cy - r), ImVec2(p0.x + w * f, cy + r), IM_COL32(20, 110, 255, 255), r);
+    float hx = p0.x + w * f;
+    dl->AddCircleFilled(ImVec2(hx, cy), r + H*0.006f, IM_COL32(255, 255, 255, 255), 24);
+    dl->AddCircle(ImVec2(hx, cy), r + H*0.006f, IM_COL32(20, 110, 255, 255), 24, H*0.002f);
+    return changed;
+}
+// Boton propio: rectangulo redondeado con degradado azul y texto centrado.
+// Devuelve true al soltar el dedo sobre el (como un boton de ImGui).
+// v2.23: interruptor (pastilla con circulo, como los de ARCX) - fila con el
+// texto a la izquierda y el interruptor a la derecha; tocar la fila cambia
+static bool PanelSwitch(const char* label, bool* v, float H) {
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x;
+    float bh = H * 0.050f;
+    float rd = H * 0.012f;
+    bool clicked = ImGui::InvisibleButton(label, ImVec2(w, bh));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + bh), IM_COL32(16, 90, 220, 255), rd);
+    dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + bh * 0.45f), IM_COL32(90, 170, 255, 110), rd, ImDrawFlags_RoundCornersTop);
+    dl->AddRect(p0, ImVec2(p0.x + w, p0.y + bh), IM_COL32(120, 180, 255, 130), rd, 0, H*0.0015f);
+    ImVec2 ts = ImGui::CalcTextSize(label);
+    float tx = p0.x + H*0.016f;
+    DrawPanelIcon(dl, tx + H*0.013f, p0.y + bh * 0.5f, H*0.013f, IC_LOCK, IM_COL32(255, 255, 255, 255), H);
+    tx += H*0.013f * 2.0f + H*0.008f;
+    dl->AddText(ImVec2(tx, p0.y + (bh - ts.y) * 0.5f), IM_COL32(255, 255, 255, 255), label);
+    float sw = H * 0.075f, sh = H * 0.038f;  // pastilla del interruptor
+    float sx = p0.x + w - H*0.016f - sw, sy = p0.y + (bh - sh) * 0.5f;
+    dl->AddRectFilled(ImVec2(sx, sy), ImVec2(sx + sw, sy + sh), *v ? IM_COL32(20, 110, 255, 255) : IM_COL32(74, 76, 88, 255), sh * 0.5f);
+    dl->AddCircleFilled(ImVec2(*v ? sx + sw - sh * 0.5f : sx + sh * 0.5f, sy + sh * 0.5f), sh * 0.5f - H*0.004f, IM_COL32(255, 255, 255, 255), 24);
+    if (clicked) *v = !*v;
+    return clicked;
+}
+static bool PanelButtonIcon(const char* label, float H, float w, int icon) {
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    if (w <= 0.0f) w = ImGui::GetContentRegionAvail().x;  // 0 = todo el ancho
+    float bh = H * 0.050f;
+    float rd = H * 0.012f;  // v2.22: esquinas redondeadas (como las filas de ARCX)
+    bool clicked = ImGui::InvisibleButton(label, ImVec2(w, bh));
+    bool active = ImGui::IsItemActive();
+    bool hovered = ImGui::IsItemHovered();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    // v2.22: boton estilo ARCX - fila redondeada con brillo superior, borde
+    // claro y estado al pulsar; ya no es un rectangulo plano de ImGui
+    ImU32 base = active ? IM_COL32(10, 70, 190, 255) : (hovered ? IM_COL32(24, 110, 235, 255) : IM_COL32(16, 90, 220, 255));
+    ImU32 hi = active ? IM_COL32(40, 120, 240, 120) : IM_COL32(90, 170, 255, 110);
+    dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + bh), base, rd);
+    dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + bh * 0.45f), hi, rd, ImDrawFlags_RoundCornersTop);
+    dl->AddRect(p0, ImVec2(p0.x + w, p0.y + bh), active ? IM_COL32(150, 205, 255, 210) : IM_COL32(120, 180, 255, 130), rd, 0, H*0.0015f);
+    // v2.23: icono a la izquierda + texto centrado en lo que queda (como la imagen)
+    float ix = p0.x + H*0.016f;
+    float cy = p0.y + bh * 0.5f;
+    float ir = H * 0.013f;
+    if (icon != IC_NONE) {
+        DrawPanelIcon(dl, ix + ir, cy, ir, icon, IM_COL32(255, 255, 255, 255), H);
+        ix += ir * 2.0f + H*0.008f;
+    }
+    ImVec2 ts = ImGui::CalcTextSize(label);
+    float avail = (p0.x + w) - ix;
+    dl->AddText(ImVec2(ix + (avail - ts.x) * 0.5f, p0.y + (bh - ts.y) * 0.5f), IM_COL32(255, 255, 255, 255), label);
+    return clicked;
+}
+static bool PanelButton(const char* label, float H) { return PanelButtonIcon(label, H, 0.0f, IC_NONE); }
+// Recuadro pequeno de color: al tocarlo se abre/cierra el panel RGB para ese color.
+static bool PanelSwatch(const char* label, ImVec4 col, bool active, float H) {
+    float s = H * 0.055f;
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    bool clicked = ImGui::InvisibleButton(label, ImVec2(s, s));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(p0, ImVec2(p0.x + s, p0.y + s), ImGui::GetColorU32(col), H*0.008f);
+    if (active) dl->AddRect(p0, ImVec2(p0.x + s, p0.y + s), IM_COL32(255, 255, 255, 255), H*0.008f, 0, H*0.003f);
+    else dl->AddRect(p0, ImVec2(p0.x + s, p0.y + s), IM_COL32(255, 255, 255, 90), H*0.008f, 0, H*0.0015f);
+    return clicked;
+}
+
+// v2.2: panel de personalizacion (se abre con doble toque al boton flotante)
+static void DrawSettings(float W, float H) {
+    // v2.6: panel propio (no la ventana de ImGui por defecto) - azul casi oscuro,
+    // sin barra de titulo, con deslizadores, recuadros y botones dibujados a mano
+    const ImVec4 titleCol(0.75f, 0.85f, 1.0f, 1.0f);  // azul claro
+    const ImVec4 subCol(0.55f, 0.65f, 0.85f, 1.0f);   // azul grisaceo
+    // v2.17: el panel se puede mover y cambiar de ancho (como el menu de ARCX);
+    // la posicion y el ancho se guardan en el .ini (panelX/panelY/panelAncho)
+    if (g_cfg.panelX >= 0.0f && g_cfg.panelY >= 0.0f) ImGui::SetNextWindowPos(ImVec2(g_cfg.panelX * W, g_cfg.panelY * H), ImGuiCond_Always);
+    else ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(W * g_cfg.panelAncho, g_cfg.panelAlto >= 0.0f ? H * g_cfg.panelAlto : 0), ImGuiCond_Always);  // v2.18: alto ajustable (-1 = automatico)
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H*0.014f, H*0.014f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(H*0.010f, H*0.010f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, H*0.015f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.05f, 0.13f, 0.97f));  // azul casi oscuro
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.10f, 0.45f, 1.0f, 0.5f));
+    if (g_fontUI) ImGui::PushFont(g_fontUI);
+    bool opened = ImGui::Begin("##vhudpanel", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    if (!opened) { ImGui::End(); if (g_fontUI) ImGui::PopFont(); ImGui::PopStyleColor(3); ImGui::PopStyleVar(4); return; }
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+    // v2.22: cabecera fija (como ARCX) - el titulo, el subtitulo y la X se
+    // dibujan en primer plano y NO se desplazan con el contenido; arrastrar
+    // la cabecera mueve el panel y la X de arriba a la derecha lo cierra (ya
+    // no hay que bajar hasta "Cerrar"). La cabecera se comprueba a mano (como
+    // la esquina de redimensionado) porque esta en primer plano.
+    const char* title = S(STR_TITLE);
+    ImVec2 ts = ImGui::CalcTextSize(title);
+    float titleW = ImGui::GetContentRegionAvail().x;
+    ImVec2 wp = ImGui::GetWindowPos(); ImVec2 ws = ImGui::GetWindowSize();  // v2.22: se necesitan arriba (cabecera fija y desplazamiento)
+    float pad = H * 0.014f;  // relleno de la ventana
+    float xr = H * 0.020f;   // v2.23: radio de la X (mas chica que en la v2.22)
+    float titleY = wp.y + pad;  // titulo
+    ImVec2 xc(wp.x + ws.x - pad - xr, titleY + ts.y * 0.5f);  // v2.23: centro de la X en la linea del titulo
+    float gradY = titleY + ts.y + H*0.004f;  // linea en degradado
+    float subY = gradY + H*0.003f + H*0.010f;  // subtitulo
+    float headerH = (subY + ImGui::GetTextLineHeight() + H*0.012f) - wp.y;  // alto total de la cabecera
+    static bool panelMoved = false;
+    static bool panelMoving = false;  // v2.22: se esta arrastrando la cabecera
+    static bool xPressed = false;     // v2.22: se pulso la X (se cierra al soltar sobre ella)
+    static bool panelResizing = false; static ImVec2 gripOff;  // v2.19: se declaran aqui (los usa el desplazamiento tactil de abajo)
+    ImGui::Dummy(ImVec2(titleW, headerH - pad));  // reserva el hueco de la cabecera fija
+    // X de cerrar (arriba a la derecha, como ARCX): circulo oscuro con
+    // anillo azul y X blanca; se cierra al soltar el dedo sobre ella
+    bool inX = io.MousePos.x >= xc.x - xr && io.MousePos.x <= xc.x + xr && io.MousePos.y >= xc.y - xr && io.MousePos.y <= xc.y + xr;
+    if (io.MouseClicked[0] && inX) xPressed = true;
+    if (io.MouseReleased[0]) {
+        if (xPressed && inX) { g_settings = false; g_cfgDirty = false; SaveCfg(); Log("panel cerrado (ajustes guardados)"); }
+        xPressed = false;
+    }
+    // arrastrar la cabecera mueve el panel (como ARCX); si la posicion es
+    // -1 (centrado) toma la posicion real de la ventana al empezar
+    bool inHeader = io.MousePos.x >= wp.x && io.MousePos.x <= wp.x + ws.x && io.MousePos.y >= wp.y && io.MousePos.y <= wp.y + headerH;
+    if (io.MouseClicked[0] && inHeader && !inX) {
+        panelMoving = true;
+        if (g_cfg.panelX < 0.0f || g_cfg.panelY < 0.0f) { g_cfg.panelX = wp.x / W; g_cfg.panelY = wp.y / H; }
+    }
+    if (panelMoving) {
+        if (io.MouseDown[0] && ImGui::IsMouseDragging(0, 6.0f)) {
+            g_cfg.panelX += io.MouseDelta.x / W;
+            g_cfg.panelY += io.MouseDelta.y / H;
+            if (g_cfg.panelX < 0.0f) g_cfg.panelX = 0.0f; if (g_cfg.panelX > 1.0f - ws.x / W) g_cfg.panelX = 1.0f - ws.x / W;
+            if (g_cfg.panelY < 0.0f) g_cfg.panelY = 0.0f; if (g_cfg.panelY > 1.0f - ws.y / H) g_cfg.panelY = 1.0f - ws.y / H;
+            panelMoved = true; g_cfgDirty = true;
+        } else if (!io.MouseDown[0]) {
+            if (panelMoved) SaveCfg();
+            panelMoved = false; panelMoving = false;
+        }
+    }
+    // v2.21: desplazamiento tactil estilo ARCX - el menu de ARCX (ListView)
+    // solo responde a toques DENTRO de su area (inView al pulsar) y el
+    // desplazamiento sigue al dedo desde donde se pulso (scroll = scroll al
+    // pulsar - dy), con inercia al soltar (velocidad x0.93 por frame). La
+    // v2.20 no comprobaba donde empezaba el arrastre y un arrastre vertical
+    // en el juego (fuera del panel) tambien desplazaba el panel. La
+    // direccion sigue como en la v2.20: vertical = desplaza, horizontal =
+    // deslizador. Con el selector de color abierto SI hay desplazamiento,
+    // salvo si el arrastre empieza sobre el cuadro o la barra de tono (esos
+    // arrastres son del color). Tampoco si el arrastre es la cabecera (que
+    // mueve el panel), la X o la esquina (que lo redimensiona).
+    static bool panelScrolling = false; static bool scrollDecided = false; static ImVec2 scrollStart;
+    static bool scrollStartInPanel = false; static bool scrollStartOnPicker = false; static float scrollStartY = 0.0f; static float scrollVel = 0.0f;
+    if (io.MouseClicked[0]) {
+        scrollStart = io.MousePos; scrollDecided = false; panelScrolling = false; g_panelScrolling = false; scrollVel = 0.0f;
+        scrollStartY = ImGui::GetScrollY();
+        ImVec2 wp0 = ImGui::GetWindowPos(); ImVec2 ws0 = ImGui::GetWindowSize();
+        scrollStartInPanel = io.MousePos.x >= wp0.x && io.MousePos.x <= wp0.x + ws0.x && io.MousePos.y >= wp0.y && io.MousePos.y <= wp0.y + ws0.y;
+        // v2.24: el arrastre empezo sobre el selector de color (cuadro o barra)
+        scrollStartOnPicker = g_pickTarget >= 0 && io.MousePos.x >= g_pickRect0.x && io.MousePos.x <= g_pickRect1.x && io.MousePos.y >= g_pickRect0.y && io.MousePos.y <= g_pickRect1.y;
+    }
+    if (io.MouseDown[0] && !scrollDecided && !panelMoving && !xPressed && !panelResizing && !scrollStartOnPicker) {
+        if (!scrollStartInPanel) { scrollDecided = true; }  // el arrastre empezo fuera del panel: nunca desplaza
+        else {
+            float dx = io.MousePos.x - scrollStart.x, dy = io.MousePos.y - scrollStart.y;
+            if (fabsf(dy) > H*0.02f && fabsf(dy) > fabsf(dx)) { panelScrolling = true; scrollDecided = true; g_panelScrolling = true; }
+            else if (fabsf(dx) > H*0.02f) { scrollDecided = true; }
+        }
+    }
+    if (!io.MouseDown[0]) { panelScrolling = false; scrollDecided = false; g_panelScrolling = false; }
+    if (panelScrolling) {
+        ImGui::SetScrollY(scrollStartY - (io.MousePos.y - scrollStart.y));  // sigue al dedo desde donde se pulso (como ARCX)
+        scrollVel = -io.MouseDelta.y;  // velocidad para la inercia al soltar
+    }
+    // v2.21: inercia al soltar (como ARCX) - al soltar el dedo el contenido
+    // sigue deslizandose y frena poco a poco (x0.93 por frame)
+    if (!io.MouseDown[0] && fabsf(scrollVel) > 0.4f) {
+        ImGui::SetScrollY(ImGui::GetScrollY() + scrollVel);
+        scrollVel *= 0.93f;
+    } else if (!io.MouseDown[0]) {
+        scrollVel = 0.0f;
+    }
+    // v2.22: el titulo, el subtitulo y la linea van en primer plano (cabecera fija, abajo)
+    if (PanelSlider(S(STR_FONDO), &g_cfg.fondo, 0, 100, "%d%%", H, IC_SUN)) g_cfgDirty = true;
+    if (PanelSlider(S(STR_TAMANO), &g_cfg.tamano, 25, 45, "%d%%", H, IC_SIZE)) g_cfgDirty = true;
+    // recuadros de color: al tocar uno se abre el panel RGB para ese color
+    ImGui::BeginGroup();
+    if (PanelSwatch("##swAnillo", ImVec4(g_cfg.ringR / 255.0f, g_cfg.ringG / 255.0f, g_cfg.ringB / 255.0f, 1.0f), g_pickTarget == 0, H)) { g_pickTarget = (g_pickTarget == 0) ? -1 : 0; PlayClick(false); }
+    ImGui::SameLine(0, H*0.012f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (H*0.055f - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::Text("%s", S(STR_ANILLO));
+    ImGui::EndGroup();
+    ImGui::SameLine(0, H*0.05f);
+    ImGui::BeginGroup();
+    if (PanelSwatch("##swTexto", ImVec4(g_cfg.textoR / 255.0f, g_cfg.textoG / 255.0f, g_cfg.textoB / 255.0f, 1.0f), g_pickTarget == 1, H)) { g_pickTarget = (g_pickTarget == 1) ? -1 : 1; PlayClick(false); }
+    ImGui::SameLine(0, H*0.012f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (H*0.055f - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::Text("%s", S(STR_TEXTO));
+    ImGui::EndGroup();
+    ImGui::SameLine(0, H*0.05f);
+    ImGui::BeginGroup();
+    if (PanelSwatch("##swFondo", ImVec4(g_cfg.fondoR / 255.0f, g_cfg.fondoG / 255.0f, g_cfg.fondoB / 255.0f, 1.0f), g_pickTarget == 2, H)) { g_pickTarget = (g_pickTarget == 2) ? -1 : 2; PlayClick(false); }
+    ImGui::SameLine(0, H*0.012f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (H*0.055f - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::Text("%s", S(STR_FONDO_LBL));
+    ImGui::EndGroup();
+    if (g_pickTarget >= 0) {
+        ImGui::TextColored(titleCol, "%s", g_pickTarget == 1 ? S(STR_TEXTO) : (g_pickTarget == 2 ? S(STR_FONDO_LBL) : S(STR_ANILLO)));
+        // ---- panel RGB tactil (como ARCX 3.1.38): cuadro saturacion/valor + barra de tono ----
+        const float gap = H * 0.012f;
+        const float hueW = H * 0.045f;
+        float availW = ImGui::GetContentRegionAvail().x;
+        float sq = availW - hueW - gap;
+        if (sq > H * 0.20f) sq = H * 0.20f;   // que quepa el panel con el selector abierto
+        if (sq < H * 0.14f) sq = H * 0.14f;
+        float rowW = sq + gap + hueW;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availW - rowW) * 0.5f);
+        ImVec2 sq0 = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##sv", ImVec2(sq, sq));
+        bool svActive = ImGui::IsItemActive();
+        ImGui::SameLine(0, gap);
+        ImVec2 hue0 = ImGui::GetCursorScreenPos();
+        g_pickRect0 = sq0; g_pickRect1 = ImVec2(hue0.x + hueW, hue0.y + sq);  // v2.24: rect del selector para el desplazamiento
+        ImGui::InvisibleButton("##hue", ImVec2(hueW, sq));
+        bool hueActive = ImGui::IsItemActive();
+        bool dragging = (svActive || hueActive) && io.MouseDown[0];
+        if (!dragging) PickerSyncFromRGB();
+        if (svActive && io.MouseDown[0]) {
+            g_pickS = Clampf((io.MousePos.x - sq0.x) / sq, 0.0f, 1.0f);
+            g_pickV = Clampf(1.0f - (io.MousePos.y - sq0.y) / sq, 0.0f, 1.0f);
+            PickerApplyToRGB(); g_cfgDirty = true;
+        } else if (hueActive && io.MouseDown[0]) {
+            g_pickH = Clampf((io.MousePos.y - hue0.y) / sq, 0.0f, 1.0f);
+            // v2.24: con un color gris/blanco el tono no se ve (S=0); al
+            // mover la barra se pone saturado para que el color cambie
+            if (g_pickS < 0.05f) g_pickS = 1.0f;
+            PickerApplyToRGB(); g_cfgDirty = true;
+        }
+        float hr, hg, hb;
+        ImGui::ColorConvertHSVtoRGB(g_pickH, 1.0f, 1.0f, hr, hg, hb);
+        const ImU32 hueCol = IM_COL32((int)(hr * 255.0f), (int)(hg * 255.0f), (int)(hb * 255.0f), 255);
+        dl->AddRectFilledMultiColor(sq0, ImVec2(sq0.x + sq, sq0.y + sq),
+            IM_COL32(255, 255, 255, 255), hueCol, IM_COL32(0, 0, 0, 255), IM_COL32(0, 0, 0, 255));
+        dl->AddRect(sq0, ImVec2(sq0.x + sq, sq0.y + sq), IM_COL32(255, 255, 255, 60), H*0.006f, 0, H*0.0015f);
+        int cr, cg, cb;
+        if (g_pickTarget == 1) { cr = g_cfg.textoR; cg = g_cfg.textoG; cb = g_cfg.textoB; }
+        else if (g_pickTarget == 2) { cr = g_cfg.fondoR; cg = g_cfg.fondoG; cb = g_cfg.fondoB; }  // v2.17: color del fondo
+        else { cr = g_cfg.ringR; cg = g_cfg.ringG; cb = g_cfg.ringB; }
+        const ImU32 pickU = ImGui::GetColorU32(ImVec4(cr / 255.0f, cg / 255.0f, cb / 255.0f, 1.0f));
+        const ImVec2 mk(sq0.x + g_pickS * sq, sq0.y + (1.0f - g_pickV) * sq);
+        dl->AddCircleFilled(mk, H*0.011f, pickU, 24);
+        dl->AddCircle(mk, H*0.011f, IM_COL32(255, 255, 255, 255), 24, H*0.003f);
+        const float seg = sq / 24.0f;
+        for (int k = 0; k < 24; k++) {
+            float rr, gg, bb;
+            ImGui::ColorConvertHSVtoRGB((float)k / 24.0f, 1.0f, 1.0f, rr, gg, bb);
+            dl->AddRectFilled(ImVec2(hue0.x, hue0.y + k * seg), ImVec2(hue0.x + hueW, hue0.y + (k + 1) * seg + 0.5f),
+                IM_COL32((int)(rr * 255.0f), (int)(gg * 255.0f), (int)(bb * 255.0f), 255));
+        }
+        dl->AddRect(hue0, ImVec2(hue0.x + hueW, hue0.y + sq), IM_COL32(255, 255, 255, 60), H*0.006f, 0, H*0.0015f);
+        const float hy = hue0.y + g_pickH * sq;
+        dl->AddLine(ImVec2(hue0.x - H*0.004f, hy), ImVec2(hue0.x + hueW + H*0.004f, hy), IM_COL32(255, 255, 255, 255), H*0.003f);
+        // abajo: muestra del color + valores RGB y hexadecimal
+        const float readH = H * 0.045f;
+        ImVec2 sw0 = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(H*0.040f, readH));
+        dl->AddRectFilled(sw0, ImVec2(sw0.x + H*0.040f, sw0.y + readH), pickU, H*0.008f);
+        dl->AddRect(sw0, ImVec2(sw0.x + H*0.040f, sw0.y + readH), IM_COL32(255, 255, 255, 255), H*0.008f, 0, H*0.002f);
+        ImGui::SameLine(0, H*0.016f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (readH - ImGui::GetTextLineHeight()) * 0.5f);
+        char vals[64];
+        snprintf(vals, sizeof vals, "R %d   G %d   B %d    #%02X%02X%02X", cr, cg, cb, cr, cg, cb);
+        ImGui::Text("%s", vals);
+    }
+    ImGui::Separator();
+    // v2.16: idioma + boton flotante (tamano, opacidad, bloqueo, posicion)
+    // v2.23: globo a la izquierda de "Idioma" (como la imagen)
+    {
+        ImVec2 ip = ImGui::GetCursorScreenPos();
+        float ir = H * 0.013f;
+        DrawPanelIcon(dl, ip.x + ir, ip.y + ImGui::GetTextLineHeight() * 0.5f, ir, IC_GLOBE, IM_COL32(150, 190, 255, 255), H);
+        ImGui::SetCursorScreenPos(ImVec2(ip.x + ir * 2.0f + H*0.008f, ip.y));
+    }
+    ImGui::Text("%s", S(STR_LANG));
+    ImGui::SameLine(0, H*0.012f);
+    {
+        int langIdx = g_cfg.idioma;
+        if (ImGui::Combo("##idioma", &langIdx, kLangNames, L_COUNT)) {
+            g_cfg.idioma = langIdx; g_cfgDirty = false; SaveCfg();
+            Log("idioma: %s", kLangCodes[g_cfg.idioma]);
+        }
+    }
+    if (PanelSlider(S(STR_BTN_SIZE), &g_cfg.btnTam, 50, 150, "%d%%", H, IC_SIZE)) g_cfgDirty = true;
+    if (PanelSlider(S(STR_BTN_OPAC), &g_cfg.btnOpac, 30, 100, "%d%%", H, IC_OPAC)) g_cfgDirty = true;
+    {
+        // v2.23: el bloqueo es un interruptor (no un boton con ON/OFF)
+        bool bloq = g_cfg.btnBloq != 0;
+        if (PanelSwitch(S(STR_BTN_LOCK), &bloq, H)) { g_cfg.btnBloq = bloq ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.btnBloq ? "bloqueado" : "libre"); }
+    }
+    {
+        // v2.28: interruptor de iconos a color (carpeta radio_color/)
+        bool color = g_cfg.iconosColor != 0;
+        if (PanelSwitch(S(STR_ICONOSCOLOR), &color, H)) { g_cfg.iconosColor = color ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("iconos de las emisoras: %s", g_cfg.iconosColor ? "a color" : "normales"); }
+        bool lenta = g_cfg.camaraLenta != 0;
+        if (PanelSwitch(S(STR_CAMARALENTA), &lenta, H)) { g_cfg.camaraLenta = lenta ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("camara lenta: %s", g_cfg.camaraLenta ? "activada" : "apagada"); }
+        bool btnVis = g_cfg.botonVisible != 0;
+        if (PanelSwitch(S(STR_BOTONVIS), &btnVis, H)) { g_cfg.botonVisible = btnVis ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.botonVisible ? "visible" : "oculto"); }
+    }
+    // v2.23: botones en rejilla de 2 columnas con icono (como la imagen)
+    {
+        float bw = (ImGui::GetContentRegionAvail().x - H*0.010f) * 0.5f;
+        if (PanelButtonIcon(S(STR_BTN_RESET_POS), H, bw, IC_RESET)) { g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("posicion del boton restablecida"); }
+        ImGui::SameLine(0, H*0.010f);
+        if (PanelButtonIcon(S(STR_PREVIEW), H, bw, IC_EYE)) {
+            g_preview = true; g_open = true; g_selected = g_current; g_settings = false;
+            PlayClick(false);
+            Log("vista previa de la rueda");
+        }
+    }
+    ImGui::Separator();
+    if (PanelButtonIcon(S(STR_RESET), H, 0.0f, IC_RESET)) {
+        g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255;
+        g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0;
+        g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1;
+        g_cfgDirty = false; SaveCfg();
+        Log("ajustes restablecidos");
+    }
+    // v2.24: credito al final del contenido (abajo del todo, como el
+    // "By Hunter09" del menu de ARCX) - v2.26: cambia con el idioma
+    ImGui::Dummy(ImVec2(0, H*0.008f));
+    {
+        const char* credit = S(STR_CREDIT);
+        float cw = ImGui::CalcTextSize(credit).x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - cw) * 0.5f);
+        ImGui::TextColored(ImVec4(0.55f, 0.60f, 0.75f, 1.0f), "%s", credit);
+    }
+    // v2.23: sin boton Cerrar abajo (se cierra con la X de arriba)
+    // guardar al soltar (por si se arrastro el color o un deslizador y no se pulso Cerrar)
+    if (g_cfgDirty && io.MouseReleased[0]) { SaveCfg(); g_cfgDirty = false; }
+    ImGui::Dummy(ImVec2(0, H*0.035f));  // v2.18: espacio para la esquina de redimensionado (el grip se dibuja en primer plano, en la esquina de la ventana)
+    // borde en degradado azul alrededor de toda la ventana
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    AddGradientBorder(fg, wp, ImVec2(wp.x + ws.x, wp.y + ws.y), H*0.015f, H*0.004f, PanelGradL(), PanelGradR());
+    // v2.22: cabecera fija en primer plano (titulo + subtitulo + X, como ARCX):
+    // no se desplaza con el contenido; el contenido se desliza por debajo
+    // v2.23: fondo opaco de la cabecera (tapa el contenido que se desplaza
+    // por debajo; sin esto las funciones se veian detras del titulo)
+    fg->AddRectFilled(ImVec2(wp.x, wp.y), ImVec2(wp.x + ws.x, wp.y + headerH), IM_COL32(5, 13, 33, 255), H*0.015f, ImDrawFlags_RoundCornersTop);
+    fg->AddText(ImVec2(wp.x + pad + (titleW - ts.x) * 0.5f, titleY), ImGui::GetColorU32(titleCol), title);
+    fg->AddRectFilledMultiColor(ImVec2(wp.x + pad, gradY), ImVec2(wp.x + ws.x - pad, gradY + H*0.003f), IM_COL32(20, 110, 255, 255), IM_COL32(10, 200, 255, 255), IM_COL32(10, 200, 255, 255), IM_COL32(20, 110, 255, 255));
+    fg->AddText(ImVec2(wp.x + pad, subY), ImGui::GetColorU32(subCol), S(STR_HINT));
+    fg->AddLine(ImVec2(wp.x + pad, subY + ImGui::GetTextLineHeight() + H*0.006f), ImVec2(wp.x + ws.x - pad, subY + ImGui::GetTextLineHeight() + H*0.006f), ImGui::GetColorU32(ImVec4(0.10f, 0.45f, 1.0f, 0.5f)), H*0.0015f);
+    // X de cerrar (circulo oscuro con anillo azul y X blanca, como ARCX)
+    {
+        bool xAct = xPressed && io.MouseDown[0];
+        fg->AddCircleFilled(xc, xr, xAct ? IM_COL32(60, 60, 90, 255) : IM_COL32(22, 22, 30, 255), 32);
+        fg->AddCircle(xc, xr, IM_COL32(20, 110, 255, 255), 32, H*0.003f);
+        fg->AddLine(ImVec2(xc.x - xr * 0.34f, xc.y - xr * 0.34f), ImVec2(xc.x + xr * 0.34f, xc.y + xr * 0.34f), IM_COL32(255, 255, 255, 255), H*0.003f);
+        fg->AddLine(ImVec2(xc.x + xr * 0.34f, xc.y - xr * 0.34f), ImVec2(xc.x - xr * 0.34f, xc.y + xr * 0.34f), IM_COL32(255, 255, 255, 255), H*0.003f);
+    }
+    // v2.18: esquina de redimensionado en la esquina de la ventana (como en ARCX):
+    // se dibuja en primer plano y se arrastra a mano para que nunca se pierda
+    // al hacer scroll (el alto es ajustable y el contenido puede ser mas alto
+    // que el panel). Cambia el ancho Y el alto (la v2.17 solo cambiaba el ancho).
+    {
+        float gripS = H * 0.035f;
+        ImVec2 gp(wp.x + ws.x - gripS, wp.y + ws.y - gripS);
+        if (!panelResizing && io.MouseClicked[0] && io.MousePos.x >= gp.x && io.MousePos.x <= gp.x + gripS && io.MousePos.y >= gp.y && io.MousePos.y <= gp.y + gripS) {
+            panelResizing = true;
+            gripOff = ImVec2(wp.x + ws.x - io.MousePos.x, wp.y + ws.y - io.MousePos.y);
+        }
+        if (panelResizing) {
+            if (io.MouseDown[0]) {
+                g_cfg.panelAncho = Clampf((io.MousePos.x + gripOff.x - wp.x) / W, 0.36f, 0.70f);
+                g_cfg.panelAlto = Clampf((io.MousePos.y + gripOff.y - wp.y) / H, 0.30f, 0.95f);
+            } else {
+                panelResizing = false; SaveCfg(); Log("panel: ancho=%.2f alto=%.2f", g_cfg.panelAncho, g_cfg.panelAlto);
+            }
+        }
+        const ImU32 gc = panelResizing ? IM_COL32(10, 200, 255, 255) : IM_COL32(190, 192, 205, 200);
+        const float e = gripS * 0.82f;
+        for (int k = 0; k < 3; k++) {
+            const float o = e * (0.30f + 0.28f * (float)k);
+            fg->AddLine(ImVec2(gp.x + gripS - H*0.006f, gp.y + gripS - o), ImVec2(gp.x + gripS - o, gp.y + gripS - H*0.006f), gc, H*0.003f);
+        }
+    }
+    // v2.21: "Desliza para ver mas" (como ARCX) - si el contenido no cabe y
+    // queda mas abajo, se avisa en la parte inferior del panel (solo arriba;
+    // al empezar a desplazar se quita para no tapar los ajustes)
+    if (ImGui::GetScrollMaxY() > 0.0f && ImGui::GetScrollY() < 1.0f) {
+        ImVec2 ts2 = ImGui::CalcTextSize(S(STR_DESLIZA));
+        float hx = wp.x + (ws.x - ts2.x) * 0.5f;
+        float hy = wp.y + ws.y - ts2.y - H*0.012f;
+        fg->AddText(ImVec2(hx, hy), IM_COL32(150, 190, 255, 220), S(STR_DESLIZA));
+    }
+    ImGui::End();
+    if (g_fontUI) ImGui::PopFont();
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(4);
+}
+
+// v2.7: un puntero es creible si, quitandole el byte de etiqueta (0xb4...),
+// cae en el rango del heap del juego (0x100000000..0x1000000000000)
+static bool PlausiblePtr(uintptr_t v) {
+    uintptr_t t = v & 0x00FFFFFFFFFFFFFFULL;
+    return t > 0x100000000ULL && t < 0x1000000000000ULL;
+}
+// v2.9: true si la pagina de p esta mapeada (mincore devuelve 0); quita el
+// byte de etiqueta (0xb4...) antes de preguntar al kernel. Sin esto, leer un
+// valor que "parece" puntero pero no esta mapeado cierra el juego (v2.8).
+static bool IsMapped(const void* p) {
+    uintptr_t a = ((uintptr_t)p & 0x00FFFFFFFFFFFFFFULL) & ~0xFFFULL;
+    unsigned char vec = 0;
+    return mincore((void*)a, 0x1000, &vec) == 0;
+}
+// v2.15: el vehiculo tiene radio civil? Por LISTA DE MODELOS (ver header).
+// La funcion del juego cerraba el juego (SIGILL en su primera instruccion),
+// asi que no se llama a nada del juego: solo se lee el modelo en 0x32
+// (verificado por el log v2.13: 445 Admiral / 509 Bike) y se compara con
+// la lista. Fail-open: modelo fuera de rango -> la rueda ABRE.
+// v2.17: el bloqueo se registra como mucho una vez cada 2 s (antes salia
+// dos veces por cada doble toque al claxon: por el boton 7 y por la zona)
+static void LogBlocked() {
+    static auto last = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+    auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds(2)) return;
+    last = now;
+    Log("claxon en vehiculo sin radio: rueda bloqueada");
+}
+static bool VehicleHasRadio(void* veh) {
+    if (!veh || !IsMapped(veh)) { Log("  radio: sin vehiculo, asumo radio"); return true; }
+    if (!IsMapped((char*)veh + 0x32)) { Log("  radio: modelo no mapeado, asumo radio"); return true; }
+    uint16_t modelId = *(uint16_t*)((char*)veh + 0x32);
+    if (modelId < 400 || modelId > 611) { Log("  radio: modelo=%u fuera de rango, asumo radio", (unsigned)modelId); return true; }
+    bool noRadio = false;
+    switch (modelId) {
+        case 481: case 509: case 510:  // bicis: BMX, Bike, Mountain Bike
+        case 407: case 416: case 427: case 432: case 433: case 490: case 497: case 523: case 528: case 544:  // emergencia: bomberos, ambulancia, Enforcer, Rhino, Barracks, FBI Rancher, Police Maverick, HPV1000, FBI Truck, Firetruck LA
+        case 596: case 597: case 598: case 599: case 601:  // patrullas LSPD/SFPD/LVPD/Ranger + S.W.A.T.
+        case 441: case 449: case 457: case 464: case 465: case 485: case 501: case 530: case 531: case 532:  // especiales/trabajo: RC Bandit, Tram, Caddy, RC Baron, RC Raider, Baggage, RC Goblin, Forklift, Tractor, Combine
+        case 537: case 538: case 539: case 564: case 568: case 571: case 572: case 583: case 594:  // especiales/RC: Freight, Streak, Vortex, RC Tiger, Bandito, Kart, Mower, Tug, RC Cam
+            noRadio = true; break;
+        default: break;
+    }
+    Log("  vehiculo: modelo=%u tieneRadio=%d", (unsigned)modelId, noRadio ? 0 : 1);
+    return !noRadio;
+}
+// v2.7: vuelca n bytes en hexadecimal a un buffer (para el diagnostico)
+static void HexDump(char* out, size_t outSz, const void* p, int n) {
+    const unsigned char* b = (const unsigned char*)p;
+    int w = 0;
+    for (int i = 0; i < n && w < (int)outSz - 4; i++) w += snprintf(out + w, outSz - (size_t)w, "%02X ", b[i]);
+    if (w > 0 && w < (int)outSz) out[w - 1] = 0;  // quitar el ultimo espacio
+}
+static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
+    if (g_failed) return;
+    EGLContext ctx = eglGetCurrentContext();
+    if (ctx == EGL_NO_CONTEXT) return;
+    EGLint w = 0, h = 0; eglQuerySurface(dpy, surf, EGL_WIDTH, &w); eglQuerySurface(dpy, surf, EGL_HEIGHT, &h);
+    if (w < 200 || h < 200) return;
+    void* veh = FindPlayerVehicle ? FindPlayerVehicle(-1, false) : nullptr;
+    bool wasInVehicle = g_inVehicle;
+    g_inVehicle = veh != nullptr;
+    // v2.14: radio por modelo, UNA VEZ por vehiculo (no cada frame: asi no
+    // parpadea como el rid en la v2.11). Fail-open dentro de VehicleHasRadio.
+    {
+        static void* lastVehRadio = nullptr;
+        if (!g_inVehicle) { lastVehRadio = nullptr; g_hasRadio = true; }
+        else if (veh != lastVehRadio) {
+            lastVehRadio = veh;
+            g_hasRadio = VehicleHasRadio(veh);
+            if (!g_hasRadio) g_open = false;  // rueda cerrada si no tiene radio
+        }
+    }
+    // v2.9: diagnostico RadioType - la v2.8 SE CERRO al entrar a un auto de
+    // policia: el escaneo leyo un valor (0x23F800000) que "parecia" un puntero
+    // (cae en el rango 2^32..2^48) pero no esta mapeado, y al leerlo el juego
+    // hizo SIGSEGV. Ahora cada puntero se valida con mincore (IsMapped) ANTES
+    // de leerlo, y tambien la ventana que se vuelca. Rango mas amplio
+    // (0x100..0x500) y hasta 20 candidatos. Aun no bloquea nada.
+    if (g_inVehicle && !wasInVehicle && veh) {
+        Log("  vehiculo: %p estacion=%d", veh, g_current);
+        // v2.12: volcar los primeros 64 bytes del vehiculo para buscar
+        // m_nModelIndex (el modelo es estable por vehiculo: bici 481/509/510,
+        // tractor 531, patrulla 596-599). El bloqueo por rid fallo porque ese
+        // byte cambia; el modelo no cambia.
+        {
+            char hex[64*3+1];
+            HexDump(hex, sizeof hex, veh, 64);
+            Log("  vehiculo bytes[0x00..0x3F]=%s", hex);
+        }
+        int cands = 0;
+        for (int off = 0x100; off <= 0x500 && cands < 20; off += 8) {
+            void* cand = *(void**)((char*)veh + off);
+            if (!PlausiblePtr((uintptr_t)cand)) continue;
+            if (!IsMapped(cand)) continue;  // v2.9: la pagina debe estar mapeada
+            void* vt = *(void**)cand;
+            if (!PlausiblePtr((uintptr_t)vt)) continue;
+            if (!IsMapped((char*)cand + 0x70) || !IsMapped((char*)cand + 0xAF)) continue;
+            char hex[64*3+1];
+            HexDump(hex, sizeof hex, (char*)cand + 0x70, 64);
+            Log("  ptrCand(0x%X)=%p bytes[0x70..0xAF]=%s", off, cand, hex);
+            cands++;
+        }
+        if (cands == 0) Log("  ptrCand: ninguno en 0x100..0x500");
+    }
+    // v2.12: diagnostico de audio SIN bloqueo - la v2.11 demostro que rid(0x9A)
+    // NO es estable (en un mismo carro dio 0, 2, 0, 0) y bloqueo carros y dejo
+    // pasar la bici, al reves de lo que se queria. Se registra rt/rid solo
+    // cuando cambian, para entender que es ese byte. El bloqueo por modelo
+    // (m_nModelIndex) se hara cuando se encuentre su offset (ver el volcado
+    // de los primeros bytes del vehiculo en el bloque de escaneo).
+    {
+        static void* lastVeh = nullptr;
+        static int lastRt = -999, lastRid = -999;
+        if (!g_inVehicle) { lastVeh = nullptr; lastRt = -999; lastRid = -999; }
+        else if (veh && veh != lastVeh) { lastVeh = veh; lastRt = -999; lastRid = -999; }
+        if (g_inVehicle && !wasInVehicle && veh) {
+            int aoffs[2] = {0x458, 0x1B0};
+            for (int i = 0; i < 2; i++) {
+                void* aud = *(void**)((char*)veh + aoffs[i]);
+                if (!PlausiblePtr((uintptr_t)aud)) continue;
+                if (!IsMapped(aud)) continue;
+                if (!IsMapped((char*)aud + 0x9A) || !IsMapped((char*)aud + 0x9B)) continue;
+                int rt = (int)*(signed char*)((char*)aud + 0x9B);
+                int rid = (int)*(signed char*)((char*)aud + 0x9A);
+                if (rt != lastRt || rid != lastRid) {
+                    Log("  audio(0x%X): rt(0x9B)=%d rid(0x9A)=%d", aoffs[i], rt, rid);
+                    lastRt = rt; lastRid = rid;
+                }
+                break;
+            }
+        }
+    }
+    // v2.6: pausa por varias senales (el byte 0x5C solo no basto en la v2.5):
+    // CMenuManager::m_bMenuActive, CTimer::m_UserPause / m_CodePause, y si
+    // CMenuManager::DrawFrontEnd se llamo en este frame (menu dibujado)
+    bool fe = g_menuDrawn; g_menuDrawn = false;
+    bool wasPaused = g_paused;
+    g_paused = MenuActive() || (g_userPause && *g_userPause) || (g_codePause && *g_codePause) || fe;
+    if (g_paused != wasPaused) { Log("menu de pausa: %s (byte=%d user=%d code=%d frontEnd=%d)", g_paused ? "abierto (UI oculta)" : "cerrado", MenuActive() ? 1 : 0, (g_userPause && *g_userPause) ? 1 : 0, (g_codePause && *g_codePause) ? 1 : 0, fe ? 1 : 0); if (g_menuCheck == 0) g_menuCheck = 1; }  // v2.4: el byte cambio: el offset es valido
+    // v2.6: diagnostico del menu - si los bytes del objeto cambian, registrar que offsets
+    if (g_menuManager) MenuSnapCheck();
+    // v2.7: ralentizacion estilo GTA V - la v2.6 solo escribia los valores al
+    // abrir/cerrar y el juego los borraba en el siguiente frame (el log decia
+    // "activada" pero no se veia nada). Ahora se escriben EN CADA FRAME
+    // mientras la rueda esta abierta: bandera + escala del slow-motion del
+    // juego + la escala de tiempo directamente. Al cerrar se restauran los
+    // valores que habia antes de abrir.
+    if (g_slowActive || g_timeScale) {
+        static bool slowOn = false;
+        static float savedTimeScale = 1.0f, savedSlowScale = 0.3f;
+        static bool savedSlowActive = false;
+        static int slowTick = 0;
+        if (g_open && !slowOn && g_cfg.camaraLenta) {
+            slowOn = true;
+            if (g_timeScale) savedTimeScale = *g_timeScale;
+            if (g_slowScale) savedSlowScale = *g_slowScale;
+            if (g_slowActive) savedSlowActive = *g_slowActive;
+            Log("ralentizacion: activada (guardada escala=%.2f)", savedTimeScale);
+        } else if (!g_open && slowOn) {
+            slowOn = false;
+            if (g_slowActive) *g_slowActive = savedSlowActive;
+            if (g_slowScale) *g_slowScale = savedSlowScale;
+            if (g_timeScale) *g_timeScale = savedTimeScale;
+            Log("ralentizacion: desactivada (restaurada escala=%.2f)", savedTimeScale);
+        }
+        if (slowOn) {
+            if (g_slowActive) *g_slowActive = true;
+            if (g_slowScale) *g_slowScale = 0.3f;
+            if (g_timeScale) *g_timeScale = 0.3f;
+            // diagnostico: cada segundo, leer lo que el juego tiene puesto
+            // (si la escala dice 1.00, el juego esta borrando nuestros valores)
+            if (++slowTick >= 60) {
+                slowTick = 0;
+                Log("ralentizacion: escala leida=%.2f activa=%d (deberia ser 0.30)", g_timeScale ? *g_timeScale : -1.0f, (g_slowActive && *g_slowActive) ? 1 : 0);
+            }
+        } else slowTick = 0;
+    }
+    if (!g_inited) {
+        if (!FindPlayerPed || !FindPlayerPed(-1)) return;
+        ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO();
+        io.IniFilename = nullptr; io.LogFilename = nullptr;
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        ImGui::StyleColorsDark();
+        // v2.1: letra mas parecida a GTA V - Roboto Condensed negrita del sistema
+        io.Fonts->AddFontDefault();
+        const char* titlePath = nullptr;
+        for (const char* fp : {"/system/fonts/RobotoCondensed-Bold.ttf", "/system/fonts/Roboto-Bold.ttf", "/system/fonts/DroidSans-Bold.ttf"}) {
+            g_fontTitle = io.Fonts->AddFontFromFileTTF(fp, 64.0f);
+            if (g_fontTitle) { titlePath = fp; Log("fuente del titulo: %s", fp); break; }
+        }
+        if (!g_fontTitle) Log("  !! sin fuente del sistema: el titulo usa la letra de ImGui");
+        // v2.3: segunda talla de la misma fuente para el panel (letra legible al tacto)
+        if (titlePath) g_fontUI = io.Fonts->AddFontFromFileTTF(titlePath, 32.0f);
+        if (!ImGui_ImplOpenGL3_Init(nullptr)) { Log("ImGui_ImplOpenGL3_Init fallo"); g_failed = true; return; }
+        g_inited = true; LoadRadioTextures(); RefreshCurrent();
+        Log("ImGui listo (%.0fx%.0f), estacion actual: %d (%s)", (float)w, (float)h, g_current, kStationName[g_current]);
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    static auto last = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(now - last).count(); last = now;
+    io.DeltaTime = dt > 0.0001f ? dt : 1.0f/60.0f;
+    io.DisplaySize = ImVec2((float)w, (float)h);
+    // eventos de toque -> raton de ImGui; el boton y la rueda se resuelven por posicion
+    std::vector<TouchEv> evs; { std::lock_guard<std::mutex> lk(g_inMtx); evs.swap(g_evs); }
+    static bool mouseDown = false;
+    for (auto& e : evs) {
+        if (e.kind == 0) {
+            io.AddMousePosEvent(e.x, e.y);
+            g_touchX = e.x; g_touchY = e.y;  // v2.18: posicion propia del toque
+            if (g_open && !g_settings && !g_paused) {
+                int seg = SegmentAt(e.x, e.y, (float)w, (float)h);
+                if (seg >= 1) { g_wheelTouch = true; g_centerTap = false; if (seg != g_selected) { g_selected = seg; PlayClick(true); Log("rueda: segmento %d (%s)", seg, kStationName[seg]); } }
+            }
+            // v2.16: arrastrar el boton flotante (si no esta bloqueado)
+            if (g_btnDrag && !g_cfg.btnBloq) {
+                float dx = e.x - g_dragSX, dy = e.y - g_dragSY;
+                float thr = (float)h * 0.02f;  // v2.17: antes 0.012H - el temblor del dedo movia el boton en vez de tocarlo
+                if (!g_btnMoved && dx*dx + dy*dy > thr*thr) g_btnMoved = true;
+                if (g_btnMoved) {
+                    float bs = BtnSize((float)h);
+                    float nx = g_dragBX + dx / (float)w;
+                    float ny = g_dragBY + dy / (float)h;
+                    if (nx < 0.0f) nx = 0.0f; if (nx > 1.0f - bs / (float)w) nx = 1.0f - bs / (float)w;
+                    if (ny < 0.0f) ny = 0.0f; if (ny > 1.0f - bs / (float)h) ny = 1.0f - bs / (float)h;
+                    g_cfg.btnX = nx; g_cfg.btnY = ny;
+                }
+            }
+        } else if (e.kind == 1) { io.AddMouseButtonEvent(0, true); mouseDown = true;
+            // v2.3: en el menu de pausa los toques son del juego; con el panel abierto, del panel (ImGui)
+            if (g_paused) {
+                // nada: el menu de pausa procesa el toque
+            } else if (g_settings) {
+                // nada: ImGui procesa el toque en NewFrame/Render
+            } else if (g_preview) {
+                // vista previa: solo se mira - tocar un segmento lo resalta, tocar fuera cierra la vista previa y vuelve el panel
+                int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
+                if (seg >= 1) { g_selected = seg; g_wheelTouch = true; }
+                else { g_preview = false; g_open = false; g_settings = true; Log("vista previa cerrada"); }
+            } else if (g_open) {
+                // v1.5: tocar un segmento lo elige al instante (antes solo el arrastre elegia)
+                int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
+                if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_centerTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
+                else if (InWheelCenter(g_touchX, g_touchY, (float)w, (float)h)) { g_centerTap = true; g_wheelTouch = false; }  // v2.31: centro de la rueda -> panel al soltar
+                else { g_wheelTouch = false; g_centerTap = false; }  // toque fuera del anillo: al soltar se cierra sin cambiar
+            }
+            // v1.2: doble toque al boton de claxon (zona derecha) abre/cierra la rueda
+            if (g_inVehicle && !g_settings && !g_paused) {
+                static int tapLogN = 0;
+                if (tapLogN < 30 && g_touchX > (float)w*0.70f) { tapLogN++; Log("tap vehiculo #%d en (%.0f, %.0f)%s", tapLogN, g_touchX, g_touchY, InHornRegion(g_touchX, g_touchY, (float)w, (float)h) ? "  <- zona claxon" : ""); }
+                if (InHornRegion(g_touchX, g_touchY, (float)w, (float)h)) {
+                    static auto lastHornTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - lastHornTap < std::chrono::milliseconds(500) && now - lastHornTap > std::chrono::milliseconds(80)) {
+                        if (g_preview) { g_preview = false; g_open = false; g_settings = true; Log("vista previa cerrada (claxon)"); }
+                        else if (g_hasRadio) ToggleWheel("doble claxon");
+                        else LogBlocked();
+                    }
+                    lastHornTap = now;
+                }
+            }
+            // v2.2: boton flotante - un toque = siguiente estacion; dos toques = panel de personalizacion
+            // v2.16: sin radio no hay boton ni panel; el toque se resuelve al SOLTAR
+            // (si el dedo se movio, fue un arrastre para mover el boton, no un toque)
+            if (!g_open && !g_preview && !g_settings && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+                if (FloatBtnHit(g_touchX, g_touchY, (float)w, (float)h)) {
+                    g_btnDrag = true; g_btnMoved = false;
+                    g_dragSX = g_touchX; g_dragSY = g_touchY;
+                    ImVec2 ip, lp, ls; float bs;
+                    FloatBtnGeom((float)w, (float)h, ip, lp, ls, bs);
+                    g_dragBX = (g_cfg.btnX >= 0.0f ? g_cfg.btnX : ip.x / (float)w);
+                    g_dragBY = (g_cfg.btnY >= 0.0f ? g_cfg.btnY : ip.y / (float)h);
+                }
+            }
+        } else if (e.kind == 2) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+            // v2.16: el toque al boton flotante se resuelve al soltar
+            if (g_btnDrag) {
+                g_btnDrag = false;
+                if (g_btnMoved) { SaveCfg(); Log("boton flotante movido a (%.2f, %.2f)", g_cfg.btnX, g_cfg.btnY); }
+                else if (!g_open && !g_preview && !g_settings && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+                    static auto lastBtnTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+                    auto now = std::chrono::steady_clock::now();
+                    if (now - lastBtnTap < std::chrono::milliseconds(600)) {  // v2.17: antes 400 ms - a veces no daba tiempo al segundo toque
+                        g_btnPending = false;
+                        g_settings = true;
+                        PlayClick(false);
+                        Log("panel de personalizacion abierto");
+                    } else {
+                        g_btnPending = true; g_btnPendingAt = now;
+                    }
+                    lastBtnTap = now;
+                }
+            }
+            if (g_ignoreNextUp) { g_ignoreNextUp = false; mouseDown = false; }  // v1.5: el toque que abrio la rueda no la cierra
+            else if (mouseDown && g_open && !g_paused) {
+                if (g_preview) { /* v2.2: en vista previa no se aplica ni se cierra */ }
+                else if (g_centerTap) { g_centerTap = false; g_open = false; g_settings = true; PlayClick(false); Log("panel de personalizacion abierto (centro de la rueda)"); }  // v2.31: asi se abre el panel con el boton flotante oculto
+                else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda cerrada -> %d (%s)", g_selected, kStationName[g_selected]); g_open = false; }
+                else { Log("rueda cerrada sin cambiar"); g_open = false; }
+            }
+            mouseDown = false; }
+    }
+    // v2.1: un solo toque al boton flotante = siguiente estacion (si no llega un segundo toque en 600 ms)
+    if (g_btnPending) {
+        if (g_open || g_settings || g_paused || !g_hasRadio || !g_cfg.botonVisible) g_btnPending = false;  // rueda, panel, pausa, sin radio o boton oculto: no cambiar de estacion
+        else if (std::chrono::steady_clock::now() - g_btnPendingAt > std::chrono::milliseconds(600)) {
+            g_btnPending = false;
+            int next = g_current % 13 + 1;
+            ApplyStation(next);
+            PlayClick(true);
+            Log("boton: siguiente estacion %d (%s)", next, kStationName[next]);
+        }
+    }
+    // v1.4: el juego actualiza la estacion leida con un poco de retraso tras StartRadio
+    // (en el log v1.3 la lectura iba una estacion atrasada); re-leer cada ~0.5 s para
+    // que el icono del boton flotante no se quede en la estacion anterior.
+    // v2.47 (Google AI Mode): no consultar el motor nativo cuando suena
+    // User Tracks (12): en Android devuelve 13 (Radio Off) y desincroniza
+    // a SAUserTracks (ademas ponia g_current=13 cada 0.5 s).
+    if (g_inVehicle && !g_open && g_current != 12) {
+        static int frameN = 0;
+        if (++frameN % 30 == 0) RefreshCurrent();
+    }
+    // v1.9: claxon por el boton 7 directo - el byte 84 (0x54) de m_pWidgets[7]
+    // es 1 mientras el boton esta pulsado (confirmado por el log de la v1.8).
+    // Doble toque (<500 ms) abre/cierra la rueda. Si el arreglo no resuelve
+    // o el widget 7 es null, el claxon sigue por zona tactil.
+    if (g_widgets && g_inVehicle) {
+        static bool prevHornDown = false;
+        static auto lastHornTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
+        void* w7 = g_widgets[kHornWidgetId];
+        bool hornDown = w7 && ((const unsigned char*)w7)[84] != 0;
+        // v2.4: validar el offset de pausa - el claxon solo se puede pulsar con el juego activo;
+        // si el byte de menu dice 1 mientras se pulsa, el offset 0x5C no es el menu: desactivar
+        if (hornDown && !prevHornDown && g_menuCheck == 0 && MenuActive()) {
+            g_menuCheck = -1;
+            Log("  !! m_bMenuActive=1 con el claxon pulsado: el offset 0x5C no es el menu en este telefono; pausa desactivada");
+        }
+        if (!g_paused && hornDown && !prevHornDown) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - lastHornTap < std::chrono::milliseconds(500) && now - lastHornTap > std::chrono::milliseconds(80)) {
+                if (g_preview) { g_preview = false; g_open = false; g_settings = true; Log("vista previa cerrada (claxon)"); }
+                else if (!g_settings && g_hasRadio) ToggleWheel("doble claxon (boton 7)");
+                else if (!g_settings) LogBlocked();
+            }
+            lastHornTap = now;
+        }
+        prevHornDown = hornDown;
+    }
+    if (!g_inVehicle) { g_open = false; g_preview = false; g_settings = false; g_btnDrag = false; g_centerTap = false; }  // v2.2: fuera del coche se cierra todo
+    // v2.30: si no hay nada que dibujar (rueda cerrada, panel cerrado, boton
+    // oculto), saltar el frame de ImGui: es el trabajo que la rueda hace en
+    // CADA frame y el que le quita CPU al decodificador de MP3 del mod de
+    // User Tracks. Con el boton visible se dibuja como siempre.
+    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && g_hasRadio && g_cfg.botonVisible;
+    if (onlyButton && g_inited) {
+        // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
+        if (!DrawButtonGL((float)w, (float)h)) {
+            // Si el dibujo GL fallo, volver a ImGui para que el boton se vea.
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            ImGui_ImplOpenGL3_NewFrame(); ImGui::NewFrame();
+            if (g_inVehicle && !g_paused) DrawWheel((float)w, (float)h);
+            ImGui::Render(); ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        }
+        return;
+    }
+    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || (g_settings && !g_paused);
+    if (needDraw) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        ImGui_ImplOpenGL3_NewFrame(); ImGui::NewFrame();
+        if (g_inVehicle && !g_paused) DrawWheel((float)w, (float)h);
+        if (g_settings && !g_paused) DrawSettings((float)w, (float)h);
+        ImGui::Render(); ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+}
+
+static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
+    DrawFrame(d, s);
+    return Swap_orig(d, s);
+}
+
+extern "C" void OnModLoad() {
+    static const char* kFilesDirs[] = {
+        "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files",
+        "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files",
+        "/sdcard/Android/data/com.rockstargames.gtasa/files",
+        "/storage/self/primary/Android/data/com.rockstargames.gtasa/files",
+    };
+    std::string files;
+    for (auto d : kFilesDirs) { struct stat st; if (stat(d, &st) == 0) { files = d; break; } }
+    if (files.empty()) files = kFilesDirs[1];
+    g_gameFilesDir = files;
+    // v2.3: el .ini va en data/configs (AML: android_unprotected/... o android/.../configs),
+    // NO en files/configs - data es la carpeta padre de files
+    g_gameDataDir = files;
+    if (g_gameDataDir.size() > 6 && g_gameDataDir.compare(g_gameDataDir.size()-6, 6, "/files") == 0)
+        g_gameDataDir.resize(g_gameDataDir.size()-6);
+    // v2.36: la carpeta VHudRadio ya no se crea; el log va directo en la
+    // carpeta del juego (com.rockstargames.gtasa).
+    g_logPath = g_gameDataDir + "/VHudRadioLog.txt";  // v2.36: el log vive en la carpeta del juego, no en VHudRadio/
+    { FILE* f = fopen(g_logPath.c_str(), "w"); if (f) { fprintf(f, "# VHudRadioLog - VHud Radio Wheel %s\n", VHUDRADIO_VERSION); fclose(f); } }
+    g_vhudDir = "/storage/emulated/0/vhud";  // v2.27: solo se LEE como respaldo (iconos y horn_pos.txt); ya no se crea la carpeta
+    // v2.36: la carpeta VHudRadio/radio/ ya no se crea (los iconos van
+    // incrustados en el .so); las carpetas vhud/ viejas se siguen leyendo
+    // como respaldo si existen, pero tampoco se crean.
+    LoadCfg();
+    LoadHornPos();
+    Log("  centro del claxon: (%.3f, %.3f)", g_hornCx, g_hornCy);
+    Log("== VHud Radio Wheel %s cargado ==", VHUDRADIO_VERSION);
+
+    void* h = aml->GetLibHandle("libGTASA.so");
+    #define SYM(var, name) do { *(void**)&var = (void*)aml->GetSym(h, name); Log("  %s %s", var ? "ok    " : "FALTA " , name); } while (0)
+    SYM(FindPlayerPed, "_Z13FindPlayerPedi");
+    SYM(FindPlayerVehicle, "_Z17FindPlayerVehicleib");
+    SYM(g_retuneAudio, "_ZN12CAudioEngine11RetuneRadioEa");
+    SYM(g_retuneTrack, "_ZN20CAERadioTrackManager11RetuneRadioEa");
+    SYM(g_getStationAudio, "_ZN12CAudioEngine24GetCurrentRadioStationIDEv");
+    SYM(g_getStationTrack, "_ZN20CAERadioTrackManager24GetCurrentRadioStationIDEv");
+    SYM(g_startAudio, "_ZN12CAudioEngine10StartRadioEaa");
+    SYM(g_startTrack, "_ZN20CAERadioTrackManager10StartRadioEaafh");
+    SYM(g_audioEngine, "AudioEngine");
+    SYM(g_trackManager, "AERadioTrackManager");
+    SYM(g_widgets, "_ZN15CTouchInterface10m_pWidgetsE");
+    if (g_widgets) Log("  widgets: m_pWidgets=%p w0=%p w2=%p w7=%p", (void*)g_widgets, g_widgets[0], g_widgets[2], g_widgets[7]);
+    else Log("  !! m_pWidgets no resolvio: no se puede leer el boton 7 directo; el claxon sigue por zona tactil/calibrada");
+    SYM(g_menuManager, "FrontEndMenuManager");
+    if (!g_menuManager) SYM(g_menuManager, "_ZN13CMenuManager18FrontEndMenuManagerE");
+    if (g_menuManager) {
+        void* sym = g_menuManager;
+        g_menuManager = ResolveMenuManager(g_menuManager);
+        Log("  menu de pausa: FrontEndMenuManager sim=%p obj=%p m_bMenuActive(0x5C)=%d", sym, g_menuManager, ((const unsigned char*)g_menuManager)[0x5C]);
+    }
+    else Log("  !! FrontEndMenuManager no resolvio: la UI no se ocultara en el menu de pausa");
+    SYM(g_userPause, "_ZN6CTimer11m_UserPauseE");
+    SYM(g_codePause, "_ZN6CTimer11m_CodePauseE");
+    SYM(g_slowActive, "_ZN6CTimer17bSlowMotionActiveE");
+    SYM(g_slowScale, "_ZN6CTimer19ms_fSlowMotionScaleE");
+    SYM(g_timeScale, "_ZN6CTimer13ms_fTimeScaleE");
+    if (!g_slowActive && !g_timeScale) Log("  !! sin escala de tiempo: no habra ralentizacion al abrir la rueda");
+    void* dfe = (void*)aml->GetSym(h, "_ZN12CMenuManager12DrawFrontEndEv");
+    Log("  %s CMenuManager::DrawFrontEnd", dfe ? "ok" : "FALTA");
+    if (dfe) aml->Hook(dfe, (void*)DrawFrontEnd_hook, (void**)&DrawFrontEnd_orig);
+    #undef SYM
+    Log("  globales: AudioEngine=%p AERadioTrackManager=%p", g_audioEngine, g_trackManager);
+    if (!g_audioEngine || !g_trackManager) Log("  !! falta un objeto global de radio: no se llamara a ninguna funcion de radio");
+    if (!g_retuneAudio && !g_retuneTrack && !g_startAudio && !g_startTrack)
+        Log("!! ningun Retune/Start resolvio: la rueda se dibujara pero no cambiara la radio. Ver VHudRadioProbe.txt");
+
+    void* touch = (void*)aml->GetSym(h, "_Z14AND_TouchEventiiii");
+    Log("  %s AND_TouchEvent", touch ? "ok" : "FALTA");
+    if (touch) aml->Hook(touch, (void*)Touch_hook, (void**)&Touch_orig);
+    bool got = PatchGot("libGTASA.so", "eglSwapBuffers", (void*)Swap_hook, (void**)&Swap_orig);
+    Log("  eglSwapBuffers por GOT: %s", got ? "ok" : "no encontrado");
+    if (!got) {
+        void* fn = dlsym(RTLD_DEFAULT, "eglSwapBuffers");
+        if (fn) { aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig); Log("  eglSwapBuffers por hook directo"); }
+        else Log("  !! no se pudo enganchar eglSwapBuffers: la rueda no se dibujara");
+    }
+}
