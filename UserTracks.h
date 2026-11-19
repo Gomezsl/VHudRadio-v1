@@ -164,6 +164,7 @@ static bool* ut_loadingActive = nullptr;     // CLoadingScreen::m_bActive (si re
 static std::chrono::steady_clock::time_point ut_lastStatus = std::chrono::steady_clock::now();
 static std::chrono::steady_clock::time_point ut_startedAt = std::chrono::steady_clock::now();
 static bool ut_diagDone = true;  // diagnostico: lectura nativa con retraso (una vez por arranque)
+static std::chrono::steady_clock::time_point ut_nameUntil = std::chrono::steady_clock::now();  // banner "User Tracks" (4 s tras poner la 12)
 
 // ---- OpenSL (reproductor de musica; comparte motor y mezcla con los clics) ----
 static SLObjectItf ut_player = nullptr;
@@ -176,6 +177,18 @@ static pthread_mutex_t ut_cbMutex = PTHREAD_MUTEX_INITIALIZER;
 // ---- hook de StartRadio ----
 static StartRadioTrackFn ut_origStartRadio = nullptr;
 static bool ut_hookInstalled = false;
+// DisplayRadioStationName del juego (muestra el nombre de la estacion en el
+// HUD). En la 12 mostraria "Radio Off" (la nativa es 13); se suprime mientras
+// suena el reproductor y el nombre lo pone el banner (DrawStationBanner).
+typedef void (*DisplayNameFn)(void*);
+static DisplayNameFn ut_origDisplayName = nullptr;
+static void UT_DisplayName_hook(void* trackMgr) {
+    if (ut_active) return;  // v1: no mostrar "Radio Off" en la 12
+    if (ut_origDisplayName) ut_origDisplayName(trackMgr);
+}
+static bool UT_BannerActive() {
+    return ut_active && std::chrono::steady_clock::now() < ut_nameUntil;
+}
 
 // ---- utilidades ----
 static const char* UT_Basename(const char* path) {
@@ -532,6 +545,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         }
         UT_Start();
         g_current = 12;
+        ut_nameUntil = std::chrono::steady_clock::now() + std::chrono::seconds(4);  // banner "User Tracks"
         // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
         // nativa audio=10/11/13 con la rueda en 12), asi que se queda sonando
         // la emisora anterior por debajo de las canciones. Se le pide Radio
@@ -598,5 +612,12 @@ static void UT_InstallHooks() {
     if (h) {
         ut_loadingActive = (bool*)aml->GetSym(h, "_ZN14CLoadingScreen9m_bActiveE");
         Log("UT: CLoadingScreen::m_bActive %s", ut_loadingActive ? "ok" : "no resolvio (sin pausa en carga)");
+        void* dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");
+        if (dn) {
+            aml->Hook(dn, (void*)UT_DisplayName_hook, (void**)&ut_origDisplayName);
+            Log("UT: hook DisplayRadioStationName %s", ut_origDisplayName ? "ok" : "no se pudo instalar (se vera Radio Off en la 12)");
+        } else {
+            Log("UT: DisplayRadioStationName no resolvio (se vera Radio Off en la 12)");
+        }
     }
 }
