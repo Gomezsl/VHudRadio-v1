@@ -164,7 +164,6 @@ static bool* ut_loadingActive = nullptr;     // CLoadingScreen::m_bActive (si re
 static std::chrono::steady_clock::time_point ut_lastStatus = std::chrono::steady_clock::now();
 static std::chrono::steady_clock::time_point ut_startedAt = std::chrono::steady_clock::now();
 static bool ut_diagDone = true;  // diagnostico: lectura nativa con retraso (una vez por arranque)
-static std::chrono::steady_clock::time_point ut_nameUntil = std::chrono::steady_clock::now();  // banner "User Tracks" (4 s tras poner la 12)
 
 // ---- OpenSL (reproductor de musica; comparte motor y mezcla con los clics) ----
 static SLObjectItf ut_player = nullptr;
@@ -178,16 +177,31 @@ static pthread_mutex_t ut_cbMutex = PTHREAD_MUTEX_INITIALIZER;
 static StartRadioTrackFn ut_origStartRadio = nullptr;
 static bool ut_hookInstalled = false;
 // DisplayRadioStationName del juego (muestra el nombre de la estacion en el
-// HUD). En la 12 mostraria "Radio Off" (la nativa es 13); se suprime mientras
-// suena el reproductor y el nombre lo pone el banner (DrawStationBanner).
+// HUD, como "K-JAH WEST"). En la 12 mostraria "Radio Off" (la nativa es 13),
+// asi que mientras suena el reproductor la funcion ve la estacion 12: solo
+// durante esa llamada los GetCurrentRadioStationID devuelven 12. Fuera de la
+// llamada ven la nativa real (13), asi que el resto del juego no se entera.
 typedef void (*DisplayNameFn)(void*);
 static DisplayNameFn ut_origDisplayName = nullptr;
-static void UT_DisplayName_hook(void* trackMgr) {
-    if (ut_active) return;  // v1: no mostrar "Radio Off" en la 12
-    if (ut_origDisplayName) ut_origDisplayName(trackMgr);
+static bool ut_displayAs12 = false;
+static GetStationFn ut_origGetStationTrack = nullptr;
+static GetStationFn ut_origGetStationAudio = nullptr;
+static signed char UT_GetStationTrack_hook(void* mgr) {
+    if (ut_displayAs12) return 12;
+    return ut_origGetStationTrack ? ut_origGetStationTrack(mgr) : 0;
 }
-static bool UT_BannerActive() {
-    return ut_active && std::chrono::steady_clock::now() < ut_nameUntil;
+static signed char UT_GetStationAudio_hook(void* eng) {
+    if (ut_displayAs12) return 12;
+    return ut_origGetStationAudio ? ut_origGetStationAudio(eng) : 0;
+}
+static void UT_DisplayName_hook(void* trackMgr) {
+    if (ut_active && ut_origDisplayName) {
+        ut_displayAs12 = true;
+        ut_origDisplayName(trackMgr);
+        ut_displayAs12 = false;
+        return;
+    }
+    if (ut_origDisplayName) ut_origDisplayName(trackMgr);
 }
 
 // ---- utilidades ----
@@ -545,7 +559,6 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         }
         UT_Start();
         g_current = 12;
-        ut_nameUntil = std::chrono::steady_clock::now() + std::chrono::seconds(4);  // banner "User Tracks"
         // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
         // nativa audio=10/11/13 con la rueda en 12), asi que se queda sonando
         // la emisora anterior por debajo de las canciones. Se le pide Radio
@@ -619,5 +632,10 @@ static void UT_InstallHooks() {
         } else {
             Log("UT: DisplayRadioStationName no resolvio (se vera Radio Off en la 12)");
         }
+        // v1: que DisplayRadioStationName vea la 12 (solo durante su llamada).
+        // Los getters se enganchan igual que StartRadio; fuera de esa llamada
+        // devuelven la nativa real, asi que el resto del juego no se entera.
+        if (g_getStationTrack) { aml->Hook((void*)g_getStationTrack, (void*)UT_GetStationTrack_hook, (void**)&ut_origGetStationTrack); Log("UT: hook GetStationTrack %s", ut_origGetStationTrack ? "ok" : "no se pudo instalar"); }
+        if (g_getStationAudio) { aml->Hook((void*)g_getStationAudio, (void*)UT_GetStationAudio_hook, (void**)&ut_origGetStationAudio); Log("UT: hook GetStationAudio %s", ut_origGetStationAudio ? "ok" : "no se pudo instalar"); }
     }
 }

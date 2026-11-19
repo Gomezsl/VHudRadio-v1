@@ -2055,22 +2055,6 @@ static void HexDump(char* out, size_t outSz, const void* p, int n) {
     for (int i = 0; i < n && w < (int)outSz - 4; i++) w += snprintf(out + w, outSz - (size_t)w, "%02X ", b[i]);
     if (w > 0 && w < (int)outSz) out[w - 1] = 0;  // quitar el ultimo espacio
 }
-// v1: nombre de la estacion en la 12. El juego muestra "Radio Off" (la nativa
-// es 13), asi que el plugin dibuja "User Tracks" arriba en el centro, donde
-// sale el nombre de la estacion, durante 4 s despues de poner la 12. El
-// DisplayRadioStationName del juego se suprime mientras suena el reproductor
-// (ver UT_DisplayName_hook en UserTracks.h).
-static void DrawStationBanner(float W, float H) {
-    if (!UT_BannerActive()) return;
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
-    ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
-    const char* txt = "User Tracks";
-    float ns = H * 0.045f;
-    ImVec2 sz = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, txt, nullptr);
-    ImVec2 p(W * 0.5f - sz.x * 0.5f, H * 0.05f);
-    dl->AddText(font, ns, ImVec2(p.x + 2.0f, p.y + 2.0f), IM_COL32(0, 0, 0, 200), txt);  // sombra
-    dl->AddText(font, ns, p, IM_COL32(255, 255, 255, 255), txt);
-}
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     if (g_failed) return;
     EGLContext ctx = eglGetCurrentContext();
@@ -2377,7 +2361,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     // oculto), saltar el frame de ImGui: es el trabajo que la rueda hace en
     // CADA frame y el que le quita CPU al decodificador de MP3 del mod de
     // User Tracks. Con el boton visible se dibuja como siempre.
-    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && g_hasRadio && g_cfg.botonVisible && !UT_BannerActive();
+    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && g_hasRadio && g_cfg.botonVisible;
     if (onlyButton && g_inited) {
         // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
         if (!DrawButtonGL((float)w, (float)h)) {
@@ -2389,13 +2373,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         }
         return;
     }
-    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || (g_settings && !g_paused) || UT_BannerActive();
+    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || (g_settings && !g_paused);
     if (needDraw) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         ImGui_ImplOpenGL3_NewFrame(); ImGui::NewFrame();
         if (g_inVehicle && !g_paused) DrawWheel((float)w, (float)h);
         if (g_settings && !g_paused) DrawSettings((float)w, (float)h);
-        if (g_inVehicle && !g_paused) DrawStationBanner((float)w, (float)h);
         ImGui::Render(); ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
 }
