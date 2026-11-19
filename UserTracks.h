@@ -26,9 +26,12 @@
 #include "minimp3.h"
 
 #include <dirent.h>
+#include <link.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -527,9 +530,47 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
     ut_origStartRadio(trackMgr, station, a2, a3, a4);
 }
 
+// ---- parches de la estacion 12 en el juego (los mismos de SAUserTracks) ----
+// Sin ellos, el motor de radio del juego trata la 12 como fuera de rango y
+// NO cambia a ella: se queda sonando la estacion anterior por debajo de
+// nuestras canciones (doble audio). Los parches quitan ese trato especial
+// (comparan contra 0xff en vez de 12) para que la 12 sea una estacion normal
+// y su audio nativo sea silencio (en Android no hay User Tracks nativo).
+// Se comprueba el valor actual antes de escribir: si no coincide, no se toca.
+static uintptr_t UT_LibBase(const char* libName) {
+    struct Ctx { const char* lib; uintptr_t base; } c = {libName, 0};
+    dl_iterate_phdr([](struct dl_phdr_info* i, size_t, void* d) -> int {
+        Ctx* x = (Ctx*)d;
+        if (i->dlpi_name && strstr(i->dlpi_name, x->lib)) { x->base = i->dlpi_addr; return 1; }
+        return 0; }, &c);
+    return c.base;
+}
+static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, const char* name) {
+    uint32_t cur = *(volatile uint32_t*)addr;
+    if (cur == replacement) { Log("UT: parche %s: ya aplicado", name); return true; }
+    if (cur != expected) { Log("UT: parche %s: valor inesperado 0x%08X (esperaba 0x%08X): no se aplica", name, cur, expected); return false; }
+    long pg = sysconf(_SC_PAGESIZE);
+    uintptr_t page = addr & ~((uintptr_t)pg - 1);
+    if (mprotect((void*)page, (size_t)pg, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) { Log("UT: parche %s: mprotect fallo", name); return false; }
+    *(volatile uint32_t*)addr = replacement;
+    __builtin___clear_cache((char*)addr, (char*)addr + 4);
+    mprotect((void*)page, (size_t)pg, PROT_READ | PROT_EXEC);
+    uint32_t after = *(volatile uint32_t*)addr;
+    if (after != replacement) { Log("UT: parche %s: no quedo (0x%08X)", name, after); return false; }
+    Log("UT: parche %s aplicado (0x%08X -> 0x%08X)", name, expected, replacement);
+    return true;
+}
+static void UT_ApplyStation12Patches() {
+    uintptr_t base = UT_LibBase("libGTASA.so");
+    if (!base) { Log("UT: parches 12: sin base de libGTASA"); return; }
+    UT_Patch32(base + 0x47c9f8, 0x7100313F, 0x7103FD1F, "menu 12");
+    UT_Patch32(base + 0x47f3ac, 0x7100311F, 0x7103FC1F, "salto 12");
+}
+
 // Instala el hook de StartRadio (se llama en Init, con los simbolos ya resueltos).
 // Tambien intenta resolver CLoadingScreen::m_bActive para pausar en la carga.
 static void UT_InstallHooks() {
+    UT_ApplyStation12Patches();  // v1: que la 12 sea estacion normal en el juego
     if (!g_startTrack) { Log("UT: sin StartRadio: no hay reproductor de User Tracks"); return; }
     aml->Hook((void*)g_startTrack, (void*)UT_StartRadio_hook, (void**)&ut_origStartRadio);
     if (ut_origStartRadio) {

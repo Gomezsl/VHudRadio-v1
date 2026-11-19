@@ -21,7 +21,7 @@ Esta es la línea v1: la rueda de la 2.47 con el reproductor propio dentro, para
 
 ## Instalación
 
-1. Copia `libVHudRadio64.so` a la carpeta de mods de AML.
+1. Copia `libVHudRadio.so` a la carpeta de mods de AML.
 2. No necesitas ningún otro archivo ni el mod SAUserTracks: el reproductor ya viene dentro. Si lo tenías instalado, quita su `libSAUserTrack64.so`: con los dos a la vez la música sonaría duplicada.
 3. Los ajustes se guardan en `VHudRadio/VHudRadio.ini` y el registro en `VHudRadio/VHudRadioLog.txt`.
 

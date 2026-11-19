@@ -6,7 +6,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/imgui $(LOCAL_PATH)/imgui/backends
 LOCAL_CPPFLAGS := -std=c++17 -O2 -fno-exceptions -fno-rtti -fvisibility=hidden -DIMGUI_IMPL_OPENGL_ES2
 include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
-LOCAL_MODULE := VHudRadio64
+LOCAL_MODULE := VHudRadio
 LOCAL_SRC_FILES := VHudRadio.cpp AndroidModLoader/mod/config.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/AndroidModLoader $(LOCAL_PATH)/imgui $(LOCAL_PATH)/imgui/backends $(LOCAL_PATH)
 LOCAL_CPPFLAGS := -std=c++17 -O2 -fno-exceptions -fno-rtti
