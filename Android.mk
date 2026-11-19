@@ -11,6 +11,6 @@ LOCAL_SRC_FILES := VHudRadio.cpp AndroidModLoader/mod/config.cpp
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/AndroidModLoader $(LOCAL_PATH)/imgui $(LOCAL_PATH)/imgui/backends $(LOCAL_PATH)
 LOCAL_CPPFLAGS := -std=c++17 -O2 -fno-exceptions -fno-rtti
 LOCAL_STATIC_LIBRARIES := imgui_es2
-LOCAL_LDLIBS := -llog -ldl -lEGL -lGLESv2
+LOCAL_LDLIBS := -llog -ldl -lEGL -lGLESv2 -lOpenSLES
 LOCAL_LDFLAGS := -Wl,--exclude-libs,ALL
 include $(BUILD_SHARED_LIBRARY)
