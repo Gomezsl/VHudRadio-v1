@@ -2055,6 +2055,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     if (ctx == EGL_NO_CONTEXT) return;
     EGLint w = 0, h = 0; eglQuerySurface(dpy, surf, EGL_WIDTH, &w); eglQuerySurface(dpy, surf, EGL_HEIGHT, &h);
     if (w < 200 || h < 200) return;
+    // v1: durante la pantalla de carga no hacer nada (ni leer el vehiculo ni
+    // dibujar): el juego esta cargando texturas y la rueda/boton no se ven.
+    // ut_loadingActive es CLoadingScreen::m_bActive (resuelto en UT_InstallHooks).
+    if (ut_loadingActive && *ut_loadingActive) return;
     void* veh = FindPlayerVehicle ? FindPlayerVehicle(-1, false) : nullptr;
     bool wasInVehicle = g_inVehicle;
     g_inVehicle = veh != nullptr;
