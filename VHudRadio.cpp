@@ -2079,6 +2079,30 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (!g_hasRadio) g_open = false;  // rueda cerrada si no tiene radio
         }
     }
+    // v1 (diagnostico): buscar el campo de estacion en el manager/audio engine.
+    // Cuando la estacion nativa se asienta 3 s en un valor, volcar los primeros
+    // 64 bytes de ambos objetos. El byte que vale lo mismo que la estacion en
+    // todos los volcados es el campo que lee DisplayRadioStationName (el getter
+    // esta inlined y el hook del getter no le afecta: el juego sigue llamando
+    // "Radio Off" a la 12 aunque los getters devuelvan 12 en esa llamada).
+    {
+        static int lastNative = -1;
+        static auto settleAt = std::chrono::steady_clock::now();
+        static int dumpedFor = -1;
+        if (g_getStationAudio && g_audioEngine && g_trackManager) {
+            int va = (int)g_getStationAudio(g_audioEngine);
+            int vt = g_getStationTrack ? (int)g_getStationTrack(g_trackManager) : -1;
+            if (va != lastNative) { lastNative = va; settleAt = std::chrono::steady_clock::now() + std::chrono::seconds(3); }
+            else if (va >= 1 && va <= 13 && va != dumpedFor && std::chrono::steady_clock::now() >= settleAt) {
+                dumpedFor = va;
+                char hx[64*3+1], ax[64*3+1];
+                HexDump(hx, sizeof hx, g_trackManager, 64);
+                HexDump(ax, sizeof ax, g_audioEngine, 64);
+                Log("UT: mgr estacion audio=%d track=%d bytes[0x00..0x3F]=%s", va, vt, hx);
+                Log("UT: eng estacion audio=%d track=%d bytes[0x00..0x3F]=%s", va, vt, ax);
+            }
+        }
+    }
     // v2.9: diagnostico RadioType - la v2.8 SE CERRO al entrar a un auto de
     // policia: el escaneo leyo un valor (0x23F800000) que "parecia" un puntero
     // (cae en el rango 2^32..2^48) pero no esta mapeado, y al leerlo el juego
