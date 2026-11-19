@@ -612,9 +612,9 @@ static void UT_InstallHooks() {
     if (h) {
         ut_loadingActive = (bool*)aml->GetSym(h, "_ZN14CLoadingScreen9m_bActiveE");
         Log("UT: CLoadingScreen::m_bActive %s", ut_loadingActive ? "ok" : "no resolvio (sin pausa en carga)");
-        void* dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");
+        uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
         if (dn) {
-            aml->Hook(dn, (void*)UT_DisplayName_hook, (void**)&ut_origDisplayName);
+            aml->Hook((void*)dn, (void*)UT_DisplayName_hook, (void**)&ut_origDisplayName);
             Log("UT: hook DisplayRadioStationName %s", ut_origDisplayName ? "ok" : "no se pudo instalar (se vera Radio Off en la 12)");
         } else {
             Log("UT: DisplayRadioStationName no resolvio (se vera Radio Off en la 12)");
