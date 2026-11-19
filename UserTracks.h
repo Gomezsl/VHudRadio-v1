@@ -162,6 +162,8 @@ static char ut_curTrack[256] = "";           // basename de la pista actual
 static int ut_underruns = 0;                 // callbacks cortos (ring vacio) desde el inicio
 static bool* ut_loadingActive = nullptr;     // CLoadingScreen::m_bActive (si resuelve)
 static std::chrono::steady_clock::time_point ut_lastStatus = std::chrono::steady_clock::now();
+static std::chrono::steady_clock::time_point ut_startedAt = std::chrono::steady_clock::now();
+static bool ut_diagDone = true;  // diagnostico: lectura nativa con retraso (una vez por arranque)
 
 // ---- OpenSL (reproductor de musica; comparte motor y mezcla con los clics) ----
 static SLObjectItf ut_player = nullptr;
@@ -412,6 +414,8 @@ static bool UT_Start() {
     ut_stopThread = false;
     ut_decPaused = false;
     ut_pausedDev = false;
+    ut_startedAt = std::chrono::steady_clock::now();
+    ut_diagDone = false;
     if (!ut_ring.init(UT_RING_BYTES)) { Log("UT: sin memoria para el anillo"); return false; }
     ut_threadRunning = false;
     if (pthread_create(&ut_thread, nullptr, UT_DecoderThread, nullptr) != 0) {
@@ -510,6 +514,12 @@ static void UT_Frame() {
     bool paused = g_paused || (ut_loadingActive && *ut_loadingActive);
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();
+    if (!ut_diagDone && now - ut_startedAt > std::chrono::seconds(3)) {
+        ut_diagDone = true;
+        int va = (g_getStationAudio && g_audioEngine) ? (int)g_getStationAudio(g_audioEngine) : -1;
+        int vt = (g_getStationTrack && g_trackManager) ? (int)g_getStationTrack(g_trackManager) : -1;
+        Log("UT: diagnostico: nativa audio=%d track=%d (rueda=12)", va, vt);
+    }
     if (now - ut_lastStatus > std::chrono::seconds(60)) {
         ut_lastStatus = now;
         Log("UT: estado: pista=%s underruns=%d anillo=%d KB", ut_curTrack, ut_underruns, (int)(ut_ring.avail() / 1024));
@@ -528,8 +538,8 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         }
         UT_Start();
         g_current = 12;
-        if (g_stopRadio) g_stopRadio(trackMgr, nullptr, 0);  // v1: apaga el audio nativo de la emisora anterior
         ut_origStartRadio(trackMgr, 12, a2, a3, a4);
+        if (g_stopRadio) g_stopRadio(trackMgr, nullptr, 0);  // v1: apaga el audio nativo DESPUES de poner la 12 (antes no lo apagaba)
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
