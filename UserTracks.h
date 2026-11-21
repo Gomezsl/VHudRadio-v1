@@ -827,7 +827,9 @@ static void UT_Stop(const char* reason) {
 static void UT_Frame() {
     if (!ut_active) return;
     if (ut_wantStop) { UT_Stop("sin pistas decodificables"); return; }
-    if (!g_inVehicle) { UT_Stop("salio del vehiculo"); return; }
+    // v1.6: al salir del vehiculo la radio SE QUEDA en la emisora (no se
+    // apaga): el reproductor sigue sonando a pie hasta que se cambie de
+    // emisora o se apague la radio. Antes se paraba aqui ("salio del vehiculo").
     bool paused = g_paused || (ut_loadingActive && *ut_loadingActive);
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();

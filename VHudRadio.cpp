@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.5.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.6.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -579,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.5.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.6.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.5.0-beta"
+#define VHUDRADIO_VERSION "1.6.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -697,14 +697,14 @@ static const char* kStationProgram[14] = { "", "Forth Right MC", "Mary-Beth Mayb
 enum LangId { L_ES = 0, L_EN, L_ID, L_PT, L_FR, L_DE, L_COUNT };
 static const char* kLangNames[L_COUNT] = { "Español", "English", "Bahasa Indonesia", "Portugues (BR)", "Francais", "Deutsch" };
 static const char* kLangCodes[L_COUNT] = { "es", "en", "id", "pt", "fr", "de" };
-enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_COUNT };  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego
+enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_TL_BTN, STR_TL_TITLE, STR_TL_PLAYING, STR_COUNT };  // v1.6: lista de canciones traducida  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego
 static const char* kUI[L_COUNT][STR_COUNT] = {
-    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta" },
-    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open" },
-    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka" },
-    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta" },
-    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte" },
-    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist" },
+    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta", "Lista de canciones", "LISTA DE CANCIONES", "SONANDO" },
+    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open", "Song list", "TRACK LIST", "PLAYING" },
+    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka", "Daftar lagu", "DAFTAR LAGU", "MEMUTAR" },
+    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta", "Lista de músicas", "LISTA DE MÚSICAS", "TOCANDO" },
+    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte", "Liste des chansons", "LISTE DES CHANSONS", "EN LECTURE" },
+    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist", "Songliste", "SONGLISTE", "LÄUFT" },
 };
 // v2.0: genero de cada estacion, para el centro de la rueda estilo GTA V
 static const char* kGenre[L_COUNT][14] = {
@@ -1782,13 +1782,17 @@ static bool DrawButtonGL(float W, float H) {
 // textura pequena (4x/8x/16x segun la barra) dibujandola en un FBO con el
 // programa del boton, y se amplifica a pantalla completa con filtro lineal:
 // eso SI se ve borroso. La barra 0-100 sigue igual (0 = apagado, 1-33 = 4x
-// suave, 34-66 = 8x medio, 67-100 = 16x fuerte). Si el FBO no esta
-// completo, no hay blur (solo el fondo oscuro). Cuesta una copia + 2 quads
-// por cuadro con la rueda abierta. Las UVs van invertidas en Y (la copia
-// del framebuffer sale al reves). Se dibuja con GL directo (no ImGui) antes
-// de que ImGui pinte el fondo oscuro y la rueda.
+// suave, 34-66 = 8x medio, 67-100 = 16x fuerte). v1.6: la reduccion es en
+// 2 pasos (escena -> mitad -> pequena) para que no se pixele: bajar en un
+// solo paso dejaba bloques porque el filtro lineal solo promedia 2x2. Si el
+// FBO no esta completo, no hay blur (solo el fondo oscuro). Cuesta una copia
+// + 3 quads por cuadro con la rueda abierta. Las UVs van invertidas en Y
+// (la copia del framebuffer sale al reves). Se dibuja con GL directo (no
+// ImGui) antes de que ImGui pinte el fondo oscuro y la rueda.
 static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolveFBO = 0;
+static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (mitad) para bajar en 2 pasos y que no se pixele
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
+static int g_blurMW = 0, g_blurMH = 0;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
     if (g_cfg.blur <= 33) return 4;   // v1.5: menos pixeliado (el 32x dejaba la textura en 75x33 y se veian los cuadros)
@@ -1803,11 +1807,15 @@ static void BlurDrawBackground(float W, float H) {
     if (!GLBtnInit()) return;
     int sw = w / factor, sh = h / factor;
     if (sw < 8) sw = 8; if (sh < 8) sh = 8;
-    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO) {
+    int mw = w / 2, mh = h / 2;  // v1.6: paso intermedio (mitad) para el blur en 2 pasos
+    if (mw < 8) mw = 8; if (mh < 8) mh = 8;
+    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO) {
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
+        if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
         if (g_blurCopyTex) { glDeleteTextures(1, &g_blurCopyTex); g_blurCopyTex = 0; }
         if (g_blurSmallTex) { glDeleteTextures(1, &g_blurSmallTex); g_blurSmallTex = 0; }
+        if (g_blurMidTex) { glDeleteTextures(1, &g_blurMidTex); g_blurMidTex = 0; }
         glGenTextures(1, &g_blurCopyTex);
         glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1831,6 +1839,25 @@ static void BlurDrawBackground(float W, float H) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             return;
         }
+        // v1.6: textura intermedia (mitad de la escena) para bajar el blur en
+        // 2 pasos (escena -> mitad -> pequena): cada paso promedia bien y la
+        // imagen final sale suave, sin los bloques del bajado en un solo paso.
+        glGenTextures(1, &g_blurMidTex);
+        glBindTexture(GL_TEXTURE_2D, g_blurMidTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mw, mh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenFramebuffers(1, &g_blurMidFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurMidFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blurMidTex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            Log("  !! blur: FBO intermedio incompleto, sin desenfoque");
+            glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
         // v1.4: FBO para resolver el framebuffer del juego (MSAA) a la
         // textura de copia. Sin esto, glCopyTexImage2D falla con 0x502.
         glGenFramebuffers(1, &g_blurResolveFBO);
@@ -1841,7 +1868,7 @@ static void BlurDrawBackground(float W, float H) {
             glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0;
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor;
+        g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor; g_blurMW = mw; g_blurMH = mh;
         Log("  blur: FBO listo factor=%dx (%dx%d -> %dx%d)%s", factor, w, h, sw, sh, g_pBlitFB ? " (blit MSAA)" : " (copia directa)");
     }
     // guardar estado GL del juego
@@ -1901,13 +1928,19 @@ static void BlurDrawBackground(float W, float H) {
             glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         };
-        float projS[16] = {0}, projF[16] = {0};
+        float projS[16] = {0}, projF[16] = {0}, projM[16] = {0};
         projS[0] = 2.0f / sw; projS[5] = -2.0f / sh; projS[10] = -1.0f; projS[12] = -1.0f; projS[13] = 1.0f; projS[15] = 1.0f;
         projF[0] = 2.0f / w; projF[5] = -2.0f / h; projF[10] = -1.0f; projF[12] = -1.0f; projF[13] = 1.0f; projF[15] = 1.0f;
-        // 2. reducir: dibujar la copia en el FBO (textura pequena = borrosa)
+        projM[0] = 2.0f / mw; projM[5] = -2.0f / mh; projM[10] = -1.0f; projM[12] = -1.0f; projM[13] = 1.0f; projM[15] = 1.0f;
+        // 2. reducir en 2 pasos (v1.6: escena -> mitad -> pequena, mas suave):
+        // primero la copia a la textura intermedia (mitad), luego la
+        // intermedia a la textura pequena.
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurMidFBO);
+        glViewport(0, 0, mw, mh);
+        drawQuad(g_blurCopyTex, 0, 0, (float)mw, (float)mh, projM);
         glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
         glViewport(0, 0, sw, sh);
-        drawQuad(g_blurCopyTex, 0, 0, (float)sw, (float)sh, projS);
+        drawQuad(g_blurMidTex, 0, 0, (float)sw, (float)sh, projS);
         // 3. ampliar: dibujar la textura pequena en el framebuffer por defecto
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, w, h);
@@ -2094,7 +2127,7 @@ static void DrawWheel(float W, float H) {
         // v1.4: boton "Lista de canciones" debajo del nombre (abre la lista
         // como la de GTA V para elegir la pista).
         {
-            const char* lbl = "Lista de canciones";
+            const char* lbl = S(STR_TL_BTN);  // v1.6: traducido segun el idioma
             float lsz = H * 0.02f;
             ImVec2 ltsz = font->CalcTextSizeA(lsz, FLT_MAX, 0.0f, lbl, nullptr);
             float bw = ltsz.x + H * 0.03f, bh = ltsz.y + H * 0.012f;
@@ -2367,11 +2400,27 @@ static bool PanelSwatch(const char* label, ImVec4 col, bool active, float H) {
 }
 
 // v2.2: panel de personalizacion (se abre con doble toque al boton flotante)
+// v1.6: dividir el nombre de la pista en artista y titulo ("Artista -
+// Titulo", como en la imagen de GTA V). Si no hay " - ", todo es titulo.
+static void SplitArtistTitle(const char* name, char* artist, size_t aCap, char* title, size_t tCap) {
+    const char* sep = strstr(name, " - ");
+    if (sep) {
+        size_t alen = (size_t)(sep - name);
+        if (alen >= aCap) alen = aCap - 1;
+        memcpy(artist, name, alen); artist[alen] = 0;
+        snprintf(title, tCap, "%s", sep + 3);
+    } else {
+        artist[0] = 0;
+        snprintf(title, tCap, "%s", name);
+    }
+}
 // v1.4: lista de canciones de User Tracks (como la de GTA V): se abre desde
 // la rueda y muestra todas las pistas; la que suena va marcada con PLAYING.
 // Tocar una pista la pone a sonar. La X de arriba a la derecha la cierra.
 // v1.5: UI mejorada (icono de User Track en la cabecera, fila actual con
 // fondo azul y pastilla amarilla PLAYING como en GTA V, filas mas altas).
+// v1.6: cada cancion tiene DIVISION (linea separadora), titulo + artista
+// debajo (como en la imagen), y todo traducido segun el idioma.
 static void DrawTrackList(float W, float H) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, H * 0.012f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H * 0.016f, H * 0.014f));
@@ -2402,7 +2451,7 @@ static void DrawTrackList(float W, float H) {
         ImGui::SameLine();
     }
     ImGui::BeginGroup();
-    ImGui::Text("TRACK LIST");
+    ImGui::Text("%s", S(STR_TL_TITLE));  // v1.6: traducido segun el idioma
     ImGui::Text("User Track Player");
     ImGui::EndGroup();
     ImGui::SameLine(ImGui::GetWindowWidth() - H * 0.05f);
@@ -2410,23 +2459,43 @@ static void DrawTrackList(float W, float H) {
     ImGui::Separator();
     ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
     int cur = UT_CurrentTrackIdx();
+    // v1.6: cada fila es titulo + artista debajo, con linea divisora entre
+    // canciones (como en la imagen de GTA V). Se dibuja a mano para poder
+    // poner el titulo en blanco y el artista en gris.
+    float rowH = H * 0.085f;
+    float numW = H * 0.045f;
     for (size_t i = 0; i < ut_tracks.size(); i++) {
         const char* nm = UT_TrackNameFor((int)i);
         bool isCur = ((int)i == cur);
-        char label[320];
-        snprintf(label, sizeof label, "%d  %s", (int)i + 1, nm);
-        if (ImGui::Selectable(label, isCur, 0, ImVec2(0, H * 0.032f))) {
-            if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
-        }
+        char artist[256], title[256];
+        SplitArtistTitle(nm, artist, sizeof artist, title, sizeof title);
+        char id[32];
+        snprintf(id, sizeof id, "##trk%zu", i);
+        ImGui::InvisibleButton(id, ImVec2(ImGui::GetContentRegionAvail().x, rowH));
+        bool clicked = ImGui::IsItemClicked();
+        ImVec2 rMin = ImGui::GetItemRectMin(), rMax = ImGui::GetItemRectMax();
+        if (isCur) dl->AddRectFilled(rMin, rMax, IM_COL32(10, 60, 140, 255));
+        else if (ImGui::IsItemHovered()) dl->AddRectFilled(rMin, rMax, IM_COL32(255, 255, 255, 18));
+        char num[8];
+        snprintf(num, sizeof num, "%d", (int)i + 1);
+        float tx = rMin.x + H * 0.012f;
+        float ty = rMin.y + H * 0.010f;
+        dl->AddText(ImVec2(tx, ty), isCur ? IM_COL32(255, 200, 40, 255) : IM_COL32(150, 150, 150, 255), num);
+        dl->AddText(ImVec2(tx + numW, ty), IM_COL32(255, 255, 255, 255), title);
+        if (artist[0]) dl->AddText(ImVec2(tx + numW, ty + H * 0.030f), IM_COL32(165, 165, 165, 255), artist);
         if (isCur) {
             // Pastilla amarilla PLAYING a la derecha de la fila (como en GTA V).
-            ImVec2 rMin = ImGui::GetItemRectMin(), rMax = ImGui::GetItemRectMax();
-            const char* pill = "PLAYING";
+            const char* pill = S(STR_TL_PLAYING);  // v1.6: traducido segun el idioma
             ImVec2 psz = ImGui::CalcTextSize(pill);
             float pw2 = psz.x + H * 0.02f, ph2 = psz.y + H * 0.008f;
             ImVec2 p0(rMax.x - pw2 - H * 0.008f, rMin.y + (rMax.y - rMin.y - ph2) * 0.5f);
             dl->AddRectFilled(p0, ImVec2(p0.x + pw2, p0.y + ph2), IM_COL32(255, 200, 40, 255), ph2 * 0.5f);
             dl->AddText(ImVec2(p0.x + H * 0.01f, p0.y + H * 0.004f), IM_COL32(20, 20, 20, 255), pill);
+        }
+        // Division entre canciones (linea fina, como en la imagen).
+        dl->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
+        if (clicked) {
+            if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
         }
     }
     ImGui::EndChild();
