@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.8.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,16 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9: BLUR GAUSSIANO + MIXTAPE + SIN ESTATICA + SIN BOTONES (Daniel, log 1.8.0)
+// - Blur gaussiano de verdad (shader separable 5-tap, H+V sobre la textura
+//   pequena): al 100% ya no se ven los cuadros (la piramide por mitades solo
+//   promediaba 2x2). Como el de Void Radio Wheel Expanded.
+// - Sin estatica al cambiar con la radio original: hook de RetuneRadio (como
+//   SAUserTracks de Alex) que hace StopRadio original (corta la anterior) y
+//   luego StartRadio original con 12. La nativa queda en la 12 (Mixtape) en
+//   vez de en 13: el menu de pausa ya no marca Radio Off en User Tracks.
+// - Botones del juego ocultos con la rueda/panel/lista abierta (hook de
+//   CTouchInterface::Draw; si el simbolo no resuelve, no se hace nada).
 // v1.9: CLAXON POR BOTON 7 - la sonda de la v1.8 lo confirmo: el byte 84 (0x54)
 // del widget m_pWidgets[7] es su bandera de "tocado" (1 al pulsarlo, 0 al
 // soltarlo; 16/17 volcados con 1 caen a +-1 volcado de un toque al claxon, y
@@ -579,9 +589,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.8.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.8.0-beta"
+#define VHUDRADIO_VERSION "1.9.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1198,11 +1208,11 @@ static void DoStartRadio(int id) {
     else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
     else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
     // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
-    // v1: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que no
-    // es "NO COINCIDE" cuando la nativa lee 13. (En modoCambio=2 la llamada
-    // va por CAudioEngine::StartRadio; si esa via no pasa por el hook del
+    // v1.9: en la 12 la nativa queda en 12 (Mixtape) por diseno, asi que la
+    // lectura esperada es la 12. (En modoCambio=2 la llamada va por
+    // CAudioEngine::StartRadio; si esa via no pasa por el hook del
     // reproductor, la 12 no sonara: usar modo 0 o 1.)
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
 }
 static void ApplyStation(int id) {
     if (id < 1 || id > 13) return;
@@ -1572,6 +1582,48 @@ static bool GLBtnInit() {
     Log("boton GL listo (programa %u)", (unsigned)g_glBtnProg);
     return true;
 }
+// v1.9: BLUR GAUSSIANO (separable, 5-tap optimizado). El bajado por piramide
+// suaviza pero al 100% (8x) se seguian viendo los cuadros: el filtro lineal
+// solo promedia 2x2. Un gaussiano de verdad promedia con pesos de campana y
+// sale suave como el de Void Radio Wheel Expanded. Se aplica en 2 pases
+// (horizontal + vertical) sobre la textura pequena, con ping-pong a una
+// textura temporal. Los pesos/offsets son los del gaussiano 9-tap optimizado
+// (5 lecturas con filtrado lineal): 0.2270 centro, 0.3162 a +-1.3846,
+// 0.0703 a +-3.2308.
+static bool GLBlurInit() {
+    if (g_blurTried) return g_blurOk;
+    g_blurTried = true;
+    const char* vs = "attribute vec2 aPos; attribute vec2 aUV; uniform mat4 uProj;\n"
+        "varying vec2 vUV;\n"
+        "void main() { gl_Position = uProj * vec4(aPos, 0.0, 1.0); vUV = aUV; }\n";
+    const char* fs = "precision mediump float; varying vec2 vUV;\n"
+        "uniform sampler2D uTex; uniform vec2 uDir;\n"
+        "void main() {\n"
+        "  vec4 c = texture2D(uTex, vUV) * 0.2270270270;\n"
+        "  c += texture2D(uTex, vUV + uDir * 1.3846153846) * 0.3162162162;\n"
+        "  c += texture2D(uTex, vUV - uDir * 1.3846153846) * 0.3162162162;\n"
+        "  c += texture2D(uTex, vUV + uDir * 3.2307692308) * 0.0702702703;\n"
+        "  c += texture2D(uTex, vUV - uDir * 3.2307692308) * 0.0702702703;\n"
+        "  gl_FragColor = c;\n"
+        "}\n";
+    GLuint vsh = GLBtnCompile(GL_VERTEX_SHADER, vs);
+    GLuint fsh = GLBtnCompile(GL_FRAGMENT_SHADER, fs);
+    if (!vsh || !fsh) { if (vsh) glDeleteShader(vsh); if (fsh) glDeleteShader(fsh); Log("  !! blur gaussiano: no compilo"); return false; }
+    g_blurProg = glCreateProgram();
+    glAttachShader(g_blurProg, vsh); glAttachShader(g_blurProg, fsh);
+    glBindAttribLocation(g_blurProg, 0, "aPos");
+    glBindAttribLocation(g_blurProg, 1, "aUV");
+    glLinkProgram(g_blurProg);
+    GLint ok = 0; glGetProgramiv(g_blurProg, GL_LINK_STATUS, &ok);
+    glDeleteShader(vsh); glDeleteShader(fsh);
+    if (!ok) { char buf[512]; glGetProgramInfoLog(g_blurProg, sizeof(buf), nullptr, buf); Log("  !! blur gaussiano: no enlazo: %s", buf); glDeleteProgram(g_blurProg); g_blurProg = 0; return false; }
+    g_blurUProj = glGetUniformLocation(g_blurProg, "uProj");
+    g_blurUTex = glGetUniformLocation(g_blurProg, "uTex");
+    g_blurUDir = glGetUniformLocation(g_blurProg, "uDir");
+    g_blurOk = true;
+    Log("blur gaussiano listo (programa %u)", (unsigned)g_blurProg);
+    return true;
+}
 // Decodifica un caracter UTF-8. Devuelve los bytes consumidos (1-4), 0 si es invalido.
 // (ImTextCharFromUtf8 es interna de ImGui y no esta en imgui.h de la v1.89.7.)
 static int GLBtnUtf8(unsigned int* out, const char* p) {
@@ -1814,6 +1866,10 @@ static bool DrawButtonGL(float W, float H) {
 static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolveFBO = 0;
 static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (mitad) para bajar en 2 pasos y que no se pixele
 static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (cuarto) para la piramide por mitades (blur gaussiano)
+static GLuint g_blurTmpTex = 0, g_blurTmpFBO = 0;  // v1.9: textura temporal para el pase gaussiano (ping-pong con la pequena)
+static GLuint g_blurProg = 0;  // v1.9: programa del blur gaussiano (separable 5-tap)
+static GLint g_blurUProj = -1, g_blurUTex = -1, g_blurUDir = -1;
+static bool g_blurTried = false, g_blurOk = false;
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
 static int g_blurMW = 0, g_blurMH = 0;
 static int g_blurQW = 0, g_blurQH = 0;
@@ -1835,15 +1891,17 @@ static void BlurDrawBackground(float W, float H) {
     if (mw < 8) mw = 8; if (mh < 8) mh = 8;
     int qw = w / 4, qh = h / 4;  // v1.8: paso intermedio (cuarto) para la piramide por mitades
     if (qw < 8) qw = 8; if (qh < 8) qh = 8;
-    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO) {
+    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO || !g_blurTmpTex || !g_blurTmpFBO) {
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
         if (g_blurQtrFBO) { glDeleteFramebuffers(1, &g_blurQtrFBO); g_blurQtrFBO = 0; }
+        if (g_blurTmpFBO) { glDeleteFramebuffers(1, &g_blurTmpFBO); g_blurTmpFBO = 0; }
         if (g_blurCopyTex) { glDeleteTextures(1, &g_blurCopyTex); g_blurCopyTex = 0; }
         if (g_blurSmallTex) { glDeleteTextures(1, &g_blurSmallTex); g_blurSmallTex = 0; }
         if (g_blurMidTex) { glDeleteTextures(1, &g_blurMidTex); g_blurMidTex = 0; }
         if (g_blurQtrTex) { glDeleteTextures(1, &g_blurQtrTex); g_blurQtrTex = 0; }
+        if (g_blurTmpTex) { glDeleteTextures(1, &g_blurTmpTex); g_blurTmpTex = 0; }
         glGenTextures(1, &g_blurCopyTex);
         glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1915,6 +1973,24 @@ static void BlurDrawBackground(float W, float H) {
             Log("  !! blur: FBO de resolucion incompleto (se usa copia directa)");
             glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0;
         }
+        // v1.9: textura temporal (mismo tamano que la pequena) para el pase
+        // gaussiano: horizontal a la temporal, vertical de vuelta a la pequena.
+        glGenTextures(1, &g_blurTmpTex);
+        glBindTexture(GL_TEXTURE_2D, g_blurTmpTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenFramebuffers(1, &g_blurTmpFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurTmpFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blurTmpTex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            Log("  !! blur: FBO temporal incompleto, sin desenfoque gaussiano");
+            glDeleteFramebuffers(1, &g_blurTmpFBO); g_blurTmpFBO = 0;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor; g_blurMW = mw; g_blurMH = mh; g_blurQW = qw; g_blurQH = qh;
         Log("  blur: FBO listo factor=%dx (%dx%d -> %dx%d)%s", factor, w, h, sw, sh, g_pBlitFB ? " (blit MSAA)" : " (copia directa)");
@@ -1976,6 +2052,24 @@ static void BlurDrawBackground(float W, float H) {
             glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         };
+        // v1.9: dibuja un quad con el programa del blur gaussiano (uDir = un
+        // texel en la direccion del pase). Reusa el mismo VBO/VAO del boton.
+        auto drawGauss = [&](GLuint tex, float x0, float y0, float x1, float y1, const float* proj, float dx, float dy) {
+            if (!g_blurOk || !g_blurProg) return;
+            glUseProgram(g_blurProg);
+            GLBtnVert q[6] = {
+                {x0, y0, 0.0f, 1.0f, 1,1,1,1}, {x1, y0, 1.0f, 1.0f, 1,1,1,1}, {x1, y1, 1.0f, 0.0f, 1,1,1,1},
+                {x0, y0, 0.0f, 1.0f, 1,1,1,1}, {x1, y1, 1.0f, 0.0f, 1,1,1,1}, {x0, y1, 0.0f, 0.0f, 1,1,1,1},
+            };
+            glUniformMatrix4fv(g_blurUProj, 1, GL_FALSE, proj);
+            glUniform1i(g_blurUTex, 0);
+            glUniform2f(g_blurUDir, dx, dy);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+            glUseProgram(g_glBtnProg);  // el boton usa su propio programa; se restaura para el quad de ampliar
+        };
         float projS[16] = {0}, projF[16] = {0}, projM[16] = {0}, projQ[16] = {0};
         projS[0] = 2.0f / sw; projS[5] = -2.0f / sh; projS[10] = -1.0f; projS[12] = -1.0f; projS[13] = 1.0f; projS[15] = 1.0f;
         projF[0] = 2.0f / w; projF[5] = -2.0f / h; projF[10] = -1.0f; projF[12] = -1.0f; projF[13] = 1.0f; projF[15] = 1.0f;
@@ -2005,6 +2099,18 @@ static void BlurDrawBackground(float W, float H) {
             glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
             glViewport(0, 0, sw, sh);
             drawQuad(g_blurQtrTex, 0, 0, (float)sw, (float)sh, projS);
+        }
+        // 2b. blur gaussiano (v1.9): 2 pases separables sobre la textura
+        // pequena (horizontal a la temporal, vertical de vuelta a la
+        // pequena). Esto es lo que quita los cuadros al 100%: el gaussiano
+        // promedia con pesos de campana, no solo 2x2 como el lineal.
+        if (GLBlurInit() && g_blurTmpFBO) {
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurTmpFBO);
+            glViewport(0, 0, sw, sh);
+            drawGauss(g_blurSmallTex, 0, 0, (float)sw, (float)sh, projS, 1.0f / sw, 0.0f);
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+            glViewport(0, 0, sw, sh);
+            drawGauss(g_blurTmpTex, 0, 0, (float)sw, (float)sh, projS, 0.0f, 1.0f / sh);
         }
         // 3. ampliar: dibujar la textura pequena en el framebuffer por defecto
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -3251,8 +3357,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     // (en el log v1.3 la lectura iba una estacion atrasada); re-leer cada ~0.5 s para
     // que el icono del boton flotante no se quede en la estacion anterior.
     // v2.47 (Google AI Mode): no consultar el motor nativo cuando suena
-    // User Tracks (12): en Android devuelve 13 (Radio Off) y desincroniza
-    // a SAUserTracks (ademas ponia g_current=13 cada 0.5 s).
+    // User Tracks (12): la lectura nativa va un cambio por detras y
+    // desincronizaria la rueda (ademas ponia g_current=13 cada 0.5 s).
+    // v1.9: la nativa queda en 12 (Mixtape), pero la lectura sigue yendo un
+    // cambio por detras, asi que la guarda se mantiene.
     if (g_inVehicle && !g_open && g_current != 12) {
         static int frameN = 0;
         if (++frameN % 30 == 0) RefreshCurrent();

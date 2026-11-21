@@ -886,12 +886,13 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook 12)"); }
         UT_Start();
         g_current = 12;
-        // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
-        // nativa audio=10/11/13 con la rueda en 12), asi que se queda sonando
-        // la emisora anterior por debajo de las canciones. Se le pide Radio
-        // Off (13) a la nativa: silencio, y la musica la pone el reproductor.
-        Log("UT: 12 -> nativa 13 (Radio Off; la musica la pone el reproductor)");
-        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
+        // v1.9: como SAUserTracks (Alex): la nativa queda en la 12. No hay
+        // audio nativo de User Tracks en Android, asi que es silencio, y el
+        // menu de pausa muestra Mixtape/User Tracks en vez de Radio Off.
+        // Antes se pedia 13 para silenciarla, pero eso hacia que el menu
+        // marcara Radio Off y la estatica del cambio se quedara sonando.
+        Log("UT: 12 -> nativa 12 (Mixtape; la musica la pone el reproductor)");
+        ut_origStartRadio(trackMgr, 12, a2, a3, a4);
         return;
     }
     // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
@@ -908,12 +909,68 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         ut_pausedByExit = false;
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
-        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
+        ut_origStartRadio(trackMgr, 12, a2, a3, a4);  // v1.9: nativa a la 12 (Mixtape), no a 13
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
     g_current = station;
     ut_origStartRadio(trackMgr, station, a2, a3, a4);
+}
+
+// ---- hook de RetuneRadio (como SAUserTracks de Alex) ----
+// El juego cambia de emisora con RetuneRadio (no con StartRadio) cuando se
+// usa la radio original (sus propios controles, el menu de pausa). Sin este
+// hook, la estatica del cambio se quedaba sonando junto a la musica. En la
+// 12: StopRadio original (corta la emisora anterior, sin estatica) y luego
+// StartRadio original con 12 (la nativa queda en 12, silenciosa, y el menu
+// de pausa muestra Mixtape, no Radio Off). En otra emisora: se para el
+// reproductor y se deja pasar el RetuneRadio original.
+// StopRadio: _ZN20CAERadioTrackManager9StopRadioEP21tVehicleAudioSettingsh
+// (this, tVehicleAudioSettings*, unsigned char); SAUserTracks lo llama (0, 0).
+typedef void (*StopRadioTrackFn)(void*, void*, unsigned char);
+static StopRadioTrackFn ut_stopRadio = nullptr;
+static RetuneFn ut_origRetuneRadio = nullptr;
+static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
+    if (!ut_origRetuneRadio) return 0;
+    if (station == 12) {
+        if (UT_VehicleBlocked()) {
+            g_current = 13;
+            return ut_origRetuneRadio(trackMgr, 13);
+        }
+        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook RetuneRadio 12)"); }
+        UT_Start();
+        g_current = 12;
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
+        Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);
+        return 12;
+    }
+    // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
+    if (ut_active && !ut_userStationCmd &&
+        (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
+        ut_pausedByExit = false;
+        g_current = 12;
+        Log("UT: se queda en la 12 al subir al vehiculo (RetuneRadio pedia %d)", (int)station);
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);
+        return 12;
+    }
+    if (ut_active) UT_Stop("cambio de estacion");
+    g_current = station;
+    return ut_origRetuneRadio(trackMgr, station);
+}
+
+// ---- ocultar los botones del juego con la rueda abierta (v1.9) ----
+// Como el Void Radio Wheel: el mundo se desenfoca y el HUD no se ve. Se
+// engancha CTouchInterface::Draw y se salta cuando la rueda, el panel o la
+// lista estan abiertos. El hook recibe `self` (this) y lo pasa tal cual al
+// original, asi vale tanto si Draw es estatico como si es de instancia.
+// Si el simbolo no resuelve, no se hace nada (sin riesgo de cierre).
+typedef void (*TouchDrawFn)(void*);
+static TouchDrawFn ut_origTouchDraw = nullptr;
+static void UT_TouchDraw_hook(void* self) {
+    if (g_open || g_settings || g_trackList) return;  // no dibujar botones del juego
+    if (ut_origTouchDraw) ut_origTouchDraw(self);
 }
 
 // ---- parches de la estacion 12 en el juego (los mismos de SAUserTracks) ----
@@ -969,6 +1026,25 @@ static void UT_InstallHooks() {
     if (h) {
         ut_loadingActive = (bool*)aml->GetSym(h, "_ZN14CLoadingScreen9m_bActiveE");
         Log("UT: CLoadingScreen::m_bActive %s", ut_loadingActive ? "ok" : "no resolvio (sin pausa en carga)");
+        // v1.9: StopRadio (para cortar la emisora anterior sin estatica) y
+        // RetuneRadio (el juego cambia con el cuando se usa su radio
+        // original). Como SAUserTracks.
+        ut_stopRadio = (StopRadioTrackFn)aml->GetSym(h, "_ZN20CAERadioTrackManager9StopRadioEP21tVehicleAudioSettingsh");
+        Log("UT: StopRadio %s", ut_stopRadio ? "ok" : "no resolvio (la estatica puede quedarse)");
+        if (g_retuneTrack) {
+            aml->Hook((void*)g_retuneTrack, (void*)UT_RetuneRadio_hook, (void**)&ut_origRetuneRadio);
+            Log("UT: hook RetuneRadio %s", ut_origRetuneRadio ? "ok" : "no se pudo instalar (la estatica puede quedarse)");
+        } else {
+            Log("UT: RetuneRadio no resolvio (la estatica puede quedarse)");
+        }
+        // v1.9: ocultar los botones del juego con la rueda abierta.
+        uintptr_t td = aml->GetSym(h, "_ZN15CTouchInterface4DrawEv");
+        if (td) {
+            aml->Hook((void*)td, (void*)UT_TouchDraw_hook, (void**)&ut_origTouchDraw);
+            Log("UT: hook CTouchInterface::Draw %s", ut_origTouchDraw ? "ok (botones ocultos con la rueda)" : "no se pudo instalar (los botones no se ocultan)");
+        } else {
+            Log("UT: CTouchInterface::Draw no resolvio (los botones no se ocultan)");
+        }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
         if (dn) {
             aml->Hook((void*)dn, (void*)UT_DisplayName_hook, (void**)&ut_origDisplayName);

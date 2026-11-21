@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.8.0-beta
+# VHud Radio Wheel v1.9.0-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -14,9 +14,12 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 - **Lista de canciones:** en la rueda, con la 12, el botón "Lista de canciones" abre la lista de todas las pistas (como en GTA V: cada canción con su división, título + artista debajo, fila actual resaltada y pastilla amarilla PLAYING); tocar una la pone a sonar. El botón y el menú se traducen según el idioma del panel.
 - **Programa de cada emisora:** en el centro de la rueda, debajo del género, sale el programa o locutor que se está transmitiendo (por ejemplo, The Dusty Show en K-DST, WCTR News en WCTR).
 - **Sin retraso:** la rueda y el botón ya no se quedan en la emisora anterior justo después de cambiar (la lectura del juego va una estación por detrás; ahora se ignora 2 s tras el cambio).
-- Panel de personalización: colores, tamaño, opacidad, cámara lenta al abrir la rueda, iconos a color, y los interruptores de la 2.59: mostrar género, ocultar ventana de emisora, fondo de color de los iconos, animación al abrir, blur de fondo (con barra, ahora más fuerte: 8x/16x/32x), bloquear el juego con la rueda abierta, y modoCambio (forma de llamar a StartRadio: 0 normal, 1 aplazado 3 cuadros, 2 por CAudioEngine).
+- Panel de personalización: colores, tamaño, opacidad, cámara lenta al abrir la rueda, iconos a color, y los interruptores de la 2.59: mostrar género, ocultar ventana de emisora, fondo de color de los iconos, animación al abrir, blur de fondo gaussiano (con barra), bloquear el juego con la rueda abierta, y modoCambio (forma de llamar a StartRadio: 0 normal, 1 aplazado 3 cuadros, 2 por CAudioEngine).
 - Los iconos van INCRUSTADOS en el .so (no hace falta ninguna carpeta): los 28 PNG (14 normales + 14 a color) están dentro del .so en base64 y se cargan de memoria al arrancar. La carpeta `VHudRadio/radio/` (y `VHudRadio/radio_color/` para los de color) es opcional: solo sirve para reemplazar un icono por uno propio. Si el PNG está en la carpeta, manda el de la carpeta; si no, se usa el incrustado. El log dice de dónde salió cada icono ("archivo" o "en el .so").
-- En vehículos sin radio (bicis y otros de la lista de bloqueo) la rueda no se abre.
+- **Blur gaussiano de verdad:** el desenfoque del fondo ahora es un blur gaussiano (shader separable, como el de Void Radio Wheel Expanded): al 100% ya no se ven los cuadros/pixeles, sale suave. Antes era solo bajar la imagen, que al 100% se pixeleaba.
+- **Sin estática al cambiar con la radio original:** el juego cambia de emisora con RetuneRadio (no con StartRadio) cuando se usa su radio original; ahora ese cambio también se engancha (como SAUserTracks de Alex: StopRadio para cortar la anterior y luego StartRadio con 12), así la estática del cambio ya no se queda sonando junto a la música.
+- **Mixtape en el menú de pausa:** la emisora nativa queda en la 12 (Mixtape) en vez de en Radio Off, así el menú de pausa (Configuración del sonido > Emisora) ya no marca Radio Off cuando suena User Tracks.
+- **Botones del juego ocultos con la rueda abierta:** mientras la rueda, el panel o la lista de canciones están abiertos, los botones del HUD del juego no se dibujan (como el Void Radio Wheel); al cerrar la rueda vuelven. Si el juego no deja enganchar esa función, simplemente no se ocultan (sin riesgo).
 
 ## Requisitos
 
