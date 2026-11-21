@@ -1391,36 +1391,39 @@ static bool UT_IsReadablePtr(uintptr_t p) {
 }
 
 static void UT_AudioScreenCtor_hook(void* self) {
-    // Capturar el valor viejo ANTES de sincronizar (para el diagnostico/auto-fix).
-    int stale = -1;
-    if (ut_mobileSettings) stale = *(int*)((char*)ut_mobileSettings + 0x240);
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
     // Post-ctor: por si C2Ev reseteo los valores durante la construccion.
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     // Diagnostico + auto-fix (Gemini, via Daniel): la fila EMISORA guarda su
-    // indice en un SettingSelection al que apunta AudioScreen. Buscar el valor
-    // viejo (stale) en esos objetos y poner la emisora de la rueda (+0x10).
-    if (self && g_current >= 1 && g_current <= 13 && stale >= 1 && stale <= 13 && stale != g_current) {
+    // indice en un SettingSelection al que apunta AudioScreen. v1.9.33 tenia
+    // un error: solo escaneaba si MS+0x240 (stale) != g_current, pero la rueda
+    // ya lo sincroniza antes de abrir opciones, asi que el escaneo nunca corrio.
+    // Ahora se escanea SIEMPRE que se construye AudioScreen, y el auto-fix
+    // escribe solo si el objeto coincide con la firma EMISORA (indice en
+    // +0x10 valido y distinto de la rueda, min +0x18 = 1, max +0x1c = 12).
+    if (self && g_current >= 1 && g_current <= 13) {
         unsigned char buf[0x100];
         size_t got = UT_SafeRead(self, buf, sizeof(buf));
         uintptr_t* words = (uintptr_t*)buf;
         for (size_t i = 0; i < got / 8; i++) {
             uintptr_t p = words[i];
             if (!UT_IsReadablePtr(p)) continue;
-            int vals[6] = {0, 0, 0, 0, 0, 0};
+            int vals[8] = {0, 0, 0, 0, 0, 0, 0, 0};
             size_t got2 = UT_SafeRead((const void*)p, (unsigned char*)vals, sizeof(vals));
             if (got2 < sizeof(int)) continue;
             int n = (int)(got2 / sizeof(int));
-            Log("UT: AudioScreen+0x%02x -> 0x%lx [%d, %d, %d, %d, %d, %d]",
+            Log("UT: AudioScreen+0x%02x -> 0x%lx [%d, %d, %d, %d, %d, %d, %d, %d]",
                 (int)(i * 8), (unsigned long)p,
                 n > 0 ? vals[0] : -1, n > 1 ? vals[1] : -1, n > 2 ? vals[2] : -1,
-                n > 3 ? vals[3] : -1, n > 4 ? vals[4] : -1, n > 5 ? vals[5] : -1);
-            // Auto-fix: el indice actual del SettingSelection esta en +0x10
-            // (vals[4]); si es el valor viejo, poner la emisora de la rueda.
-            if (n > 4 && vals[4] == stale) {
+                n > 3 ? vals[3] : -1, n > 4 ? vals[4] : -1, n > 5 ? vals[5] : -1,
+                n > 6 ? vals[6] : -1, n > 7 ? vals[7] : -1);
+            // Auto-fix: indice actual en +0x10 (vals[4]), min +0x18 (vals[6]),
+            // max +0x1c (vals[7]). Solo si coincide con la firma EMISORA.
+            if (n > 7 && vals[4] >= 1 && vals[4] <= 13 && vals[4] != g_current
+                && vals[6] == 1 && vals[7] == 12) {
                 *(volatile int*)((char*)p + 0x10) = g_current;
-                Log("UT: AudioScreen auto-fix: SettingSelection+0x10 %d -> %d (0x%lx)", stale, g_current, (unsigned long)p);
+                Log("UT: AudioScreen auto-fix: SettingSelection+0x10 %d -> %d (0x%lx)", vals[4], g_current, (unsigned long)p);
             }
         }
     }
