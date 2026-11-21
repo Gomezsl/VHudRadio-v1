@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.17-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.18-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,23 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.18: DIAL PREVIEW + BLUR SIN PIXELIADO AL 100% (DANIEL / REHAN)
+// - Dial (Daniel, 1.9.17): seguia mostrando la emisora ANTERIOR elegida en
+//   el menu. El log de la 1.9.17 probo que la emisora del juego y la de la
+//   rueda SI coinciden al abrir el dial (juego=3 rueda=3, 11=11, 10=10), asi
+//   que el problema no es la emisora sino el "preview" del dial (mgr+0xAD):
+//   ese no se actualiza al cambiar con la rueda. Al abrir el dial ahora se
+//   sincronizan mgr+0xAD y mgr+0xE9 con la emisora real (log "UT: dial
+//   preview sincronizado %d -> %d") para que el dial resalte la que suena.
+// - Blur (Rehan): manejando seguia sin verse como parado. Al 100% el factor
+//   era 8x (301x135) y ampliar eso a 2408x1080 se ve pixeliado aunque el
+//   gaussiano corra 2 veces. Ahora el factor tiene tope 4x (602x270) y la
+//   fuerza a blur alto viene de mas iteraciones del gaussiano (1/2/3 segun
+//   el %): fuerte pero suave, sin cuadros.
+// - HUD (log 1.9.17): los hooks SI se disparan ("UT: CHud::Draw oculto",
+//   "UT: DrawAll oculto", "UT: Radar oculto" aparecen en el log). Falta
+//   confirmar con captura si las barras de salud/armor (PlayerInfo, que no
+//   registro su "oculto") tambien se ocultan.
 // v1.9.17: DIAL SINCRONIZADO (DANIEL)
 // - Al entrar a opciones de sonido estando en otra emisora (p. ej. CSR 8),
 //   el dial se quedaba en User Track (12) en vez de CSR. El ctor de
@@ -856,9 +873,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.17-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.18-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.17-beta"
+#define VHUDRADIO_VERSION "1.9.18-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2150,8 +2167,19 @@ static int g_blurQW = 0, g_blurQH = 0;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
     if (g_cfg.blur <= 33) return 2;   // v1.7: menos pixeliado (el 16x dejaba la textura en 150x67 y se veian los cuadros al 100%)
-    if (g_cfg.blur <= 66) return 4;
-    return 8;  // v1.7: 8x al 100% (301x135): borroso pero sin bloques
+    // v1.9.18: tope 4x. El 8x a 100% (301x135) se ve pixeliado al ampliar a
+    // 2408x1080 aunque el gaussiano corra 2 veces: no hay resolucion que
+    // suavizar. La fuerza extra a blur alto viene de mas iteraciones del
+    // gaussiano (BlurGaussIters), no de bajar mas la resolucion.
+    return 4;
+}
+// Iteraciones del gaussiano segun el % de blur: a mas blur, mas pasadas
+// (cada pasada ensancha el desenfoque) sin bajar la resolucion.
+static int BlurGaussIters() {
+    int b = g_cfg.blur;
+    if (b <= 33) return 1;
+    if (b <= 66) return 2;
+    return 3;
 }
 static void BlurDrawBackground(float W, float H) {
     int factor = BlurFactor();
@@ -2392,10 +2420,11 @@ static void BlurDrawBackground(float W, float H) {
         // pequena (horizontal a la temporal, vertical de vuelta a la
         // pequena). Esto es lo que quita los cuadros al 100%: el gaussiano
         // promedia con pesos de campana, no solo 2x2 como el lineal.
-        // v1.9.16: DOS iteraciones (H+V dos veces) para que ni al 100% se
-        // vean los cuadros: una sola pasada no suaviza bastante el 8x.
+        // v1.9.16/1.9.18: varias iteraciones H+V (segun el % de blur) para
+        // que ni al 100% se vean los cuadros: una sola pasada no suaviza
+        // bastante. La fuerza viene de las iteraciones, no del 8x.
         if (GLBlurInit() && g_blurTmpFBO) {
-            for (int gi = 0; gi < 2; gi++) {
+            for (int gi = 0; gi < BlurGaussIters(); gi++) {
                 glBindFramebuffer(GL_FRAMEBUFFER, g_blurTmpFBO);
                 glViewport(0, 0, sw, sh);
                 drawGauss(g_blurSmallTex, 0, 0, (float)sw, (float)sh, projS, 1.0f / sw, 0.0f);

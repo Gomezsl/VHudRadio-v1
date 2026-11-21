@@ -1195,6 +1195,21 @@ static void UT_RadioSelectionCtor_hook(void* self) {
             Log("UT: dial resincronizado a %d (el juego creia que era 12)", g_current);
             ut_origStartRadio(g_trackManager, (signed char)g_current, 0, 1.0f, 0);
         }
+        // v1.9.18 (Daniel): el dial mostraba la emisora ANTERIOR elegida en
+        // el menu, no la del auto. El dial lee la emisora "preview"
+        // (mgr+0xAD) y esa no se actualiza al cambiar con la rueda (la rueda
+        // usa StartRadio, que actualiza la emisora actual pero no el
+        // preview del dial). Al abrir el dial se sincroniza el preview (y
+        // 0xE9) con la emisora real (la del getter), para que el dial
+        // resalte la que suena y no la anterior del menu.
+        if (g_trackManager && cur >= 1 && cur <= 13) {
+            unsigned char* m = (unsigned char*)g_trackManager;
+            if (m[0xAD] != (unsigned char)cur || m[0xE9] != (unsigned char)cur) {
+                Log("UT: dial preview sincronizado %d -> %d", (int)m[0xAD], cur);
+                m[0xAD] = (unsigned char)cur;
+                m[0xE9] = (unsigned char)cur;
+            }
+        }
     }
 }
 
