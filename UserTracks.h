@@ -928,8 +928,10 @@ static void UT_DumpAll(const char* tag, const void* radioSel) {
     int ae = g_audioEngine ? ((const unsigned char*)g_audioEngine)[0x149] : -1;
     int tm1 = g_trackManager ? ((const unsigned char*)g_trackManager)[0xAD] : -1;
     int tm2 = g_trackManager ? ((const unsigned char*)g_trackManager)[0xE9] : -1;
-    fprintf(f, "== #%d %s | audio=%d track=%d rueda=%d activo=%d | AE+0x149=%d TM+0xAD=%d TM+0xE9=%d\n",
-            ut_diagDumps, tag, a, t, g_current, ut_active ? 1 : 0, ae, tm1, tm2);
+    int m240 = ut_mobileSettings ? *(const int*)((const char*)ut_mobileSettings + 0x240) : -1;
+    int m244 = ut_mobileSettings ? *(const int*)((const char*)ut_mobileSettings + 0x244) : -1;
+    fprintf(f, "== #%d %s | audio=%d track=%d rueda=%d activo=%d | AE+0x149=%d TM+0xAD=%d TM+0xE9=%d MS+0x240=%d MS+0x244=%d\n",
+            ut_diagDumps, tag, a, t, g_current, ut_active ? 1 : 0, ae, tm1, tm2, m240, m244);
     if (radioSel) UT_DiagObj(f, "RadioSelection", radioSel, 0x300);
     UT_DiagObj(f, "TrackManager", g_trackManager, 0x400);
     UT_DiagObj(f, "AudioEngine", g_audioEngine, 0x800);
@@ -1098,6 +1100,22 @@ static RetuneFn ut_origRetuneRadio = nullptr;
 // la emisora es inocuo (el que llama la ignora o la usa como emisora).
 typedef signed char (*AudioRetuneFn)(void*, signed char);
 static AudioRetuneFn ut_origAudioRetune = nullptr;
+// v1.9.28: redirige la reaplicacion del menu a la emisora de la rueda.
+// AudioScreen::C2Ev llama StartRadio/RetuneRadio con la emisora guardada
+// (MS+0x240, que se revierte al valor del archivo de ajustes) justo al abrir
+// el dial. Un tap humano en el dial tarda mas de 1 s, asi que la ventana de
+// 1 s desde que se abrio el dial distingue la reaplicacion del tap.
+static signed char UT_RedirectReapply(signed char station) {
+    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && station != g_current) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000)) {
+            Log("UT: reaplicacion del menu (%d): redirigiendo a %d (rueda)", (int)station, g_current);
+            return (signed char)g_current;
+        }
+    }
+    return station;
+}
+
 static signed char UT_AudioRetune_hook(void* self, signed char station) {
     (void)self;
     ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del AudioEngine)
@@ -1108,6 +1126,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         if (ut_origAudioRetune) return ut_origAudioRetune(self, station);
         return station;
     }
+    station = UT_RedirectReapply(station);  // v1.9.28: reaplicacion del menu -> rueda
     if (station == 12) {
         if (UT_VehicleBlocked()) {
             g_current = 13;
@@ -1154,6 +1173,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         if (ut_origAudioStart) ut_origAudioStart(self, station, a2);
         return;
     }
+    station = UT_RedirectReapply(station);  // v1.9.28: reaplicacion del menu -> rueda
     if (station == 12) {
         if (UT_VehicleBlocked()) {
             Log("UT: vehiculo sin radio (modelo %d): 12 -> Radio Off", UT_BlockedModel());
@@ -1191,6 +1211,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del TrackManager)
     if (!ut_origRetuneRadio) return 0;
+    station = UT_RedirectReapply(station);  // v1.9.28: reaplicacion del menu -> rueda
     if (station == 12) {
         if (UT_VehicleBlocked()) {
             g_current = 13;
@@ -1273,6 +1294,16 @@ static void UT_SyncEmisora(int station) {
         if (old != station) {
             *ms = station;
             Log("UT: EMISORA sincronizada %d -> %d (MobileSettings+0x240)", old, station);
+        }
+        // v1.9.28: escribir TAMBIEN el valor por defecto del elemento 14
+        // (MS+0x244, elemento+0x14). SetDefault y LoadFromFile restauran +0x10
+        // desde +0x14 (o desde el archivo); si +0x244 sigue en 5, la
+        // reaplicacion vuelve a 5.
+        int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
+        if (*msDef != station) {
+            int oldDef = *msDef;
+            *msDef = station;
+            Log("UT: EMISORA por defecto %d -> %d (MobileSettings+0x244)", oldDef, station);
         }
     }
 }
