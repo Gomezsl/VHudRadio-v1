@@ -35,6 +35,14 @@
 #define DR_FLAC_IMPLEMENTATION
 #include "dr_flac.h"
 #include "stb_vorbis.c"  // OGG Vorbis (dominio publico; se incluye el .c: una sola TU)
+// stb_vorbis.c define L, C y R como macros (canales de reproduccion) y NO
+// los quita al final: sin esto, 'float R = WheelR(H);' en VHudRadio.cpp se
+// expande a 'float (PLAYBACK_RIGHT | PLAYBACK_MONO) = ...' y no compila.
+// Ya estan usados dentro del .c (el #include ya se expandio), asi que se
+// pueden quitar aqui sin afectar al decodificador.
+#undef L
+#undef C
+#undef R
 
 #include <dirent.h>
 #include <link.h>
