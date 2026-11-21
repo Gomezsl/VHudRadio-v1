@@ -939,9 +939,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.32-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.33-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.32-beta"
+#define VHUDRADIO_VERSION "1.9.33-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1382,11 +1382,11 @@ static void DrawFrontEnd_hook() {
     // dial (RadioSelection) abierto; la fila EMISORA esta en la pantalla principal de
     // Configuracion del sonido (AudioScreen), donde ut_inAudioMenu es false y la
     // escritura nunca corria (detectado por Gemini, via Daniel, 2026-11-21).
-    // MenuActive() (m_bMenuActive 0x5C) cubre todo el menu frontal: pausa, sonido y dial.
-    // v1.9.32: tambien se escribe FrontEndMenuManager+0x35 (la fila EMISORA lo lee al
-    // construir AudioScreen; el hook de AudioScreen::C2Ev lo sincroniza antes, esto
-    // lo mantiene). Log de diagnostico cuando cambia un valor (confirma que corre).
-    if (MenuActive() && g_current >= 1 && g_current <= 13) {
+    // v1.9.33: MenuActive() (m_bMenuActive 0x5C) resulto falso aun con el menu
+    // abierto (log 1.9.32: "menu de pausa: abierto ... byte=0"), asi que la
+    // escritura 1.9.31/1.9.32 nunca corrio. Se usa g_paused (true con el menu
+    // de pausa abierto: m_UserPause/m_CodePause), que si es fiable aqui.
+    if (g_paused && g_current >= 1 && g_current <= 13) {
         static bool s_dfeLogged = false;
         if (!s_dfeLogged) { s_dfeLogged = true; Log("UT: DrawFrontEnd: escritura EMISORA activa (menu)"); }
         if (g_menuManager) {

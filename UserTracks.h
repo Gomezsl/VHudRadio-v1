@@ -1382,9 +1382,48 @@ static bool ut_menuPatchesDone = false;
 // cada cuadro en DrawFrontEnd, pero la fila ya tenia la copia vieja).
 typedef void (*AudioScreenCtorFn)(void*);
 static AudioScreenCtorFn ut_origAudioScreenCtor = nullptr;
+// v1.9.33: validador de punteros para el diagnostico de AudioScreen
+// (rangos observados en los volcados: libGTASA 0x70..0x72, heap 0xb4).
+static bool UT_IsReadablePtr(uintptr_t p) {
+    if (p < 0x100000000ULL || (p & 3) != 0) return false;
+    uintptr_t top = (p >> 40) & 0xFF;
+    return (top == 0x70 || top == 0x71 || top == 0x72 || top == 0xb4);
+}
+
 static void UT_AudioScreenCtor_hook(void* self) {
+    // Capturar el valor viejo ANTES de sincronizar (para el diagnostico/auto-fix).
+    int stale = -1;
+    if (ut_mobileSettings) stale = *(int*)((char*)ut_mobileSettings + 0x240);
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
+    // Post-ctor: por si C2Ev reseteo los valores durante la construccion.
+    if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
+    // Diagnostico + auto-fix (Gemini, via Daniel): la fila EMISORA guarda su
+    // indice en un SettingSelection al que apunta AudioScreen. Buscar el valor
+    // viejo (stale) en esos objetos y poner la emisora de la rueda (+0x10).
+    if (self && g_current >= 1 && g_current <= 13 && stale >= 1 && stale <= 13 && stale != g_current) {
+        unsigned char buf[0x100];
+        size_t got = UT_SafeRead(self, buf, sizeof(buf));
+        uintptr_t* words = (uintptr_t*)buf;
+        for (size_t i = 0; i < got / 8; i++) {
+            uintptr_t p = words[i];
+            if (!UT_IsReadablePtr(p)) continue;
+            int vals[6] = {0, 0, 0, 0, 0, 0};
+            size_t got2 = UT_SafeRead((const void*)p, (unsigned char*)vals, sizeof(vals));
+            if (got2 < sizeof(int)) continue;
+            int n = (int)(got2 / sizeof(int));
+            Log("UT: AudioScreen+0x%02x -> 0x%lx [%d, %d, %d, %d, %d, %d]",
+                (int)(i * 8), (unsigned long)p,
+                n > 0 ? vals[0] : -1, n > 1 ? vals[1] : -1, n > 2 ? vals[2] : -1,
+                n > 3 ? vals[3] : -1, n > 4 ? vals[4] : -1, n > 5 ? vals[5] : -1);
+            // Auto-fix: el indice actual del SettingSelection esta en +0x10
+            // (vals[4]); si es el valor viejo, poner la emisora de la rueda.
+            if (n > 4 && vals[4] == stale) {
+                *(volatile int*)((char*)p + 0x10) = g_current;
+                Log("UT: AudioScreen auto-fix: SettingSelection+0x10 %d -> %d (0x%lx)", stale, g_current, (unsigned long)p);
+            }
+        }
+    }
 }
 
 static void UT_RadioSelectionCtor_hook(void* self) {
