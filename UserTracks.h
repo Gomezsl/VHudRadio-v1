@@ -879,6 +879,8 @@ static void UT_Stop(const char* reason) {
 static void* ut_menuManager = nullptr;
 static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
+static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
+static int ut_diagRedirects = 0;             // v1.9.25: redirecciones hechas en este dial (tope 3)
 static int ut_diagLastA = -99, ut_diagLastT = -99;
 static int ut_diagDumps = 0;                    // tope: el archivo no crece sin limite
 // Lectura segura (si la direccion no es valida devuelve menos bytes en vez de cerrar el juego).
@@ -943,6 +945,27 @@ static void UT_DiagTick() {
         Log("UT: [diag] la emisora del juego cambio %d/%d -> %d/%d (dial abierto=%d, cuadros vigilados restantes=%d)",
             ut_diagLastA, ut_diagLastT, a, t, ut_inAudioMenu ? 1 : 0, ut_diagWatch);
         UT_DumpAll("cambio_de_emisora", nullptr);
+        // v1.9.25: el juego reaplica la emisora guardada del menu al abrir el
+        // dial (ni StartRadio del TrackManager ni del AudioEngine la actualizan:
+        // probado con modoCambio=0 y =2). Si el cambio NO vino de un tap en el
+        // dial (sin RetuneRadio en los ultimos 500 ms) y la nueva emisora no es
+        // la de la rueda, devolverla a la de la rueda (max 3 por dial).
+        if (ut_inAudioMenu && a >= 1 && a <= 13 && g_current >= 1 && g_current <= 13 &&
+            a != g_current && ut_diagRedirects < 3) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - ut_lastRetuneAt > std::chrono::milliseconds(500)) {
+                ut_diagRedirects++;
+                Log("UT: [diag] reaplicacion del menu (%d -> %d): devolviendo a %d (rueda)", ut_diagLastA, a, g_current);
+                if (g_current == 12) {
+                    UT_Start();
+                    if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
+                } else {
+                    if (ut_active) UT_Stop("cambio de estacion");
+                    if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, (signed char)g_current, 0, 1.0f, 0);
+                }
+                ut_diagLastA = g_current; ut_diagLastT = g_current;
+            }
+        }
     }
     ut_diagLastA = a; ut_diagLastT = t;
     if (ut_diagWatch > 0) ut_diagWatch--;
@@ -1069,6 +1092,7 @@ typedef signed char (*AudioRetuneFn)(void*, signed char);
 static AudioRetuneFn ut_origAudioRetune = nullptr;
 static signed char UT_AudioRetune_hook(void* self, signed char station) {
     (void)self;
+    ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del AudioEngine)
     // v1.9.6: al reanudar/cargar la partida el juego puede llamar a RetuneRadio
     // antes de estar listo; en ese momento no se toca el reproductor, solo se
     // deja pasar la llamada original (evita el cierre al reanudar de la 1.9.5).
@@ -1157,6 +1181,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
 }
 
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
+    ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del TrackManager)
     if (!ut_origRetuneRadio) return 0;
     if (station == 12) {
         if (UT_VehicleBlocked()) {
@@ -1282,6 +1307,7 @@ static bool ut_menuPatchesDone = false;
 static void UT_RadioSelectionCtor_hook(void* self) {
     if (ut_origRadioSelectionCtor) ut_origRadioSelectionCtor(self);  // ctor original primero
     if (!self || !ut_getTexture) return;
+    ut_diagRedirects = 0;  // v1.9.25: nuevo dial, contador de redirecciones a cero
     UT_DumpAll("dial_abierto", self);  // v1.9.24: antes de tocar nada
     void* tex = ut_getTexture("radio_TPLAYER");
     if (!tex) { Log("UT: no se pudo cargar la textura radio_TPLAYER (sin parches del menu)"); return; }

@@ -939,9 +939,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.24-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.25-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.24-beta"
+#define VHUDRADIO_VERSION "1.9.25-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1545,9 +1545,10 @@ static void DoStartRadio(int id) {
     // y es el respaldo del modo 0; aqui es la via principal). El simbolo
     // Android es StartRadio(signed char, signed char), no el (int, char)
     // del plugin-sdk de PC: el typedef ya es (void*, signed char, signed
-    // char) y pasa (signed char)id y 0. Nunca se ha llamado de verdad
-    // (solo era respaldo), asi que es una via sin probar: si falla en el
-    // telefono, no se vuelve a usar.
+    // char) y pasa (signed char)id y 0. v1.9.25: probado por Daniel (2026-11-21,
+    // modoCambio=2): la rueda cambia bien PERO no actualiza EMISORA (el juego
+    // sigue reaplicando la guardada al abrir el dial); la 1.9.25 lo corrige
+    // redirigiendo la reaplicacion en UT_DiagTick, no cambiando de via.
     if (g_cfg.modoCambio == 2 && g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0) [modoCambio=2]", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
     // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
     // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
