@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.15-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.16-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,19 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.16: BLUR SIN CUADROS + HUD DIAGNOSTICO (DANIEL)
+// - Blur pixeliado (Daniel, 1.9.15): el gaussiano corre DOS veces (H+V
+//   dos iteraciones): una sola pasada no suaviza bastante el 8x y al 100%
+//   se veian los cuadros. Y la captura se estabiliza: los primeros 15
+//   cuadros se copia siempre (g_blurFrames) y ahi se congela; el primer
+//   cuadro al abrir la rueda puede ser una transicion (camara / camara
+//   lenta) y congelarlo dejaba el blur pixeliado.
+// - HUD visible (Daniel, 1.9.15): los 4 hooks dicen "ok" en el log pero el
+//   HUD se ve con la rueda abierta. Los hooks ahora registran la primera
+//   vez que ocultan de verdad ("UT: DrawAll oculto", "CHud::Draw oculto",
+//   "PlayerInfo oculto", "Radar oculto") para confirmar si se disparan.
+//   El log que mando Daniel no trae ni "rueda abierta" ni "blur: FBO
+//   listo": es de antes de abrir la rueda, asi que no confirma nada.
 // v1.9.15: PARAR CASI AL INSTANTE AL IR A INICIO (REHAN)
 // - Rehan (1.9.13): con el umbral de 1 s la musica sonaba 1-2 s despues
 //   de ir a inicio; las nativas (Radio Los Santos) paran al instante.
@@ -835,9 +848,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.15-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.16-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.15-beta"
+#define VHUDRADIO_VERSION "1.9.16-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2123,6 +2136,7 @@ static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (
 static GLuint g_blurTmpTex = 0, g_blurTmpFBO = 0;  // v1.9: textura temporal para el pase gaussiano (ping-pong con la pequena)
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
 static bool g_blurFrozen = false;  // v1.9.14: fondo congelado al abrir la rueda (manejando se ve igual que parado)
+static int g_blurFrames = 0;  // v1.9.16: cuadros desde que se abrio la rueda (la captura se estabiliza antes de congelar)
 static int g_blurMW = 0, g_blurMH = 0;
 static int g_blurQW = 0, g_blurQH = 0;
 static int BlurFactor() {
@@ -2269,7 +2283,11 @@ static void BlurDrawBackground(float W, float H) {
     // congela: manejando, la escena cambia cada cuadro y el blur se veia
     // peor que parado (donde la escena es estatica). Congelada, manejar se
     // ve igual que parado. Si se recreo el FBO, se vuelve a copiar.
-    if (!g_blurFrozen || blurRecreated) {
+    // v1.9.16 (Daniel): los primeros 15 cuadros se copia siempre: el
+    // primer cuadro al abrir la rueda puede ser una transicion (camara /
+    // camara lenta) y congelarlo dejaba el blur pixeliado; a los 15 cuadros
+    // la escena ya esta estable y ahi se congela.
+    if (!g_blurFrozen || blurRecreated || g_blurFrames < 15) {
         glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
         if (g_pBlitFB && g_blurResolveFBO) {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -2282,7 +2300,8 @@ static void BlurDrawBackground(float W, float H) {
             glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
         }
         { GLenum e = glGetError(); if (e != GL_NO_ERROR) { Log("  !! blur: no se pudo copiar la escena (GL 0x%X): sin desenfoque", (unsigned)e); goto blur_restore; } }
-        g_blurFrozen = true;
+        g_blurFrames++;
+        if (g_blurFrames >= 15) g_blurFrozen = true;
     }
     // preparar el programa del boton (proyeccion ortografica, Y hacia abajo)
     glDisable(GL_DEPTH_TEST);
@@ -2365,13 +2384,17 @@ static void BlurDrawBackground(float W, float H) {
         // pequena (horizontal a la temporal, vertical de vuelta a la
         // pequena). Esto es lo que quita los cuadros al 100%: el gaussiano
         // promedia con pesos de campana, no solo 2x2 como el lineal.
+        // v1.9.16: DOS iteraciones (H+V dos veces) para que ni al 100% se
+        // vean los cuadros: una sola pasada no suaviza bastante el 8x.
         if (GLBlurInit() && g_blurTmpFBO) {
-            glBindFramebuffer(GL_FRAMEBUFFER, g_blurTmpFBO);
-            glViewport(0, 0, sw, sh);
-            drawGauss(g_blurSmallTex, 0, 0, (float)sw, (float)sh, projS, 1.0f / sw, 0.0f);
-            glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
-            glViewport(0, 0, sw, sh);
-            drawGauss(g_blurTmpTex, 0, 0, (float)sw, (float)sh, projS, 0.0f, 1.0f / sh);
+            for (int gi = 0; gi < 2; gi++) {
+                glBindFramebuffer(GL_FRAMEBUFFER, g_blurTmpFBO);
+                glViewport(0, 0, sw, sh);
+                drawGauss(g_blurSmallTex, 0, 0, (float)sw, (float)sh, projS, 1.0f / sw, 0.0f);
+                glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+                glViewport(0, 0, sw, sh);
+                drawGauss(g_blurTmpTex, 0, 0, (float)sw, (float)sh, projS, 0.0f, 1.0f / sh);
+            }
         }
         // 3. ampliar: dibujar la textura pequena en el framebuffer por defecto
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -3386,7 +3409,7 @@ static bool VehicleHasRadio(void* veh) {
 }
 // v2.51: HexDump eliminado (solo lo usaban el volcado del vehiculo y el escaneo ptrCand).
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
-    if (!g_open) g_blurFrozen = false;  // v1.9.14: al cerrar la rueda se descongela (la proxima apertura vuelve a capturar)
+    if (!g_open) { g_blurFrozen = false; g_blurFrames = 0; }  // v1.9.14/1.9.16: al cerrar la rueda se descongela y se reinicia el contador
     if (g_failed) return;
     EGLContext ctx = eglGetCurrentContext();
     if (ctx == EGL_NO_CONTEXT) return;

@@ -1353,7 +1353,11 @@ static int DumpSymbols(const char* lib, const char* const* needles, int nNeedles
 typedef void (*HudDrawFn)(void*);
 static HudDrawFn ut_origHudDraw = nullptr;
 static void UT_HudDraw_hook(void* self) {
-    if (g_open || g_settings || g_trackList) return;  // rueda/panel/lista abiertos: sin HUD
+    if (g_open || g_settings || g_trackList) {  // rueda/panel/lista abiertos: sin HUD
+        static bool logged = false;
+        if (!logged) { logged = true; Log("UT: CHud::Draw oculto (rueda abierta)"); }  // v1.9.16: diagnostico (el hook dice ok pero Daniel ve el HUD)
+        return;
+    }
     if (ut_origHudDraw) ut_origHudDraw(self);
 }
 
@@ -1366,11 +1370,19 @@ typedef void (*WidgetDrawFn)(void*);
 static WidgetDrawFn ut_origPlayerInfoDraw = nullptr;
 static WidgetDrawFn ut_origRadarUpdate = nullptr;
 static void UT_PlayerInfoDraw_hook(void* self) {
-    if (g_open || g_settings || g_trackList) return;
+    if (g_open || g_settings || g_trackList) {
+        static bool logged = false;
+        if (!logged) { logged = true; Log("UT: PlayerInfo oculto (rueda abierta)"); }  // v1.9.16: diagnostico
+        return;
+    }
     if (ut_origPlayerInfoDraw) ut_origPlayerInfoDraw(self);
 }
 static void UT_RadarUpdate_hook(void* self) {
-    if (g_open || g_settings || g_trackList) return;
+    if (g_open || g_settings || g_trackList) {
+        static bool logged = false;
+        if (!logged) { logged = true; Log("UT: Radar oculto (rueda abierta)"); }  // v1.9.16: diagnostico
+        return;
+    }
     if (ut_origRadarUpdate) ut_origRadarUpdate(self);
 }
 
@@ -1383,7 +1395,11 @@ static void UT_RadarUpdate_hook(void* self) {
 typedef void (*TouchDrawAllFn)(void*, bool);
 static TouchDrawAllFn ut_origTouchDrawAll = nullptr;
 static void UT_TouchDrawAll_hook(void* self, bool b) {
-    if (g_open || g_settings || g_trackList) return;  // rueda/panel/lista abiertos: sin botones
+    if (g_open || g_settings || g_trackList) {  // rueda/panel/lista abiertos: sin botones
+        static bool logged = false;
+        if (!logged) { logged = true; Log("UT: DrawAll oculto (rueda abierta)"); }  // v1.9.16: diagnostico
+        return;
+    }
     if (ut_origTouchDrawAll) ut_origTouchDrawAll(self, b);
 }
 
