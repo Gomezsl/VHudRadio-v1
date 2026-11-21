@@ -427,9 +427,21 @@ static int UT_CurrentTrackIdx() {
 // hilo de OpenSL independiente de los cuadros del juego.
 static void UT_PauseDevice(bool pause);  // v1.8: declaracion adelantada (se define mas abajo)
 static void UT_BufferCallback(SLBufferQueueItf bq, void* /*ctx*/) {
-    if (ut_active && ut_lastFrameAt.time_since_epoch().count() > 0 &&
-        std::chrono::steady_clock::now() - ut_lastFrameAt > std::chrono::seconds(1)) {
-        UT_PauseDevice(true);
+    // v1.9.15 (Rehan): parar casi al instante al ir a inicio, como las
+    // emisoras nativas (Radio Los Santos). Antes solo el hueco sin cuadros
+    // lo detectaba: 1 s de umbral = 1-2 s sonando en total. Ahora:
+    // (1) si el juego pone su pausa (m_UserPause/m_CodePause, que tambien
+    // pone al ir a segundo plano) se pausa en el siguiente buffer (~20 ms);
+    // (2) el hueco sin cuadros baja de 1 s a 0.5 s como respaldo (por si el
+    // juego no pone su pausa al ir a inicio). El preview del menu
+    // (ut_menuPreview) no se pausa por la pausa del juego, como en
+    // UT_Frame; pero el hueco sin cuadros SI lo pausa (ir a inicio desde el
+    // menu tambien debe cortar la musica).
+    if (ut_active) {
+        bool gamePaused = (g_userPause && *g_userPause) || (g_codePause && *g_codePause);
+        bool noFrames = ut_lastFrameAt.time_since_epoch().count() > 0 &&
+                        std::chrono::steady_clock::now() - ut_lastFrameAt > std::chrono::milliseconds(500);
+        if ((gamePaused && !ut_menuPreview) || noFrames) UT_PauseDevice(true);
     }
     pthread_mutex_lock(&ut_cbMutex);
     if (!ut_player || bq != ut_queue) { pthread_mutex_unlock(&ut_cbMutex); return; }

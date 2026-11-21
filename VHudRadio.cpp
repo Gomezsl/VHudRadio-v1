@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.14-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.15-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,16 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.15: PARAR CASI AL INSTANTE AL IR A INICIO (REHAN)
+// - Rehan (1.9.13): con el umbral de 1 s la musica sonaba 1-2 s despues
+//   de ir a inicio; las nativas (Radio Los Santos) paran al instante.
+//   UT_BufferCallback ahora tambien mira la pausa del juego
+//   (m_UserPause/m_CodePause, que el juego pone al ir a segundo plano):
+//   pausa en el siguiente buffer (~20 ms). Y el hueco sin cuadros baja de
+//   1 s a 0.5 s como respaldo (por si el juego no pone su pausa). El
+//   preview del menu (ut_menuPreview) no se pausa por la pausa del juego
+//   (como en UT_Frame), pero el hueco sin cuadros SI lo pausa: ir a inicio
+//   desde el menu tambien corta la musica.
 // v1.9.14: BLUR CONGELADO + ICONOS 8/12 OPACOS + SOLO GTAVRadioMusic + PAQUETE PERSONALIZADO
 // - Blur (Rehan): la escena se copia UNA VEZ al abrir la rueda y se congela
 //   (g_blurFrozen; se descongela al cerrar la rueda en DrawFrame, y se
@@ -825,9 +835,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.14-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.15-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.14-beta"
+#define VHUDRADIO_VERSION "1.9.15-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
