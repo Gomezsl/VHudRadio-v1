@@ -1375,6 +1375,26 @@ static GetTextureFn ut_getTexture = nullptr;
 typedef void (*RadioSelectionCtorFn)(void*);
 static RadioSelectionCtorFn ut_origRadioSelectionCtor = nullptr;
 static bool ut_menuPatchesDone = false;
+// v1.9.35: SettingSelection::Render — la fila EMISORA lee MS+0x240 EN VIVO
+// en cada dibujado (RE: ldr w11, [x10, #0x10] en 0x361d38; x10 = settings +
+// indice*40; para EMISORA indice 14 -> MS+0x240). El simbolo NO esta en
+// .dynsym (solo .symtab), asi que se engancha por direccion (base+0x361c3c).
+// Antes de dibujar la fila EMISORA (indice 14 en this+0x10) se escribe
+// MS+0x240/MS+0x244 = g_current, asi Render lee la emisora de la rueda.
+struct UT_CVector2D { float x, y; };
+typedef void (*SettingRenderFn)(void*, void*, UT_CVector2D, UT_CVector2D, float);
+static SettingRenderFn ut_origSettingRender = nullptr;
+static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_CVector2D b, float c) {
+    if (self && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+        int idx = *(int*)((char*)self + 0x10);
+        if (idx == 14) {
+            *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
+            *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
+        }
+    }
+    if (ut_origSettingRender) ut_origSettingRender(self, screen, a, b, c);
+}
+
 // v1.9.32: constructor de AudioScreen — la pantalla de opciones de sonido
 // construye los SettingSelection (incl. la fila EMISORA) copiando el valor
 // de MS+0x240/mm[0x35]; sincronizar ANTES del ctor original para que la
@@ -1418,13 +1438,10 @@ static void UT_AudioScreenCtor_hook(void* self) {
                 n > 0 ? vals[0] : -1, n > 1 ? vals[1] : -1, n > 2 ? vals[2] : -1,
                 n > 3 ? vals[3] : -1, n > 4 ? vals[4] : -1, n > 5 ? vals[5] : -1,
                 n > 6 ? vals[6] : -1, n > 7 ? vals[7] : -1);
-            // Auto-fix: indice actual en +0x10 (vals[4]), min +0x18 (vals[6]),
-            // max +0x1c (vals[7]). Solo si coincide con la firma EMISORA.
-            if (n > 7 && vals[4] >= 1 && vals[4] <= 13 && vals[4] != g_current
-                && vals[6] == 1 && vals[7] == 12) {
-                *(volatile int*)((char*)p + 0x10) = g_current;
-                Log("UT: AudioScreen auto-fix: SettingSelection+0x10 %d -> %d (0x%lx)", vals[4], g_current, (unsigned long)p);
-            }
+            // v1.9.35: SIN auto-fix — el RE de SettingSelection::Render probo
+            // que +0x10 del SettingSelection es el INDICE del elemento (14
+            // para EMISORA), no la emisora; escribir ahi corromperia la fila.
+            // El diagnostico (log de arriba) se conserva, es inofensivo.
         }
     }
 }
@@ -1900,6 +1917,18 @@ static void UT_InstallHooks() {
             Log("UT: hook DisplayRadioStationName %s", ut_origDisplayName ? "ok" : "no se pudo instalar (se vera Radio Off en la 12)");
         } else {
             Log("UT: DisplayRadioStationName no resolvio (se vera Radio Off en la 12)");
+        }
+        // v1.9.35: SettingSelection::Render — la fila EMISORA lee MS+0x240 en
+        // vivo en cada dibujado. El simbolo NO esta en .dynsym, asi que se
+        // engancha por direccion (libGTASA+0x361c3c, confirmado por RE).
+        {
+            uintptr_t sr = UT_LibBase("libGTASA.so") + 0x361c3c;
+            if (sr != 0x361c3c) {
+                aml->Hook((void*)sr, (void*)UT_SettingRender_hook, (void**)&ut_origSettingRender);
+                Log("UT: hook SettingSelection::Render %s", ut_origSettingRender ? "ok (EMISORA leida en vivo)" : "no se pudo instalar");
+            } else {
+                Log("UT: SettingSelection::Render sin base libGTASA (sin fix de EMISORA)");
+            }
         }
         // v1.9.3 (Claude): ocultar el HUD (CHud::Draw) con la rueda abierta.
         uintptr_t hd = aml->GetSym(h, "_ZN4CHud4DrawEv");
