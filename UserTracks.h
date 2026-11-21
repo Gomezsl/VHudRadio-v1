@@ -877,6 +877,7 @@ static void UT_Stop(const char* reason) {
 // abrir y cerrar el dial y cada vez que la emisora cambia dentro o justo despues
 // del menu. Con eso se ve que byte guarda la emisora del menu.
 static void* ut_menuManager = nullptr;
+static void* ut_mobileSettings = nullptr;  // v1.9.27: MobileSettings::settings (su +0x240 es lo que reaplica el dial)
 static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
 static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
@@ -1251,12 +1252,28 @@ static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, 
 // v1.9.22/1.9.23: escribe la emisora real en AudioEngine+0x149 (la
 // variable que muestra EMISORA). Solo registra cuando cambia.
 static void UT_SyncEmisora(int station) {
-    if (!g_audioEngine || station < 1 || station > 13) return;
-    unsigned char* ae = (unsigned char*)g_audioEngine;
-    unsigned char old = ae[0x149];
-    if (old != (unsigned char)station) {
-        ae[0x149] = (unsigned char)station;
-        Log("UT: EMISORA sincronizada %d -> %d (AudioEngine+0x149)", (int)old, station);
+    // v1.9.27: RE de libGTASA.so (FrontEndMenuManager-0x35-RE.md). Hay DOS variables:
+    // (1) FrontEndMenuManager+0x35 (byte, m_nRadioStation): lista del dial, fila EMISORA,
+    //     partida guardada. (2) MobileSettings::settings+0x240 (int): lo que
+    //     AudioScreen::C2Ev reaplica con RetuneRadio al abrir opciones de sonido; el tap
+    //     en el dial escribe ESTA, no +0x35. Escribir solo una no basta: hay que escribir
+    //     las dos. AudioEngine+0x149 NO era nada (valor aleatorio 0..3 de inicializacion).
+    if (station < 1 || station > 13) return;
+    if (ut_menuManager) {
+        unsigned char* mm = (unsigned char*)ut_menuManager;
+        unsigned char old = mm[0x35];
+        if (old != (unsigned char)station) {
+            mm[0x35] = (unsigned char)station;
+            Log("UT: EMISORA sincronizada %d -> %d (FrontEndMenuManager+0x35)", (int)old, station);
+        }
+    }
+    if (ut_mobileSettings) {
+        int* ms = (int*)((char*)ut_mobileSettings + 0x240);
+        int old = *ms;
+        if (old != station) {
+            *ms = station;
+            Log("UT: EMISORA sincronizada %d -> %d (MobileSettings+0x240)", old, station);
+        }
     }
 }
 
@@ -1729,6 +1746,11 @@ static void UT_InstallHooks() {
             if (!mm) mm = aml->GetSym(h, "_ZN13CMenuManager18FrontEndMenuManagerE");
             if (mm) { ut_menuManager = (void*)mm; Log("UT: FrontEndMenuManager ok (%p)", ut_menuManager); }
             else Log("UT: FrontEndMenuManager no resolvio (sin volcado del menu)");
+            // v1.9.27: MobileSettings::settings (RE de libGTASA.so: su +0x240 int es
+            // lo que AudioScreen::C2Ev reaplica al abrir opciones de sonido)
+            uintptr_t mst = aml->GetSym(h, "_ZN14MobileSettings8settingsE");
+            if (mst) { ut_mobileSettings = (void*)mst; Log("UT: MobileSettings::settings ok (%p)", ut_mobileSettings); }
+            else Log("UT: MobileSettings::settings no resolvio (sin sincronia de EMISORA)");
         }
         ut_getTexture = (GetTextureFn)aml->GetSym(h, "_ZN22TextureDatabaseRuntime10GetTextureEPKc");
         if (!ut_getTexture) {
