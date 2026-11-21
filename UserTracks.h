@@ -29,7 +29,6 @@
 #pragma once
 
 #define MINIMP3_IMPLEMENTATION
-#include <set>
 #include "minimp3.h"
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
@@ -1397,21 +1396,6 @@ static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_C
         int idx = self ? *(int*)((char*)self + 0x10) : -1;
         Log("UT: SettingSelection::Render activo (primera fila idx=%d, rueda=%d)", idx, g_current);
     }
-    // v1.9.37: DIAGNOSTICO (solo registra): que filas se dibujan, con que idx y que
-    // valor tenia MS+0x240 ANTES de escribirlo (si el juego lo revierte entre cuadros, aqui se ve).
-    {
-        static std::set<long> seenRows;
-        static int rowLogs = 0;
-        if (rowLogs < 60 && self && ut_mobileSettings) {
-            int idx = *(int*)((char*)self + 0x10);
-            int before = *(int*)((char*)ut_mobileSettings + 0x240);
-            long k = (long)idx * 100 + before;
-            if (seenRows.insert(k).second) {
-                rowLogs++;
-                Log("UT: [diag] Render fila idx=%d (MS240 antes=%d, rueda=%d, pausa=%d)", idx, before, g_current, g_paused ? 1 : 0);
-            }
-        }
-    }
     if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
         *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
         *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
@@ -1435,17 +1419,8 @@ static bool UT_IsReadablePtr(uintptr_t p) {
 }
 
 static void UT_AudioScreenCtor_hook(void* self) {
-    // v1.9.37: DIAGNOSTICO: confirma si este hook corre y que hay antes/despues del ctor original.
-    static int ctorLogs = 0;
-    int before240 = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
-    if (ctorLogs < 8) {
-        ctorLogs++;
-        int after240 = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
-        int mm35 = g_menuManager ? ((unsigned char*)g_menuManager)[0x35] : -1;
-        Log("UT: [diag] AudioScreen ctor corrio (rueda=%d, MS240 antes=%d despues=%d, mm35=%d)", g_current, before240, after240, mm35);
-    }
     // Post-ctor: por si C2Ev reseteo los valores durante la construccion.
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     // Diagnostico + auto-fix (Gemini, via Daniel): la fila EMISORA guarda su
@@ -1572,25 +1547,51 @@ static void UT_RadioSelectionDtor_hook(void* self) {
 // (valor de Alex, hash no identificado; se copia tal cual).
 typedef uint32_t (*GetUppercaseKeyFn)(const char*);
 static GetUppercaseKeyFn ut_origGetUppercaseKey = nullptr;
-// v1.9.37: DIAGNOSTICO DE CLAVES DE TEXTO (solo REGISTRA; no cambia nada del juego).
-// Con el menu de pausa abierto, anota cada clave GXT distinta que el juego pide
-// (con la emisora de la rueda y si el dial esta abierto). Al cambiar EMISORA con las
-// flechas de la fila, la clave nueva que aparece es el nombre de esa emisora: con esa
-// lista se arregla el nombre por TEXTO, sin depender de direcciones de memoria.
-static void UT_LogKeyOnce(const char* key) {
-    static std::set<std::string> seen;
-    static int logged = 0;
-    if (logged >= 400) return;
-    if (strlen(key) > 48) return;
-    if (seen.insert(key).second) {
-        logged++;
-        Log("UT: [clave] \"%s\" (rueda=%d, dial=%d, activo=%d)", key, g_current, ut_inAudioMenu ? 1 : 0, ut_active ? 1 : 0);
-        if (logged == 400) Log("UT: [clave] tope de 400 claves alcanzado");
+// v1.9.38: ARREGLO POR TEXTO (desensamblado de libGTASA.so, verificado).
+// Las emisoras se nombran con claves GXT: 1..11 -> "FEA_R0".."FEA_R10"
+// (base 0: la emisora N usa FEA_R{N-1}; el juego hace snprintf("FEA_R%d",
+// emisora-1) en 0x47f1a4/0x47f234/0x47f29c), 12 -> "FEA_MP3", 13 -> "FEA_NON".
+// La fila EMISORA no se arregla escribiendo MS+0x240 (la 1.9.37 lo probo:
+// el valor ya era correcto al dibujar y el texto seguia mal), asi que se
+// redirige la CLAVE que pide el juego a la clave de la emisora de la rueda.
+// Solo mientras las opciones de sonido estan abiertas (pausa y sin dial):
+// el HUD no esta en pausa y el dial tiene ut_inAudioMenu=1, asi que no se tocan.
+static const char* UT_FEAKeyForStation(int st) {
+    static const char* k[14] = { nullptr,
+        "FEA_R0", "FEA_R1", "FEA_R2", "FEA_R3", "FEA_R4", "FEA_R5",
+        "FEA_R6", "FEA_R7", "FEA_R8", "FEA_R9", "FEA_R10",
+        "FEA_MP3", "FEA_NON" };
+    if (st < 1 || st > 13) return nullptr;
+    return k[st];
+}
+static bool UT_IsStationKey(const char* key) {
+    // Solo FEA_R0..FEA_R10 (FEA_R + digitos): FEA_RPK/FEA_RSS son otras
+    // opciones del menu y NO se tocan.
+    if (strncmp(key, "FEA_R", 5) == 0) {
+        const char* p = key + 5;
+        if (*p < '0' || *p > '9') return false;
+        if (p[1] == '\0') return true;                    // FEA_R0..FEA_R9
+        if (p[1] == '0' && p[2] == '\0') return true;     // FEA_R10
+        return false;
     }
+    if (strcmp(key, "FEA_MP3") == 0) return true;
+    if (strcmp(key, "FEA_NON") == 0) return true;
+    return false;
 }
 static uint32_t UT_GetUppercaseKey_hook(const char* key) {
     if (key) {
-        if (g_paused) UT_LogKeyOnce(key);  // v1.9.37
+        // v1.9.38: la fila EMISORA muestra el nombre de la rueda.
+        if (g_paused && !ut_inAudioMenu && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
+            const char* target = UT_FEAKeyForStation(g_current);
+            if (target && strcmp(key, target) != 0 && ut_origGetUppercaseKey) {
+                static int redirLogs = 0;
+                if (redirLogs < 20) {
+                    redirLogs++;
+                    Log("UT: [texto] EMISORA \"%s\" -> \"%s\" (rueda=%d)", key, target, g_current);
+                }
+                return ut_origGetUppercaseKey(target);
+            }
+        }
         if (strcmp(key, "FEA_MP3") == 0) return 0x9109b7c1;  // identidad (JAMCRC de FEA_MP3)
         if (ut_active && strcmp(key, "FEA_NON") == 0) return 0x9109b7c1;  // Radio Off -> nombre de User Tracks
         if (strcmp(key, "SAMP_AUDIO_HINT") == 0) return 0x93516cf0;  // hint del menu (valor de Alex)
