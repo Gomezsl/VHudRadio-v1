@@ -1580,8 +1580,14 @@ static bool UT_IsStationKey(const char* key) {
 }
 static uint32_t UT_GetUppercaseKey_hook(const char* key) {
     if (key) {
-        // v1.9.38: la fila EMISORA muestra el nombre de la rueda.
-        if (g_paused && !ut_inAudioMenu && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
+        // v1.9.39: la 1.9.38 no disparo NUNCA (0 lineas [texto]) porque la
+        // condicion usaba g_paused, un valor cacheado que se actualiza en el
+        // cuadro siguiente: cuando la pantalla de sonido se construye y
+        // resuelve el nombre, g_paused aun vale false. Se lee la pausa EN
+        // VIVO (m_UserPause/m_CodePause) para que el redirect este activo
+        // desde el primer cuadro.
+        bool pausedLive = (g_userPause && *g_userPause) || (g_codePause && *g_codePause);
+        if (pausedLive && !ut_inAudioMenu && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
             const char* target = UT_FEAKeyForStation(g_current);
             if (target && strcmp(key, target) != 0 && ut_origGetUppercaseKey) {
                 static int redirLogs = 0;
