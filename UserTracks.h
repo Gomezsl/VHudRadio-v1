@@ -1180,6 +1180,22 @@ static void UT_RadioSelectionCtor_hook(void* self) {
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
     }
+    // v1.9.17 (Daniel): sincronizar el dial con la emisora real. Al entrar
+    // a opciones de sonido estando en otra emisora (p. ej. CSR 8), el dial
+    // se quedaba en User Track (12) en vez de CSR. Si el reproductor no
+    // esta activo y la emisora real no es la 12 pero el juego cree que es
+    // la 12, se resincroniza con StartRadio a la emisora real.
+    {
+        int cur = -1;
+        if (g_getStationAudio && g_audioEngine) cur = (int)g_getStationAudio(g_audioEngine);
+        else if (g_getStationTrack && g_trackManager) cur = (int)g_getStationTrack(g_trackManager);
+        Log("UT: dial abierto (juego=%d rueda=%d activo=%d)", cur, g_current, ut_active ? 1 : 0);
+        if (!ut_active && g_current >= 1 && g_current <= 13 && g_current != 12 && cur == 12 &&
+            ut_origStartRadio && g_trackManager) {
+            Log("UT: dial resincronizado a %d (el juego creia que era 12)", g_current);
+            ut_origStartRadio(g_trackManager, (signed char)g_current, 0, 1.0f, 0);
+        }
+    }
 }
 
 // v1.9.12 (Alex 1.8.4, RE3): destructor de RadioSelection — al cerrar el

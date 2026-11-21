@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.16-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.17-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,14 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.17: DIAL SINCRONIZADO (DANIEL)
+// - Al entrar a opciones de sonido estando en otra emisora (p. ej. CSR 8),
+//   el dial se quedaba en User Track (12) en vez de CSR. El ctor de
+//   RadioSelection ahora registra la emisora del juego y de la rueda al
+//   abrir el dial ("UT: dial abierto (juego=%d rueda=%d activo=%d)") y,
+//   si el reproductor no esta activo y la emisora real no es la 12 pero el
+//   juego cree que es la 12, la resincroniza con StartRadio a la emisora
+//   real. Asi el dial muestra la emisora que suena, no la 12.
 // v1.9.16: BLUR SIN CUADROS + HUD DIAGNOSTICO (DANIEL)
 // - Blur pixeliado (Daniel, 1.9.15): el gaussiano corre DOS veces (H+V
 //   dos iteraciones): una sola pasada no suaviza bastante el 8x y al 100%
@@ -848,9 +856,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.16-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.17-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.16-beta"
+#define VHUDRADIO_VERSION "1.9.17-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
