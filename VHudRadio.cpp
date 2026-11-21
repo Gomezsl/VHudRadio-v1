@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.1-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,20 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.1: SIN ESTATICA 0x22 + SONDEO DE BOTONES (Daniel, log 1.9.0)
+// - El "doble audio" de la 1.9.0 NO era la emisora anterior: era la estatica
+//   de sintonia (evento 0x22) sonando junto a la musica. SAUserTracks la
+//   bloquea ("blocking native retune static (0x22) while mixtape active").
+//   Ahora se engancha ReportFrontendAudioEvent y se salta el 0x22 mientras
+//   suena el reproductor. La nativa SE QUEDA en 12 (Mixtape), no se revierte
+//   a 13: con 13 el menu de pausa marcaria Radio Off y la 12 es la que deja
+//   que el menu muestre Mixtape.
+// - Botones: CTouchInterface::Draw no existe en 2.10 (log 1.9.0). Ahora se
+//   sondean 5 nombres (Draw/Render/DrawWidgets/DrawButtons/DrawWidget) y se
+//   registra en el log cual existe, para enganchar el correcto.
+// - Desensamblado de SAUserTracks (capstone): solo aplica DOS parches
+//   (0x47c9f8 y 0x47f3ac, los mismos que nosotros); no hay tercer parche de
+//   memoria. El "tercer parche (display-name)" del informe RE no existe.
 // v1.9: BLUR GAUSSIANO + MIXTAPE + SIN ESTATICA + SIN BOTONES (Daniel, log 1.8.0)
 // - Blur gaussiano de verdad (shader separable 5-tap, H+V sobre la textura
 //   pequena): al 100% ya no se ven los cuadros (la piramide por mitades solo
@@ -589,9 +603,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.1-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.0-beta"
+#define VHUDRADIO_VERSION "1.9.1-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

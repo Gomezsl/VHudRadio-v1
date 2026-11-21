@@ -960,6 +960,22 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     return ut_origRetuneRadio(trackMgr, station);
 }
 
+// ---- bloquear la estatica de cambio de emisora (como SAUserTracks) ----
+// SAUserTracks bloquea el evento de audio 0x22 (estatica de sintonia) mientras
+// el mixtape esta activo: "blocking native retune static (0x22) while mixtape
+// active". Sin esto, la estatica suena JUNTO a la musica y se oye como doble
+// audio, sobre todo al cambiar con la radio original del juego. Por eso la
+// 1.9.0 sonaba doble aunque la nativa estaba en 12: NO era la emisora
+// anterior, era la estatica 0x22. Se engancha ReportFrontendAudioEvent
+// (_ZN12CAudioEngine24ReportFrontendAudioEventEiff) y se salta el evento
+// 0x22 mientras suena el reproductor; los demas eventos pasan igual.
+typedef void (*ReportAudioEventFn)(void*, int, float, float);
+static ReportAudioEventFn ut_origReportAudioEvent = nullptr;
+static void UT_ReportAudioEvent_hook(void* engine, int eventId, float a, float b) {
+    if (eventId == 0x22 && ut_active) return;  // estatica de sintonia: no suena con User Tracks
+    if (ut_origReportAudioEvent) ut_origReportAudioEvent(engine, eventId, a, b);
+}
+
 // ---- ocultar los botones del juego con la rueda abierta (v1.9) ----
 // Como el Void Radio Wheel: el mundo se desenfoca y el HUD no se ve. Se
 // engancha CTouchInterface::Draw y se salta cuando la rueda, el panel o la
@@ -1038,12 +1054,30 @@ static void UT_InstallHooks() {
             Log("UT: RetuneRadio no resolvio (la estatica puede quedarse)");
         }
         // v1.9: ocultar los botones del juego con la rueda abierta.
-        uintptr_t td = aml->GetSym(h, "_ZN15CTouchInterface4DrawEv");
-        if (td) {
-            aml->Hook((void*)td, (void*)UT_TouchDraw_hook, (void**)&ut_origTouchDraw);
-            Log("UT: hook CTouchInterface::Draw %s", ut_origTouchDraw ? "ok (botones ocultos con la rueda)" : "no se pudo instalar (los botones no se ocultan)");
+        // CTouchInterface::Draw no existe en 2.10; se sondean otros nombres
+        // para encontrar el que dibuja los botones (se registra en el log).
+        static const char* kTouchDrawNames[] = {
+            "_ZN15CTouchInterface4DrawEv",
+            "_ZN15CTouchInterface6RenderEv",
+            "_ZN15CTouchInterface12DrawWidgetsEv",
+            "_ZN15CTouchInterface11DrawButtonsEv",
+            "_ZN15CTouchInterface10DrawWidgetEv",
+        };
+        for (int i = 0; i < 5; i++) {
+            uintptr_t tn = aml->GetSym(h, kTouchDrawNames[i]);
+            Log("UT: sonda botones: %s %s", kTouchDrawNames[i], tn ? "EXISTE" : "no");
+            if (tn && !ut_origTouchDraw) {
+                aml->Hook((void*)tn, (void*)UT_TouchDraw_hook, (void**)&ut_origTouchDraw);
+                Log("UT: hook botones %s", ut_origTouchDraw ? "ok (botones ocultos con la rueda)" : "no se pudo instalar");
+            }
+        }
+        // v1.9.1: bloquear la estatica de sintonia (0x22) con User Tracks.
+        uintptr_t ra = aml->GetSym(h, "_ZN12CAudioEngine24ReportFrontendAudioEventEiff");
+        if (ra) {
+            aml->Hook((void*)ra, (void*)UT_ReportAudioEvent_hook, (void**)&ut_origReportAudioEvent);
+            Log("UT: hook ReportFrontendAudioEvent %s", ut_origReportAudioEvent ? "ok (sin estatica 0x22 con User Tracks)" : "no se pudo instalar (puede quedar estatica)");
         } else {
-            Log("UT: CTouchInterface::Draw no resolvio (los botones no se ocultan)");
+            Log("UT: ReportFrontendAudioEvent no resolvio (puede quedar estatica)");
         }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
         if (dn) {
