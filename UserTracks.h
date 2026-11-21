@@ -971,6 +971,12 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     }
     if (ut_active) UT_Stop("cambio de estacion");
     g_current = station;
+    // v1.9.4 (Daniel): al salir de la 12 por la radio del juego, cortar la
+    // nativa con StopRadio antes del RetuneRadio original. El doble audio y
+    // la estatica aparecen al cambiar desde la radio original (no desde la
+    // rueda) y se quitan al salir/entrar del auto: la nativa quedaba sonando.
+    // Igual que el StopRadio antes de la 13 en el hook de StartRadio (1.9.3).
+    if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
     return ut_origRetuneRadio(trackMgr, station);
 }
 
@@ -1109,6 +1115,23 @@ static void UT_HudDraw_hook(void* self) {
     if (ut_origHudDraw) ut_origHudDraw(self);
 }
 
+// v1.9.4 (AdvancedSettings de Daniel): los elementos del HUD son widgets
+// CWidget (CWidgetPlayerInfo: vida, chaleco, arma, buscado, dinero;
+// CWidgetRadar: el radar). AdvancedSettings los referencia por nombre, asi
+// que existen en 2.10. Se ocultan con la rueda/panel/lista abiertos. Son
+// metodos de instancia: `self` se pasa al original.
+typedef void (*WidgetDrawFn)(void*);
+static WidgetDrawFn ut_origPlayerInfoDraw = nullptr;
+static WidgetDrawFn ut_origRadarUpdate = nullptr;
+static void UT_PlayerInfoDraw_hook(void* self) {
+    if (g_open || g_settings || g_trackList) return;
+    if (ut_origPlayerInfoDraw) ut_origPlayerInfoDraw(self);
+}
+static void UT_RadarUpdate_hook(void* self) {
+    if (g_open || g_settings || g_trackList) return;
+    if (ut_origRadarUpdate) ut_origRadarUpdate(self);
+}
+
 static void UT_InstallHooks() {
     // v1.9.3 (Claude): si libSAUserTrack64.so esta cargado, el reproductor
     // propio NO se activa (dos reproductores + dos hooks de StartRadio =
@@ -1181,6 +1204,22 @@ static void UT_InstallHooks() {
             Log("UT: hook CHud::Draw %s", ut_origHudDraw ? "ok (HUD oculto con la rueda)" : "no se pudo instalar");
         } else {
             Log("UT: CHud::Draw no resolvio (el HUD no se oculta)");
+        }
+        // v1.9.4 (AdvancedSettings): ocultar los widgets del HUD
+        // (CWidgetPlayerInfo: vida/chaleco/arma/buscado/dinero; CWidgetRadar).
+        uintptr_t pi = aml->GetSym(h, "_ZN17CWidgetPlayerInfo4DrawEv");
+        if (pi) {
+            aml->Hook((void*)pi, (void*)UT_PlayerInfoDraw_hook, (void**)&ut_origPlayerInfoDraw);
+            Log("UT: hook CWidgetPlayerInfo::Draw %s", ut_origPlayerInfoDraw ? "ok (info del jugador oculta con la rueda)" : "no se pudo instalar");
+        } else {
+            Log("UT: CWidgetPlayerInfo::Draw no resolvio");
+        }
+        uintptr_t ru = aml->GetSym(h, "_ZN12CWidgetRadar6UpdateEv");
+        if (ru) {
+            aml->Hook((void*)ru, (void*)UT_RadarUpdate_hook, (void**)&ut_origRadarUpdate);
+            Log("UT: hook CWidgetRadar::Update %s", ut_origRadarUpdate ? "ok (radar oculto con la rueda)" : "no se pudo instalar");
+        } else {
+            Log("UT: CWidgetRadar::Update no resolvio");
         }
         // v1.9.3 (Claude): volcado de simbolos para enganchar el dibujo de los
         // botones y dejar visible solo el claxon.

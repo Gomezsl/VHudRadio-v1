@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.3-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.4-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,22 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.4: RADIO DEL JUEGO + WIDGETS DEL HUD (Daniel, log 1.9.2 + AdvancedSettings)
+// - El log que mando Daniel es de la 1.9.2, no de la 1.9.3: por eso no se
+//   oculto ningun HUD y no salio VHudRadioSyms.txt. La 1.9.3 ya lo trae;
+//   esta 1.9.4 lo incluye todo.
+// - Doble audio por la radio del juego: Daniel descubrio que pasa al cambiar
+//   desde la radio original (RetuneRadio), no desde la rueda, y se quita al
+//   salir/entrar del auto. El hook de RetuneRadio paraba el reproductor pero
+//   no cortaba la nativa con StopRadio antes del cambio (la rueda si lo hace
+//   desde la 1.9.3). Ahora tambien lo hace al salir de la 12.
+// - HUD por widgets (AdvancedSettings): el HUD no es CTouchInterface, son
+//   clases CWidget. AdvancedSettings referencia CWidgetPlayerInfo::Draw
+//   (vida, chaleco, arma, buscado, dinero) y CWidgetRadar::Update (radar),
+//   asi que existen en 2.10. Se enganchan y se ocultan con la rueda/panel/
+//   lista abiertos (con `self`, son de instancia). Los botones tactiles son
+//   widgets en m_pWidgets (el claxon es el 7): siguen pendientes, pero el
+//   volcado VHudRadioSyms.txt de la 1.9.3 los va a listar para engancharlos.
 // v1.9.3: PARCHE DE CLAUDE VERIFICADO (Daniel lo trajo, 2026-11-21 03:10)
 // - StopRadio ANTES de la nativa 13 en el hook de StartRadio (el que usa la
 //   rueda): el log de la 1.9.2 mostro que se pasaba de K-Rose (2) a la 13 sin
@@ -635,9 +651,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.3-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.4-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.3-beta"
+#define VHUDRADIO_VERSION "1.9.4-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
