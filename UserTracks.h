@@ -9,14 +9,20 @@
 //   cualquier otra estacion lo para. En vehiculo bloqueado la 12 se redirige
 //   a Radio Off (13), igual que SAUserTracks.
 // - Carpetas de musica: las mismas 5 que SAUserTracks (la primera con audio
-//   gana). Solo MP3 (minimp3); .wav/.ogg/.flac/.m4a no se decodifican en v1.
+//   gana). Formatos: MP3 (minimp3), WAV (dr_wav), OGG Vorbis (stb_vorbis),
+//   FLAC (dr_flac). M4A/AAC todavia no (no hay decodificador de un solo
+//   header; seria BASS_AAC o MediaCodec).
 // - Playlist alfabetica por nombre de archivo; aleatoria (Fisher-Yates) por
 //   defecto; infinita (al terminar rebaraja sin repetir la ultima).
-// - Decodificador minimp3 en un hilo aparte; anillo de 512 KB; pre-llenado
+// - Siguiente/anterior: UT_NextTrack()/UT_PrevTrack() (la rueda los llama
+//   con las flechas del centro cuando suena la 12). El nombre de la pista
+//   actual esta en ut_curTrack / UT_TrackDisplayName().
+// - Decodificador en un hilo aparte; anillo de 512 KB; pre-llenado
 //   de ~0.5 s antes de abrir el dispositivo; OpenSL con 4 buffers x 20 ms
 //   (80 ms) en vez de 2 x 10 ms (20 ms). Al cambiar de pista NO se vacia el
 //   anillo: todo se remuestrea a 44100 Hz estereo, asi el dispositivo se crea
-//   una sola vez y nunca cambia de formato.
+//   una sola vez y nunca cambia de formato. Si la pista ya es 44100 Hz
+//   estereo, el PCM va directo al anillo sin remuestrear (via rapida).
 // - Pausa con g_paused (menu / m_UserPause / m_CodePause) y con
 //   CLoadingScreen::m_bActive si resuelve; al salir del vehiculo se para.
 // - Comparte el motor OpenSL de los clics (un solo motor en el proceso).
@@ -24,6 +30,11 @@
 
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
+#define DR_WAV_IMPLEMENTATION
+#include "dr_wav.h"
+#define DR_FLAC_IMPLEMENTATION
+#include "dr_flac.h"
+#include "stb_vorbis.c"  // OGG Vorbis (dominio publico; se incluye el .c: una sola TU)
 
 #include <dirent.h>
 #include <link.h>
@@ -207,15 +218,22 @@ static uint32_t UT_Xorshift(uint32_t& x) {
     x ^= x << 13; x ^= x >> 17; x ^= x << 5;
     return x;
 }
-static bool UT_HasMp3Ext(const char* name) {
+// Formatos de audio (por extension; minusculas y mayusculas).
+enum UTAudioFmt { UT_FMT_UNKNOWN = 0, UT_FMT_MP3, UT_FMT_WAV, UT_FMT_OGG, UT_FMT_FLAC };
+static UTAudioFmt UT_AudioExt(const char* name) {
     const char* dot = strrchr(name, '.');
-    if (!dot) return false;
-    return strcmp(dot, ".mp3") == 0 || strcmp(dot, ".MP3") == 0;
+    if (!dot) return UT_FMT_UNKNOWN;
+    if (strcmp(dot, ".mp3") == 0 || strcmp(dot, ".MP3") == 0) return UT_FMT_MP3;
+    if (strcmp(dot, ".wav") == 0 || strcmp(dot, ".WAV") == 0) return UT_FMT_WAV;
+    if (strcmp(dot, ".ogg") == 0 || strcmp(dot, ".OGG") == 0) return UT_FMT_OGG;
+    if (strcmp(dot, ".flac") == 0 || strcmp(dot, ".FLAC") == 0) return UT_FMT_FLAC;
+    return UT_FMT_UNKNOWN;
 }
+static bool UT_HasAudioExt(const char* name) { return UT_AudioExt(name) != UT_FMT_UNKNOWN; }
 
-// Escanea las 5 carpetas en orden; la primera con al menos un MP3 gana.
-// Rellena ut_tracks (alfabetico por basename) y el orden de reproduccion.
-// Devuelve true si hay al menos una pista.
+// Escanea las 5 carpetas en orden; la primera con al menos un archivo de
+// audio gana. Rellena ut_tracks (alfabetico por basename) y el orden de
+// reproduccion. Devuelve true si hay al menos una pista.
 static bool UT_ScanMusic() {
     ut_tracks.clear();
     ut_order.clear();
@@ -228,7 +246,7 @@ static bool UT_ScanMusic() {
         struct dirent* ent;
         while ((ent = readdir(dir)) != nullptr) {
             if (ent->d_name[0] == '.') continue;
-            if (!UT_HasMp3Ext(ent->d_name)) continue;
+            if (!UT_HasAudioExt(ent->d_name)) continue;
             char full[1024];
             snprintf(full, sizeof full, "%s/%s", UT_MUSIC_DIRS[d], ent->d_name);
             struct stat st;
@@ -248,7 +266,17 @@ static bool UT_ScanMusic() {
     });
     ut_order.resize(ut_tracks.size());
     for (size_t i = 0; i < ut_order.size(); i++) ut_order[i] = (int)i;
-    Log("UT: carpeta de musica: %s (%d pistas MP3)", dirUsed, (int)ut_tracks.size());
+    int nMp3 = 0, nWav = 0, nOgg = 0, nFlac = 0;
+    for (size_t i = 0; i < ut_tracks.size(); i++) {
+        switch (UT_AudioExt(UT_Basename(ut_tracks[i].c_str()))) {
+            case UT_FMT_MP3: nMp3++; break;
+            case UT_FMT_WAV: nWav++; break;
+            case UT_FMT_OGG: nOgg++; break;
+            case UT_FMT_FLAC: nFlac++; break;
+            default: break;
+        }
+    }
+    Log("UT: carpeta de musica: %s (%d pistas: mp3=%d wav=%d ogg=%d flac=%d)", dirUsed, (int)ut_tracks.size(), nMp3, nWav, nOgg, nFlac);
     return true;
 }
 
@@ -278,6 +306,33 @@ static std::string UT_NextPath() {
     }
     return ut_tracks[ut_order[ut_orderPos++]];
 }
+
+// Nombre de la pista actual para mostrar (basename sin extension).
+// Buffer estatico; la UI lo usa solo para dibujar en el momento.
+static char ut_dispName[256];
+static const char* UT_TrackDisplayName() {
+    char tmp[256];
+    // Copia defensiva: el hilo decodificador escribe ut_curTrack al cambiar
+    // de pista; si la lectura se cruza, el nombre sale mezclado un cuadro,
+    // pero nunca se lee fuera del buffer.
+    strncpy(tmp, ut_curTrack, sizeof tmp - 1);
+    tmp[sizeof tmp - 1] = '\0';
+    const char* base = UT_Basename(tmp);
+    size_t n = strlen(base);
+    const char* dot = strrchr(base, '.');
+    if (dot) n = (size_t)(dot - base);
+    if (n >= sizeof ut_dispName) n = sizeof ut_dispName - 1;
+    memcpy(ut_dispName, base, n);
+    ut_dispName[n] = '\0';
+    return ut_dispName;
+}
+
+// Siguiente/anterior (la rueda los llama con las flechas del centro cuando
+// suena la 12). Contador: +1 por cada "siguiente", -1 por cada "anterior";
+// el hilo decodificador lo consume. Solo vale si el reproductor esta activo.
+static volatile int ut_skipReq = 0;
+static void UT_NextTrack() { if (ut_active) ut_skipReq++; }
+static void UT_PrevTrack() { if (ut_active) ut_skipReq--; }
 
 // ---- callback de OpenSL (hilo interno de OpenSL) ----
 // slBufferQueueCallback: void (SLBufferQueueItf, void*). Mismo uso que el
@@ -341,61 +396,167 @@ static int UT_ResampleFrame(const int16_t* pcm, int samples, int channels, int r
     return written;
 }
 
+// ---- escritura de PCM al anillo (via rapida + remuestreo) ----
+// Si el PCM ya es 44100 Hz estereo, va directo al anillo (sin el coste del
+// remuestreador, que es el caso de casi todos los MP3). Si no, por
+// UT_ResampleFrame. false solo si el anillo se cerro.
+static bool UT_WritePCM(const int16_t* pcm, int samples, int channels, int rate) {
+    if (samples <= 0) return true;
+    if (rate == UT_OUT_RATE && channels == UT_OUT_CH) {
+        return ut_ring.write((const uint8_t*)pcm, (size_t)samples * 2 * 2);
+    }
+    int16_t outbuf[8192 * 2];
+    int outSamples = UT_ResampleFrame(pcm, samples, channels, rate, outbuf, 8192);
+    if (outSamples > 0) return ut_ring.write((const uint8_t*)outbuf, (size_t)outSamples * 2 * 2);
+    return true;
+}
+
+// ---- decodificadores por formato ----
+// Cada uno devuelve 0 = pista completa, 1 = saltada (ut_skipReq), -1 = fallo.
+// Leen en trozos de 1024 frames: a 8000 Hz el remuestreo da 5645 muestras,
+// que caben en el outbuf de UT_ResampleFrame (8192). Solo mono/estereo.
+static int UT_DecodeMP3(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    uint8_t inbuf[16384];
+    mp3dec_t dec;
+    mp3dec_init(&dec);
+    UT_ResampleReset();
+    int inLen = 0, inPos = 0;
+    bool trackOk = false;
+    int rc = 0;
+    while (!ut_stopThread) {
+        if (ut_skipReq != 0) { rc = 1; break; }
+        if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        // Asegurar datos: si queda poco, compactar lo que queda y rellenar.
+        if (inLen - inPos < 4096) {
+            if (inPos > 0) { memmove(inbuf, inbuf + inPos, inLen - inPos); inLen -= inPos; inPos = 0; }
+            int r = (int)fread(inbuf + inLen, 1, sizeof inbuf - inLen, f);
+            if (r > 0) inLen += r;
+            else if (inLen == 0) { rc = 0; break; }  // EOF y sin datos
+        }
+        if (inPos >= inLen) { rc = 0; break; }  // sin datos (EOF)
+        mp3d_sample_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
+        mp3dec_frame_info_t info;
+        int samples = mp3dec_decode_frame(&dec, inbuf + inPos, inLen - inPos, pcm, &info);
+        inPos += info.frame_bytes;
+        if (samples <= 0) {
+            if (info.frame_bytes <= 0) {
+                // Sin frame completo: o es el final del archivo, o basura sin
+                // sincronia. Con el buffer lleno, avanzar 1 byte para no atascarse.
+                if (inLen - inPos >= 4096) { inPos++; continue; }
+                rc = 0; break;
+            }
+            continue;  // frame invalido saltado por minimp3
+        }
+        if (info.channels > 2) { rc = -1; break; }
+        trackOk = true;
+        if (!UT_WritePCM(pcm, samples, info.channels, info.hz)) { rc = -1; break; }
+    }
+    fclose(f);
+    if (rc == 1) return 1;
+    return trackOk ? 0 : -1;
+}
+
+static int UT_DecodeWAV(const char* path) {
+    drwav wav;
+    if (!drwav_init_file(&wav, path, nullptr)) return -1;
+    if (wav.channels > 2) { drwav_uninit(&wav); Log("UT: WAV con %d canales (solo mono/estereo): %s", (int)wav.channels, UT_Basename(path)); return -1; }
+    UT_ResampleReset();
+    int16_t buf[1024 * 2];
+    int rc = 0;
+    while (!ut_stopThread) {
+        if (ut_skipReq != 0) { rc = 1; break; }
+        if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        drwav_uint64 frames = drwav_read_pcm_frames_s16(&wav, 1024, buf);
+        if (frames == 0) break;  // EOF
+        if (!UT_WritePCM(buf, (int)frames, (int)wav.channels, (int)wav.sampleRate)) { rc = -1; break; }
+    }
+    drwav_uninit(&wav);
+    return rc;
+}
+
+static int UT_DecodeOGG(const char* path) {
+    int error = 0;
+    stb_vorbis* v = stb_vorbis_open_filename(path, &error, nullptr);
+    if (!v) return -1;
+    stb_vorbis_info info = stb_vorbis_get_info(v);
+    UT_ResampleReset();
+    int16_t buf[1024 * 2];
+    int rc = 0;
+    while (!ut_stopThread) {
+        if (ut_skipReq != 0) { rc = 1; break; }
+        if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        // Se piden 2 canales: stb_vorbis convierte (mono -> duplicado).
+        int frames = stb_vorbis_get_samples_short_interleaved(v, 2, buf, 1024 * 2);
+        if (frames <= 0) break;  // EOF
+        if (!UT_WritePCM(buf, frames, 2, info.sample_rate)) { rc = -1; break; }
+    }
+    stb_vorbis_close(v);
+    return rc;
+}
+
+static int UT_DecodeFLAC(const char* path) {
+    drflac* f = drflac_open_file(path, nullptr);
+    if (!f) return -1;
+    if (f->channels > 2) { drflac_close(f); Log("UT: FLAC con %d canales (solo mono/estereo): %s", (int)f->channels, UT_Basename(path)); return -1; }
+    UT_ResampleReset();
+    int16_t buf[1024 * 2];
+    int rc = 0;
+    while (!ut_stopThread) {
+        if (ut_skipReq != 0) { rc = 1; break; }
+        if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        drflac_uint64 frames = drflac_read_pcm_frames_s16(f, 1024, buf);
+        if (frames == 0) break;  // EOF
+        if (!UT_WritePCM(buf, (int)frames, (int)f->channels, (int)f->sampleRate)) { rc = -1; break; }
+    }
+    drflac_close(f);
+    return rc;
+}
+
+// Decodifica una pista completa. 0 = terminada, 1 = saltada, -1 = fallo.
+static int UT_DecodeTrack(const char* path) {
+    snprintf(ut_curTrack, sizeof ut_curTrack, "%s", UT_Basename(path));
+    switch (UT_AudioExt(path)) {
+        case UT_FMT_MP3: return UT_DecodeMP3(path);
+        case UT_FMT_WAV: return UT_DecodeWAV(path);
+        case UT_FMT_OGG: return UT_DecodeOGG(path);
+        case UT_FMT_FLAC: return UT_DecodeFLAC(path);
+        default: return -1;
+    }
+}
+
 // ---- hilo decodificador ----
 static void* UT_DecoderThread(void* /*arg*/) {
-    uint8_t inbuf[16384];
-    int16_t outbuf[8192 * 2];  // hasta 8192 muestras por canal (peor caso: 8000 Hz -> 6351)
-    mp3dec_t dec;
     int consecutiveFails = 0;
     while (!ut_stopThread) {
         if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        // Saltos pendientes (la rueda los pide con UT_NextTrack/UT_PrevTrack).
+        if (ut_skipReq > 0) {
+            ut_skipReq--;
+            ut_ring.discard();  // tirar lo que quedaba de la pista anterior
+        } else if (ut_skipReq < 0) {
+            ut_skipReq++;
+            // Volver una pista: UT_NextPath avanza, asi que retroceder 2.
+            if (!ut_order.empty()) {
+                ut_orderPos -= 2;
+                if (ut_orderPos < 0) ut_orderPos += (int)ut_order.size();
+            }
+            ut_ring.discard();
+        }
         std::string path = UT_NextPath();
         if (path.empty()) { ut_wantStop = true; break; }
-        FILE* f = fopen(path.c_str(), "rb");
-        if (!f) { if (++consecutiveFails >= (int)ut_tracks.size()) { ut_wantStop = true; break; } continue; }
-        snprintf(ut_curTrack, sizeof ut_curTrack, "%s", UT_Basename(path.c_str()));
-        mp3dec_init(&dec);
-        UT_ResampleReset();
-        int inLen = 0, inPos = 0;
-        bool trackOk = false, trackDone = false;
-        while (!ut_stopThread && !trackDone) {
-            if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
-            // Asegurar datos: si queda poco, compactar lo que queda y rellenar.
-            // (Un frame puede quedar partido entre dos lecturas; si se corta la
-            // pista ahi, la cancion se truncaria al primer cambio de buffer.)
-            if (inLen - inPos < 4096) {
-                if (inPos > 0) { memmove(inbuf, inbuf + inPos, inLen - inPos); inLen -= inPos; inPos = 0; }
-                int r = (int)fread(inbuf + inLen, 1, sizeof inbuf - inLen, f);
-                if (r > 0) inLen += r;
-                else if (inLen == 0) { trackDone = true; break; }  // EOF y sin datos
-            }
-            if (inPos >= inLen) { trackDone = true; break; }  // sin datos (EOF)
-            mp3d_sample_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
-            mp3dec_frame_info_t info;
-            int samples = mp3dec_decode_frame(&dec, inbuf + inPos, inLen - inPos, pcm, &info);
-            inPos += info.frame_bytes;
-            if (samples <= 0) {
-                if (info.frame_bytes <= 0) {
-                    // Sin frame completo: o es el final del archivo, o basura sin
-                    // sincronia. Con el buffer lleno, avanzar 1 byte para no atascarse.
-                    if (inLen - inPos >= 4096) { inPos++; continue; }
-                    trackDone = true; break;
-                }
-                continue;  // frame invalido saltado por minimp3
-            }
-            trackOk = true;
-            int outSamples = UT_ResampleFrame(pcm, samples, info.channels, info.hz, outbuf, 8192);
-            if (outSamples > 0) {
-                if (!ut_ring.write((const uint8_t*)outbuf, (size_t)outSamples * 2 * 2)) break;  // anillo cerrado
-            }
-        }
-        fclose(f);
+        int rc = UT_DecodeTrack(path.c_str());
         if (ut_stopThread) break;
-        if (!trackOk) {
-            if (++consecutiveFails >= (int)ut_tracks.size()) { ut_wantStop = true; break; }
-        } else {
+        if (rc == 1) {
+            Log("UT: pista saltada: %s", ut_curTrack);
+            continue;
+        }
+        if (rc == 0) {
             consecutiveFails = 0;
             Log("UT: pista terminada: %s", ut_curTrack);
+        } else {
+            if (++consecutiveFails >= (int)ut_tracks.size()) { ut_wantStop = true; break; }
         }
     }
     return nullptr;
@@ -421,7 +582,7 @@ static bool UT_Start() {
     if (ut_active) return true;
     SoundInit();
     if (!g_slEngine || !g_slEngineItf || !g_slMix) { Log("UT: sin motor OpenSL: no hay reproductor"); return false; }
-    if (!UT_ScanMusic()) { Log("UT: sin musica MP3 en las carpetas (se revisaron las 5)"); return false; }
+    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac) en las carpetas (se revisaron las 5)"); return false; }
     if (ut_random) UT_ShuffleOrder(-1);
     ut_orderPos = 0;
     ut_underruns = 0;

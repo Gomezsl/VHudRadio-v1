@@ -1,7 +1,8 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.1.0-beta.
-// v1 1.1.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
-// TODAS las funciones de la 2.59 (interruptores, blur FBO, bloquear juego,
-// modoCambio, iconos en circulo). Base: VHudRadio.cpp 2.59.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.2.0-beta.
+// v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
+// TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
+// la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
+// retraso entre radio/rueda/boton corregido. Base: VHudRadio.cpp 2.59.0-beta.
 // Repo aparte: Gomezsl/VHudRadio-aml-mod. ARCX no se toca.
 // Idea: v-hud de PC leia los iconos de VHud\radio\radio_1..13.png sin importarlos.
 // Aqui igual: el plugin lee radio_1.png ... radio_13.png de files del juego (vhud/radio/),
@@ -578,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.1.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.2.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.1.0-beta"
+#define VHUDRADIO_VERSION "1.2.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -935,6 +936,7 @@ static void LoadCfg() {
 
 static std::string g_vhudDir;   // /storage/emulated/0/vhud
 static int g_current = 1;       // estacion actual conocida (1..13)
+static std::chrono::steady_clock::time_point g_lastStationCmd;  // v1.2: ultimo cambio pedido (para no fiarse de la lectura nativa vieja)
 static int g_selected = 1;      // segmento bajo el dedo mientras la rueda esta abierta
 static bool g_open = false;
 static std::chrono::steady_clock::time_point g_wheelAnimStart = std::chrono::steady_clock::now();  // v2.54: cuando se abrio la rueda (para la animacion)
@@ -1168,6 +1170,7 @@ static int g_pendingFrames = 0;    // cuadros que faltan para el cambio
 // v2.59: el cambio real (llamada al juego + lectura). Lo hace ApplyStation
 // directo (modo 0 y 2) o 3 cuadros despues de cerrar la rueda (modo 1).
 static void DoStartRadio(int id) {
+    g_lastStationCmd = std::chrono::steady_clock::now();  // v1.2: la lectura nativa va por detras; RefreshCurrent no la usa 2 s
     // v2.59 modo 2: por CAudioEngine::StartRadio (ya resolvia en el arranque
     // y es el respaldo del modo 0; aqui es la via principal). El simbolo
     // Android es StartRadio(signed char, signed char), no el (int, char)
@@ -1226,6 +1229,11 @@ static void RefreshCurrent() {
     // cambia a la 12 (queda en la anterior), asi que sin esta guarda la rueda
     // mostraba el anillo en otra estacion aunque User Tracks siguiera sonando.
     if (ut_active || g_current == 12) return;
+    // v1.2: la lectura nativa va una estacion por detras justo despues de
+    // cambiar (el juego actualiza el campo mas tarde). No pisar g_current
+    // con esa lectura vieja durante 2 s tras el cambio: la rueda y el boton
+    // se quedaban en la estacion anterior aunque el cambio ya se habia hecho.
+    if (std::chrono::steady_clock::now() - g_lastStationCmd < std::chrono::seconds(2)) return;
     if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); if (v >= 1 && v <= 13) g_current = v; return; }
     if (g_getStationTrack && g_trackManager) { int v = (int)g_getStationTrack(g_trackManager); if (v >= 1 && v <= 13) g_current = v; }
 }
@@ -1346,6 +1354,39 @@ static ImVec2 BtnPos(float W, float H, float bs) {
     if (g_cfg.btnX >= 0.0f && g_cfg.btnY >= 0.0f) return ImVec2(g_cfg.btnX * W, g_cfg.btnY * H);
     return ImVec2(W - bs * 1.15f, H * 0.86f);  // v2.2: mas abajo (defecto)
 }
+// v1.2: segunda linea de la etiqueta del boton flotante. En la 12 muestra
+// la cancion que suena (truncada a 32 caracteres); en las demas, el genero.
+static char g_btnSub[48];
+static const char* BtnSubLine() {
+    if (g_current == 12 && ut_active) {
+        const char* t = UT_TrackDisplayName();
+        size_t n = strlen(t);
+        if (n > 32) {
+            memcpy(g_btnSub, t, 29);
+            g_btnSub[29] = '.'; g_btnSub[30] = '.'; g_btnSub[31] = '.'; g_btnSub[32] = '\0';
+        } else {
+            snprintf(g_btnSub, sizeof g_btnSub, "%s", t);
+        }
+        return g_btnSub;
+    }
+    return Genre(g_current);
+}
+// v1.2: flechas anterior/siguiente del centro de la rueda (solo en la 12
+// cuando suena el reproductor). DrawWheel guarda sus centros y radio; el
+// toque las resuelve por posicion.
+static ImVec2 g_trkPrevC = ImVec2(0, 0), g_trkNextC = ImVec2(0, 0);
+static float g_trkArrowR = 0;
+static bool g_trkArrows = false;
+static int g_trackBtn = 0;  // -1 anterior, +1 siguiente (toque en curso)
+static int TrackArrowAt(float x, float y) {
+    if (!g_trkArrows) return 0;
+    float rr = g_trkArrowR * 1.2f;  // 20% de margen para el dedo
+    float dx = x - g_trkPrevC.x, dy = y - g_trkPrevC.y;
+    if (dx*dx + dy*dy <= rr*rr) return -1;
+    dx = x - g_trkNextC.x; dy = y - g_trkNextC.y;
+    if (dx*dx + dy*dy <= rr*rr) return 1;
+    return 0;
+}
 // v2.2: geometria del boton flotante (icono + etiqueta con estacion y genero).
 // El toque vale en todo el conjunto (icono o etiqueta).
 static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, ImVec2& labelSize, float& bs) {
@@ -1354,7 +1395,7 @@ static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, Im
     ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
     float ns = H * 0.022f, ts = H * 0.018f;
     ImVec2 nsz = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, kStationName[g_current], nullptr);
-    ImVec2 tsz = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, Genre(g_current), nullptr);
+    ImVec2 tsz = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, BtnSubLine(), nullptr);
     float lw = (nsz.x > tsz.x ? nsz.x : tsz.x) + H * 0.02f;
     float lh = ns + ts + H * 0.02f;
     labelSize = ImVec2(lw, lh);
@@ -1531,7 +1572,7 @@ static bool DrawButtonGL(float W, float H) {
     };
     if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
         drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
-        drawText(Genre(g_current), lp.x + H * 0.01f, lp.y + H * 0.008f + ns, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+        drawText(BtnSubLine(), lp.x + H * 0.01f, lp.y + H * 0.008f + ns, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
     }
     // Icono de la estacion.
     // v2.55: fondo negro detras del icono (como en ImGui: el fondo negro que
@@ -1779,7 +1820,7 @@ static void DrawWheel(float W, float H) {
         if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
             dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
             dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
-            dl->AddText(font, ts, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f + ns), IM_COL32(200,225,235,230 * op / 255), Genre(g_current));
+            dl->AddText(font, ts, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f + ns), IM_COL32(200,225,235,230 * op / 255), BtnSubLine());
         }
         // v2.55: disco negro detras del icono de la emisora (el fondo negro
         // que siempre tuvo el boton; con el fondo de color encendido el icono
@@ -1826,9 +1867,35 @@ static void DrawWheel(float W, float H) {
     // desplazado arriba para dejar hueco al genero)
     ImU32 txtCol = IM_COL32(g_cfg.textoR, g_cfg.textoG, g_cfg.textoB, (int)(255 * anim));
     ImU32 tagCol = IM_COL32((int)(g_cfg.textoR * 0.8f), (int)(g_cfg.textoG * 0.8f), (int)(g_cfg.textoB * 0.8f), (int)(230 * anim));
-    float nameDy = g_cfg.mostrarGenero ? -H*0.015f : 0.0f;
+    // v1.2: en la 12, la cancion que suena debajo del genero, con flechas
+    // anterior/siguiente a los lados (tocarlas cambia de cancion).
+    bool showTrack = (g_selected == 12 && ut_active);
+    float nameDy = 0.0f;
+    if (g_cfg.mostrarGenero) nameDy -= H*0.015f;
+    if (showTrack) nameDy -= H*0.015f;
     dl->AddText(font, nameSize, ImVec2(c.x - nsz.x*0.5f, c.y - nsz.y*0.5f + nameDy), txtCol, name);
     if (g_cfg.mostrarGenero) dl->AddText(font, tagSize, ImVec2(c.x - tsz.x*0.5f, c.y + nsz.y*0.5f + H*0.005f), tagCol, tag);
+    g_trkArrows = false;
+    if (showTrack) {
+        const char* trk = UT_TrackDisplayName();
+        char trkBuf[48];
+        size_t tn = strlen(trk);
+        if (tn > 40) { memcpy(trkBuf, trk, 37); trkBuf[37] = '.'; trkBuf[38] = '.'; trkBuf[39] = '.'; trkBuf[40] = '\0'; trk = trkBuf; }
+        float trkSize = H * 0.022f;
+        ImVec2 ksz = font->CalcTextSizeA(trkSize, FLT_MAX, 0.0f, trk, nullptr);
+        float ty = c.y + nsz.y*0.5f + H*0.005f;
+        if (g_cfg.mostrarGenero) ty += tsz.y + H*0.008f;
+        dl->AddText(font, trkSize, ImVec2(c.x - ksz.x*0.5f, ty), tagCol, trk);
+        float ar = H * 0.022f;
+        float ay = ty + ksz.y * 0.5f;
+        float ax = ksz.x * 0.5f + H * 0.045f;
+        g_trkPrevC = ImVec2(c.x - ax, ay); g_trkNextC = ImVec2(c.x + ax, ay); g_trkArrowR = ar; g_trkArrows = true;
+        dl->AddCircleFilled(g_trkPrevC, ar, IM_COL32(255,255,255,(int)(60 * anim)), 24);
+        dl->AddCircleFilled(g_trkNextC, ar, IM_COL32(255,255,255,(int)(60 * anim)), 24);
+        float tr = ar * 0.55f;
+        dl->AddTriangleFilled(ImVec2(g_trkPrevC.x - tr*0.4f, ay - tr), ImVec2(g_trkPrevC.x - tr*0.4f, ay + tr), ImVec2(g_trkPrevC.x + tr*0.6f, ay), IM_COL32(255,255,255,(int)(230 * anim)));
+        dl->AddTriangleFilled(ImVec2(g_trkNextC.x + tr*0.4f, ay - tr), ImVec2(g_trkNextC.x + tr*0.4f, ay + tr), ImVec2(g_trkNextC.x - tr*0.6f, ay), IM_COL32(255,255,255,(int)(230 * anim)));
+    }
     // v2.2: marca de vista previa
     if (g_preview) {
         const char* pv = S(STR_PREVIEW_LABEL);
@@ -2646,8 +2713,11 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 else { g_preview = false; g_open = false; g_settings = true; Log("vista previa cerrada"); }
             } else if (g_open) {
                 // v1.5: tocar un segmento lo elige al instante (antes solo el arrastre elegia)
+                g_trackBtn = 0;  // un toque nuevo limpia cualquier flecha anterior
                 int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
+                int ta = 0;
                 if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_centerTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
+                else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; g_centerTap = false; }  // v1.2: flechas anterior/siguiente de la cancion
                 else if (InWheelCenter(g_touchX, g_touchY, (float)w, (float)h)) { g_centerTap = true; g_wheelTouch = false; }  // v2.31: centro de la rueda -> panel al soltar
                 else { g_wheelTouch = false; g_centerTap = false; }  // toque fuera del anillo: al soltar se cierra sin cambiar
             }
@@ -2699,6 +2769,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (g_ignoreNextUp) { g_ignoreNextUp = false; mouseDown = false; }  // v1.5: el toque que abrio la rueda no la cierra
             else if (mouseDown && g_open && !g_paused) {
                 if (g_preview) { /* v2.2: en vista previa no se aplica ni se cierra */ }
+                else if (g_trackBtn != 0) {  // v1.2: flecha anterior/siguiente: cambia la cancion y la rueda sigue abierta
+                    if (g_trackBtn < 0) UT_PrevTrack(); else UT_NextTrack();
+                    PlayClick(true);
+                    Log("rueda: %s cancion", g_trackBtn < 0 ? "anterior" : "siguiente");
+                    g_trackBtn = 0;
+                }
                 else if (g_centerTap) { g_centerTap = false; g_open = false; g_settings = true; PlayClick(false); Log("panel de personalizacion abierto (centro de la rueda)"); }  // v2.31: asi se abre el panel con el boton flotante oculto
                 else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda cerrada -> %d (%s)", g_selected, kStationName[g_selected]); g_open = false; }
                 else { Log("rueda cerrada sin cambiar"); g_open = false; }
