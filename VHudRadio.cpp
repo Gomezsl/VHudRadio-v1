@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.9-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.10-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,19 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.10: PARCHES DEL MENU REVERTIDOS - CRASH AL ENTRAR A OPCIONES DE SONIDO (Daniel, aml_crashlog_2_7wfq.txt)
+// - La 1.9.9 crasheaba al entrar a opciones de sonido: SIGSEGV en
+//   libGTASA+0x355044 (MenuScreen::DrawSprite, textura NULL), llamado desde
+//   AudioScreen::RadioSelection::Render. Causa: los 2 "12-slot menu patches"
+//   amplian los huecos del dial a 12, pero el hueco 12 no tiene textura.
+//   Alex ADEMAS asigna radio_TPLAYER en RadioSelection+0x80 en el ctor;
+//   sin eso el parche solo crashea. Los quito hasta enganchar el ctor como
+//   Alex (RE en curso, informe SAUserTracks-1.8.4-RE2.md). El menu de pausa
+//   vuelve a marcar Radio Off en la 12 (como 1.9.2-1.9.6), pero no crashea.
+// - El doble audio/estatica SIGUE en la 1.9.9 aunque el segundo bloqueo
+//   0x22 se instalo bien ("hook CAEFrontendAudioEntity::AddAudioEvent ok")
+//   y la nativa se queda en 12 ("nativa audio=12 track=12"). Sospechosos:
+//   los hooks PlayTrack/StartTrackPlayback de Alex (RE en curso).
 // v1.9.9: COMO ALEX 1.8.4 — SEGUNDO BLOQUEO 0x22 + PARCHES DEL MENU + SIN STOPRADIO-DESPUES (Daniel, SAUserTracks 1.8.4)
 // - Desarme del 1.8.4 de Alex (informe en files/SAUserTracks-1.8.4-RE.md):
 //   Mixtape se activa por StartRadio(12), RetuneRadio(12) y el preview de
@@ -742,9 +755,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.9-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.10-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.9-beta"
+#define VHUDRADIO_VERSION "1.9.10-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

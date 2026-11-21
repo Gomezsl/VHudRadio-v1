@@ -1159,11 +1159,13 @@ static void UT_ApplyStation12Patches() {
     if (!base) { Log("UT: parches 12: sin base de libGTASA"); return; }
     UT_Patch32(base + 0x47c9f8, 0x7100313F, 0x7103FD1F, "menu 12");
     UT_Patch32(base + 0x47f3ac, 0x7100311F, 0x7103FC1F, "salto 12");
-    // v1.9.9 (Alex 1.8.4, RadioSelection ctor): "12-slot menu patches" - la
-    // pantalla de seleccion de radio pasa a manejar 12 huecos; sin estos el
-    // menu de pausa no muestra Mixtape. Con chequeo de valor igual que los de arriba.
-    UT_Patch32(base + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
-    UT_Patch32(base + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
+    // v1.9.9 los anadio (Alex 1.8.4, "12-slot menu patches") pero CRASHEAN
+    // el juego al entrar a opciones de sonido: RadioSelection::Render dibuja
+    // un hueco 12 cuya textura es NULL (MenuScreen::DrawSprite, SIGSEGV en
+    // libGTASA+0x355044, log aml_crashlog_2_7wfq.txt). Alex ADEMAS asigna la
+    // textura radio_TPLAYER en RadioSelection+0x80 en el ctor; sin eso el
+    // parche solo no sirve. QUITADOS en v1.9.10 hasta enganchar el ctor como
+    // Alex. El menu de pausa vuelve a marcar Radio Off en la 12 (como 1.9.2-1.9.6).
 }
 
 // Instala el hook de StartRadio (se llama en Init, con los simbolos ya resueltos).
