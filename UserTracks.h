@@ -957,6 +957,13 @@ typedef signed char (*AudioRetuneFn)(void*, signed char);
 static AudioRetuneFn ut_origAudioRetune = nullptr;
 static signed char UT_AudioRetune_hook(void* self, signed char station) {
     (void)self;
+    // v1.9.6: al reanudar/cargar la partida el juego puede llamar a RetuneRadio
+    // antes de estar listo; en ese momento no se toca el reproductor, solo se
+    // deja pasar la llamada original (evita el cierre al reanudar de la 1.9.5).
+    if (ut_loadingActive && *ut_loadingActive) {
+        if (ut_origAudioRetune) return ut_origAudioRetune(self, station);
+        return station;
+    }
     if (station == 12) {
         if (UT_VehicleBlocked()) {
             g_current = 13;
@@ -985,6 +992,54 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
     if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.4: cortar la nativa al salir de la 12
     if (ut_origAudioRetune) return ut_origAudioRetune(self, station);
     return station;
+}
+
+// v1.9.6 (Daniel): la radio del juego tambien puede cambiar por
+// CAudioEngine::StartRadio (no solo por RetuneRadio). Ninguno de los dos
+// hooks de RetuneRadio disparo en el log de la 1.9.5, asi que esta es la via
+// que queda. Misma logica que el hook de StartRadio del TrackManager.
+// StartRadioAudioFn: void (self, signed char, signed char).
+typedef void (*AudioStartFn)(void*, signed char, signed char);
+static AudioStartFn ut_origAudioStart = nullptr;
+static void UT_AudioStart_hook(void* self, signed char station, signed char a2) {
+    // v1.9.6: al reanudar/cargar la partida el juego puede llamar a StartRadio
+    // antes de estar listo; en ese momento no se toca el reproductor, solo se
+    // deja pasar la llamada original (evita el cierre al reanudar de la 1.9.5).
+    if (ut_loadingActive && *ut_loadingActive) {
+        if (ut_origAudioStart) ut_origAudioStart(self, station, a2);
+        return;
+    }
+    if (station == 12) {
+        if (UT_VehicleBlocked()) {
+            Log("UT: vehiculo sin radio (modelo %d): 12 -> Radio Off", UT_BlockedModel());
+            g_current = 13;
+            if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+            return;
+        }
+        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook AudioStart 12)"); }
+        bool utWasActive = ut_active;
+        UT_Start();
+        g_current = 12;
+        if (!utWasActive && ut_active && ut_stopRadio && g_trackManager) {
+            ut_stopRadio(g_trackManager, nullptr, 0);
+            Log("UT: StopRadio antes de la nativa 13 (venia de otra emisora)");
+        }
+        Log("UT: 12 por AudioEngine::StartRadio (StopRadio + StartRadio 13)");
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        return;
+    }
+    if (ut_active && !ut_userStationCmd &&
+        (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
+        ut_pausedByExit = false;
+        g_current = 12;
+        Log("UT: se queda en la 12 al subir al vehiculo (AudioStart pedia %d)", (int)station);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        return;
+    }
+    if (ut_active) UT_Stop("cambio de estacion");
+    g_current = station;
+    if (ut_origAudioStart) ut_origAudioStart(self, station, a2);
 }
 
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
@@ -1228,6 +1283,15 @@ static void UT_InstallHooks() {
             Log("UT: hook CAudioEngine::RetuneRadio %s", ut_origAudioRetune ? "ok" : "no se pudo instalar");
         } else {
             Log("UT: CAudioEngine::RetuneRadio no resolvio");
+        }
+        // v1.9.6: la radio del juego tambien puede cambiar por
+        // CAudioEngine::StartRadio. Se engancha con la misma logica.
+        uintptr_t as = aml->GetSym(h, "_ZN12CAudioEngine10StartRadioEaa");
+        if (as) {
+            aml->Hook((void*)as, (void*)UT_AudioStart_hook, (void**)&ut_origAudioStart);
+            Log("UT: hook CAudioEngine::StartRadio %s", ut_origAudioStart ? "ok" : "no se pudo instalar");
+        } else {
+            Log("UT: CAudioEngine::StartRadio no resolvio");
         }
         // v1.9.5: CTouchInterface::DrawAll(bool) SI existe (VHudRadioSyms.txt
         // de Daniel): dibuja TODOS los botones tactiles. Los 5 nombres de la

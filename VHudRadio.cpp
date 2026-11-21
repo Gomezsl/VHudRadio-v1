@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.5-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.6-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,25 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.6: LISTA DESLIZABLE + RADIO DEL JUEGO POR AudioStart + GUARD DE CARGA (Daniel, log 1.9.5)
+// - Cierre al reanudar (1.9.5, primera vez): al cargar la partida el juego
+//   puede llamar a StartRadio/RetuneRadio antes de estar listo. Los hooks de
+//   AudioEngine (RetuneRadio y el nuevo StartRadio) ahora dejan pasar la
+//   llamada original sin tocar el reproductor mientras la pantalla de carga
+//   esta activa (ut_loadingActive). Si vuelve a cerrar al reanudar, dime en
+//   que momento exacto.
+// - Doble audio por la radio del juego: ninguno de los dos hooks de
+//   RetuneRadio disparo en el log de la 1.9.5. Queda CAudioEngine::StartRadio,
+//   que es la via que usa el modoCambio=2 y probablemente la radio del juego.
+//   Se engancha con la misma logica (StopRadio + nativa 13). Si este tampoco
+//   dispara, la radio del juego cambia por otra via y habra que buscarla.
+// - Lista de canciones deslizable: el scroll propio de ImGui no responde al
+//   toque, asi que es manual como el del panel (arrastre vertical + inercia).
+//   Un toque salta a la cancion; un arrastre solo desplaza.
+// - Tu sospecha (sin Mixtape el juego falla): es posible, pero antes de
+//   volver la nativa a la 12 hay que agotar las vias de cambio de emisora.
+//   Si el AudioStart tampoco lo arregla, la siguiente prueba es nativa 12
+//   con StopRadio (que ahora si corta la anterior en todos los hooks).
 // v1.9.5: BOTONES POR DrawAll + RADIO DEL JUEGO POR AudioEngine (Daniel, log 1.9.4 + VHudRadioSyms.txt)
 // - El volcado de simbolos (895) trae la respuesta de los botones:
 //   CTouchInterface::DrawAll(bool) SI existe. Los 5 nombres de la sonda eran
@@ -665,9 +684,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.5-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.6-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.5-beta"
+#define VHUDRADIO_VERSION "1.9.6-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2712,6 +2731,35 @@ static void DrawTrackList(float W, float H) {
     if (ImGui::Button("X", ImVec2(H * 0.04f, H * 0.04f))) { g_trackList = false; Log("lista de canciones cerrada"); }
     ImGui::Separator();
     ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
+    // v1.9.6 (Daniel): la lista se desliza con el dedo si hay muchas canciones.
+    // El scroll propio de ImGui no responde al toque (como pasaba en el panel),
+    // asi que es manual, igual que el del panel: arrastre vertical para
+    // desplazar, con inercia al soltar. Un toque (sin arrastre) salta a la
+    // cancion; un arrastre solo desplaza, no salta.
+    ImGuiIO& lio = ImGui::GetIO();
+    static bool listScrolling = false; static bool listScrollDecided = false;
+    static ImVec2 listScrollStart; static float listScrollStartY = 0.0f; static float listScrollVel = 0.0f;
+    static bool listScrolled = false;
+    if (lio.MouseClicked[0]) {
+        listScrollStart = lio.MousePos; listScrollDecided = false; listScrolling = false; listScrollVel = 0.0f; listScrolled = false;
+        listScrollStartY = ImGui::GetScrollY();
+    }
+    if (lio.MouseDown[0] && !listScrollDecided) {
+        float ldx = lio.MousePos.x - listScrollStart.x, ldy = lio.MousePos.y - listScrollStart.y;
+        if (fabsf(ldy) > H * 0.02f && fabsf(ldy) > fabsf(ldx)) { listScrolling = true; listScrollDecided = true; listScrolled = true; }
+        else if (fabsf(ldx) > H * 0.02f) { listScrollDecided = true; }
+    }
+    if (!lio.MouseDown[0]) { listScrolling = false; listScrollDecided = false; }
+    if (listScrolling) {
+        ImGui::SetScrollY(listScrollStartY - (lio.MousePos.y - listScrollStart.y));
+        listScrollVel = -lio.MouseDelta.y;
+    }
+    if (!lio.MouseDown[0] && fabsf(listScrollVel) > 0.4f) {
+        ImGui::SetScrollY(ImGui::GetScrollY() + listScrollVel);
+        listScrollVel *= 0.93f;
+    } else if (!lio.MouseDown[0]) {
+        listScrollVel = 0.0f;
+    }
     int cur = UT_CurrentTrackIdx();
     // v1.6: cada fila es titulo + artista debajo, con linea divisora entre
     // canciones (como en la imagen de GTA V). Se dibuja a mano para poder
@@ -2748,7 +2796,7 @@ static void DrawTrackList(float W, float H) {
         }
         // Division entre canciones (linea fina, como en la imagen).
         dl->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
-        if (clicked) {
+        if (clicked && !listScrolled) {  // v1.9.6: un arrastre solo desplaza, no salta a la cancion
             if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
         }
     }
