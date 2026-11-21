@@ -10,8 +10,8 @@
 //   a Radio Off (13), igual que SAUserTracks.
 // - Carpetas de musica: las mismas 5 que SAUserTracks (la primera con audio
 //   gana). Formatos: MP3 (minimp3), WAV (dr_wav), OGG Vorbis (stb_vorbis),
-//   FLAC (dr_flac). M4A/AAC todavia no (no hay decodificador de un solo
-//   header; seria BASS_AAC o MediaCodec).
+//   FLAC (dr_flac) y M4A/AAC (BASS, solo decodificar: usa libbass.so si esta
+//   BassMod instalado; si no hay BASS, los M4A se saltan sin romper nada).
 // - Playlist alfabetica por nombre de archivo; aleatoria (Fisher-Yates) por
 //   defecto; infinita (al terminar rebaraja sin repetir la ultima).
 // - Siguiente/anterior: UT_NextTrack()/UT_PrevTrack() (la rueda los llama
@@ -45,6 +45,7 @@
 #undef R
 
 #include <dirent.h>
+#include <dlfcn.h>
 #include <link.h>
 #include <pthread.h>
 #include <time.h>
@@ -227,7 +228,7 @@ static uint32_t UT_Xorshift(uint32_t& x) {
     return x;
 }
 // Formatos de audio (por extension; minusculas y mayusculas).
-enum UTAudioFmt { UT_FMT_UNKNOWN = 0, UT_FMT_MP3, UT_FMT_WAV, UT_FMT_OGG, UT_FMT_FLAC };
+enum UTAudioFmt { UT_FMT_UNKNOWN = 0, UT_FMT_MP3, UT_FMT_WAV, UT_FMT_OGG, UT_FMT_FLAC, UT_FMT_M4A };
 static UTAudioFmt UT_AudioExt(const char* name) {
     const char* dot = strrchr(name, '.');
     if (!dot) return UT_FMT_UNKNOWN;
@@ -235,6 +236,7 @@ static UTAudioFmt UT_AudioExt(const char* name) {
     if (strcmp(dot, ".wav") == 0 || strcmp(dot, ".WAV") == 0) return UT_FMT_WAV;
     if (strcmp(dot, ".ogg") == 0 || strcmp(dot, ".OGG") == 0) return UT_FMT_OGG;
     if (strcmp(dot, ".flac") == 0 || strcmp(dot, ".FLAC") == 0) return UT_FMT_FLAC;
+    if (strcmp(dot, ".m4a") == 0 || strcmp(dot, ".M4A") == 0) return UT_FMT_M4A;
     return UT_FMT_UNKNOWN;
 }
 static bool UT_HasAudioExt(const char* name) { return UT_AudioExt(name) != UT_FMT_UNKNOWN; }
@@ -274,17 +276,18 @@ static bool UT_ScanMusic() {
     });
     ut_order.resize(ut_tracks.size());
     for (size_t i = 0; i < ut_order.size(); i++) ut_order[i] = (int)i;
-    int nMp3 = 0, nWav = 0, nOgg = 0, nFlac = 0;
+    int nMp3 = 0, nWav = 0, nOgg = 0, nFlac = 0, nM4a = 0;
     for (size_t i = 0; i < ut_tracks.size(); i++) {
         switch (UT_AudioExt(UT_Basename(ut_tracks[i].c_str()))) {
             case UT_FMT_MP3: nMp3++; break;
             case UT_FMT_WAV: nWav++; break;
             case UT_FMT_OGG: nOgg++; break;
             case UT_FMT_FLAC: nFlac++; break;
+            case UT_FMT_M4A: nM4a++; break;
             default: break;
         }
     }
-    Log("UT: carpeta de musica: %s (%d pistas: mp3=%d wav=%d ogg=%d flac=%d)", dirUsed, (int)ut_tracks.size(), nMp3, nWav, nOgg, nFlac);
+    Log("UT: carpeta de musica: %s (%d pistas: mp3=%d wav=%d ogg=%d flac=%d m4a=%d)", dirUsed, (int)ut_tracks.size(), nMp3, nWav, nOgg, nFlac, nM4a);
     return true;
 }
 
@@ -522,6 +525,81 @@ static int UT_DecodeFLAC(const char* path) {
     return rc;
 }
 
+// ---- M4A/AAC: BASS solo para decodificar (opcional) ----
+// BASS es una libreria de audio (un4seen). BassMod (net.rusjj.basslib) ya
+// carga libbass.so y la inicia; aqui solo la usamos para DECODIFICAR M4A
+// (BASS_STREAM_DECODE): BASS saca el PCM con el codec del sistema
+// (MediaCodec, Android 5+) y nuestro OpenSL lo reproduce como los demas
+// formatos. Si BassMod no esta instalado, libbass.so no existe y los M4A
+// se saltan sin romper nada (MP3/WAV/OGG/FLAC no dependen de BASS).
+// BASS es gratis para mods no comerciales. No hay interfaz IBASS en BassMod,
+// por eso se abre libbass.so directo con dlopen/dlsym.
+struct BASSChannelInfo { uint32_t freq, chans, reserved[16]; };  // solo importan freq y chans (los 2 primeros)
+typedef int (*BASS_Init_t)(int, uint32_t, uint32_t, void*, const void*);
+typedef uint32_t (*BASS_StreamCreateFile_t)(int, const void*, uint64_t, uint64_t, uint32_t);
+typedef uint32_t (*BASS_ChannelGetData_t)(uint32_t, void*, uint32_t);
+typedef int (*BASS_ChannelGetInfo_t)(uint32_t, BASSChannelInfo*);
+typedef int (*BASS_StreamFree_t)(uint32_t);
+typedef int (*BASS_ErrorGetCode_t)();
+static void* ut_bassLib = nullptr;
+static BASS_Init_t ut_BASS_Init = nullptr;
+static BASS_StreamCreateFile_t ut_BASS_StreamCreateFile = nullptr;
+static BASS_ChannelGetData_t ut_BASS_ChannelGetData = nullptr;
+static BASS_ChannelGetInfo_t ut_BASS_ChannelGetInfo = nullptr;
+static BASS_StreamFree_t ut_BASS_StreamFree = nullptr;
+static BASS_ErrorGetCode_t ut_BASS_ErrorGetCode = nullptr;
+static bool ut_bassTried = false, ut_bassOk = false;
+static bool UT_BassLoad() {
+    if (ut_bassTried) return ut_bassOk;
+    ut_bassTried = true;
+    ut_bassLib = dlopen("libbass.so", RTLD_NOW | RTLD_LOCAL);
+    if (!ut_bassLib) { Log("UT: BASS no disponible (sin libbass.so: sin M4A)"); return false; }
+    ut_BASS_Init = (BASS_Init_t)dlsym(ut_bassLib, "BASS_Init");
+    ut_BASS_StreamCreateFile = (BASS_StreamCreateFile_t)dlsym(ut_bassLib, "BASS_StreamCreateFile");
+    ut_BASS_ChannelGetData = (BASS_ChannelGetData_t)dlsym(ut_bassLib, "BASS_ChannelGetData");
+    ut_BASS_ChannelGetInfo = (BASS_ChannelGetInfo_t)dlsym(ut_bassLib, "BASS_ChannelGetInfo");
+    ut_BASS_StreamFree = (BASS_StreamFree_t)dlsym(ut_bassLib, "BASS_StreamFree");
+    ut_BASS_ErrorGetCode = (BASS_ErrorGetCode_t)dlsym(ut_bassLib, "BASS_ErrorGetCode");
+    if (!ut_BASS_Init || !ut_BASS_StreamCreateFile || !ut_BASS_ChannelGetData || !ut_BASS_ChannelGetInfo || !ut_BASS_StreamFree || !ut_BASS_ErrorGetCode) {
+        Log("UT: BASS incompleto (faltan simbolos: sin M4A)");
+        return false;
+    }
+    // Inicializar. BassMod ya lo hizo, asi que normalmente devuelve
+    // BASS_ERROR_ALREADY (14), que es exito, no fallo.
+    if (!ut_BASS_Init(-1, 44100, 0, nullptr, nullptr)) {
+        int e = ut_BASS_ErrorGetCode();
+        if (e != 14) { Log("UT: BASS_Init fallo (error %d: sin M4A)", e); return false; }
+    }
+    ut_bassOk = true;
+    Log("UT: BASS listo (M4A disponible)");
+    return true;
+}
+static int UT_DecodeM4A(const char* path) {
+    if (!UT_BassLoad()) return -1;
+    uint32_t stream = ut_BASS_StreamCreateFile(0, path, 0, 0, 0x200000);  // BASS_STREAM_DECODE
+    if (!stream) { Log("UT: BASS no pudo abrir %s (error %d)", UT_Basename(path), ut_BASS_ErrorGetCode()); return -1; }
+    BASSChannelInfo info = {};
+    if (!ut_BASS_ChannelGetInfo(stream, &info) || info.chans == 0 || info.chans > 2) {
+        ut_BASS_StreamFree(stream);
+        Log("UT: M4A con %d canales (solo mono/estereo): %s", (int)info.chans, UT_Basename(path));
+        return -1;
+    }
+    UT_ResampleReset();
+    int16_t buf[1024 * 2];
+    int rc = 0;
+    while (!ut_stopThread) {
+        if (ut_skipReq != 0) { rc = 1; break; }
+        if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
+        uint32_t got = ut_BASS_ChannelGetData(stream, buf, sizeof buf);
+        if (got == 0xFFFFFFFFu) { rc = -1; break; }  // error
+        if (got == 0) break;  // fin de la pista
+        int frames = (int)got / (2 * (int)info.chans);
+        if (frames <= 0) break;
+        if (!UT_WritePCM(buf, frames, (int)info.chans, (int)info.freq)) { rc = -1; break; }
+    }
+    ut_BASS_StreamFree(stream);
+    return rc;
+}
 // Decodifica una pista completa. 0 = terminada, 1 = saltada, -1 = fallo.
 static int UT_DecodeTrack(const char* path) {
     snprintf(ut_curTrack, sizeof ut_curTrack, "%s", UT_Basename(path));
@@ -530,6 +608,7 @@ static int UT_DecodeTrack(const char* path) {
         case UT_FMT_WAV: return UT_DecodeWAV(path);
         case UT_FMT_OGG: return UT_DecodeOGG(path);
         case UT_FMT_FLAC: return UT_DecodeFLAC(path);
+        case UT_FMT_M4A: return UT_DecodeM4A(path);
         default: return -1;
     }
 }
@@ -590,7 +669,7 @@ static bool UT_Start() {
     if (ut_active) return true;
     SoundInit();
     if (!g_slEngine || !g_slEngineItf || !g_slMix) { Log("UT: sin motor OpenSL: no hay reproductor"); return false; }
-    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac) en las carpetas (se revisaron las 5)"); return false; }
+    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en las carpetas (se revisaron las 5)"); return false; }
     if (ut_random) UT_ShuffleOrder(-1);
     ut_orderPos = 0;
     ut_underruns = 0;
