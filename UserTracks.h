@@ -943,6 +943,19 @@ static void UT_DumpAll(const char* tag, const void* radioSel) {
 // y vuelca si la emisora que dice el juego cambia (aqui se ve cuando se reaplica la guardada).
 static void UT_DiagTick() {
     if (ut_diagWatch <= 0 && !ut_inAudioMenu) { ut_diagLastA = ut_diagLastT = -99; return; }
+    // v1.9.29: mantener EMISORA sincronizada mientras el dial esta abierto.
+    // El juego recarga MS+0x240 desde el archivo de ajustes mientras se dibuja
+    // el menu (la 1.9.28 lo escribe al cambiar de emisora y al abrir el dial,
+    // pero la recarga lo revierte despues y EMISORA queda en la guardada).
+    // Escribirlo cada cuadro lo mantiene en la emisora de la rueda; un tap en
+    // el dial actualiza g_current via el hook, asi que el siguiente cuadro
+    // sigue al tap.
+    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+        int* msCur = (int*)((char*)ut_mobileSettings + 0x240);
+        int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
+        if (*msCur != g_current) *msCur = g_current;
+        if (*msDef != g_current) *msDef = g_current;
+    }
     int a = (g_getStationAudio && g_audioEngine) ? (int)g_getStationAudio(g_audioEngine) : -1;
     int t = (g_getStationTrack && g_trackManager) ? (int)g_getStationTrack(g_trackManager) : -1;
     bool redirected = false;
