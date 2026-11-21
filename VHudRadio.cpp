@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.6.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.7.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -579,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.6.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.7.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.6.0-beta"
+#define VHUDRADIO_VERSION "1.7.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1434,17 +1434,21 @@ static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, Im
     BtnLabelSizes(H, ns, ts);
     ImVec2 nsz = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, kStationName[g_current], nullptr);
     ImVec2 tsz = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, BtnSubLine(), nullptr);
-    float subW = tsz.x;
-    float cap = H * 0.22f * (g_cfg.btnTam / 100.0f);  // v1.5: el tope escala con el boton
-    if (g_current == 12 && ut_active && subW > cap) subW = cap;  // v1.3: la etiqueta no crece con nombres largos (marquesina)
-    // v1.5: en la 12 la etiqueta se ensancha para que quepan las flechas
-    // dentro (a los lados del nombre de la cancion).
-    float ar = ts * 0.8f;  // radio de las flechas de la etiqueta
-    float agap = H * 0.008f;
+    // v1.7: "Ocultar genero" solo quita la SEGUNDA linea (genero/cancion);
+    // la ventana (nombre de la emisora) sigue. Antes ocultaba toda la
+    // ventana; para eso ya esta "Ocultar ventana de emisora" (ocultarNombre).
+    float subW = 0.0f;
     float arrowW = 0.0f;
-    if (g_current == 12 && ut_active) arrowW = 2.0f * (2.0f * ar + agap);
+    float ar = ts * 0.8f;
+    float agap = H * 0.008f;
+    if (g_cfg.mostrarGenero) {
+        subW = tsz.x;
+        float cap = H * 0.22f * (g_cfg.btnTam / 100.0f);
+        if (g_current == 12 && ut_active && subW > cap) subW = cap;  // v1.3: la etiqueta no crece con nombres largos (marquesina)
+        if (g_current == 12 && ut_active) arrowW = 2.0f * (2.0f * ar + agap);
+    }
     float lw = (nsz.x > subW + arrowW ? nsz.x : subW + arrowW) + H * 0.02f;
-    float lh = ns + ts + H * 0.02f;
+    float lh = ns + (g_cfg.mostrarGenero ? ts : 0.0f) + H * 0.02f;
     labelSize = ImVec2(lw, lh);
     if (iconPos.x < W * 0.5f) labelPos = ImVec2(iconPos.x + bs + H * 0.015f, iconPos.y + bs * 0.5f - lh * 0.5f);
     else labelPos = ImVec2(iconPos.x - H * 0.015f - lw, iconPos.y + bs * 0.5f - lh * 0.5f);
@@ -1625,7 +1629,9 @@ static bool DrawButtonGL(float W, float H) {
     };
     // Fondo de la etiqueta (negro semitransparente, textura blanca 1x1).
     // v2.54: el recuadro entero se oculta como en ImGui (ver DrawWheel).
-    if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) quadTo(vBg, lp.x, lp.y, lp.x + ls.x, lp.y + ls.y, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 140.0f * opF / 255.0f);
+    // v1.7: "Ocultar genero" ya no oculta la ventana (solo la 2a linea);
+    // la ventana la oculta "Ocultar ventana de emisora" (ocultarNombre).
+    if (!g_cfg.ocultarNombre) quadTo(vBg, lp.x, lp.y, lp.x + ls.x, lp.y + ls.y, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 140.0f * opF / 255.0f);
     // Texto: nombre y genero con los glifos del atlas de ImGui (UTF-8).
     auto drawTextTo = [&](std::vector<GLBtnVert>& dst, const char* str, float x, float y, float size, float r, float g, float b, float a) {
         float scale = size / font->FontSize;
@@ -1647,11 +1653,16 @@ static bool DrawButtonGL(float W, float H) {
     auto drawText = [&](const char* str, float x, float y, float size, float r, float g, float b, float a) {
         drawTextTo(vTxt, str, x, y, size, r, g, b, a);
     };
-    if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
+    if (!g_cfg.ocultarNombre) {
         drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
         // v1.3: en la 12, el nombre de la cancion se desplaza si no cabe en la etiqueta.
         // v1.5: el nombre va ENTRE las flechas (dentro de la etiqueta) y la
         // tijera recorta solo ese hueco (antes era toda la etiqueta).
+        // v1.7: la 2a linea (genero/cancion) solo se dibuja si mostrarGenero;
+        // la ventana y el nombre quedan aunque el genero este oculto.
+        if (!g_cfg.mostrarGenero) {
+            // Solo el nombre de la emisora.
+        } else {
         const char* sub = BtnSubLine();
         float subX = lp.x + H * 0.01f;
         float subY = lp.y + H * 0.008f + ns;
@@ -1664,6 +1675,7 @@ static bool DrawButtonGL(float W, float H) {
             if (off > 0) drawTextTo(vTrk, sub, g_lblClipL - off + subW + 60.0f, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
         } else {
             drawText(sub, subX, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+        }
         }
     }
     // Icono de la estacion.
@@ -1779,7 +1791,7 @@ static bool DrawButtonGL(float W, float H) {
 // v2.57: BLUR DE FONDO POR REDUCCION (FBO). La 2.56 no se notaba nada al
 // 100%: mezclaba 5 copias con solo 12 px de desplazamiento, imperceptible
 // en 2408 px. Ahora: se copia el framebuffer a una textura, se reduce a una
-// textura pequena (4x/8x/16x segun la barra) dibujandola en un FBO con el
+// textura pequena (2x/4x/8x segun la barra) dibujandola en un FBO con el
 // programa del boton, y se amplifica a pantalla completa con filtro lineal:
 // eso SI se ve borroso. La barra 0-100 sigue igual (0 = apagado, 1-33 = 4x
 // suave, 34-66 = 8x medio, 67-100 = 16x fuerte). v1.6: la reduccion es en
@@ -1795,9 +1807,9 @@ static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor 
 static int g_blurMW = 0, g_blurMH = 0;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
-    if (g_cfg.blur <= 33) return 4;   // v1.5: menos pixeliado (el 32x dejaba la textura en 75x33 y se veian los cuadros)
-    if (g_cfg.blur <= 66) return 8;
-    return 16;  // v1.5: 16x al 100% (150x67): borroso pero sin bloques
+    if (g_cfg.blur <= 33) return 2;   // v1.7: menos pixeliado (el 16x dejaba la textura en 150x67 y se veian los cuadros al 100%)
+    if (g_cfg.blur <= 66) return 4;
+    return 8;  // v1.7: 8x al 100% (301x135): borroso pero sin bloques
 }
 static void BlurDrawBackground(float W, float H) {
     int factor = BlurFactor();
@@ -1988,13 +2000,15 @@ static void DrawWheel(float W, float H) {
         BtnLabelSizes(H, ns, ts);  // v1.5: la etiqueta escala con el tamano del boton
         int op = g_cfg.btnOpac * 255 / 100;
         // v2.54: el recuadro ENTERO (fondo + estacion + genero) se oculta si
-        // el genero esta apagado o si esta activa "Ocultar ventana de emisora".
-        // En la 2.53 solo se quitaba el texto del genero y el recuadro quedaba.
-        if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
+        // esta activa "Ocultar ventana de emisora".
+        // v1.7: "Ocultar genero" ya no oculta la ventana (solo la 2a linea).
+        if (!g_cfg.ocultarNombre) {
             dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
             dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
             // v1.3: en la 12, el nombre de la cancion se desplaza si no cabe en la etiqueta.
             // v1.5: el nombre va ENTRE las flechas (dentro de la etiqueta).
+            // v1.7: la 2a linea (genero/cancion) solo si mostrarGenero.
+            if (g_cfg.mostrarGenero) {
             const char* sub = BtnSubLine();
             float subX = lp.x + H * 0.01f;
             float subY = lp.y + H * 0.008f + ns;
@@ -2012,6 +2026,7 @@ static void DrawWheel(float W, float H) {
                 dl->PopClipRect();
             } else {
                 dl->AddText(font, ts, ImVec2(subX, subY), IM_COL32(200,225,235,230 * op / 255), sub);
+            }
             }
         }
         // v2.55: disco negro detras del icono de la emisora (el fondo negro
@@ -3132,7 +3147,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     // icono sigue cambiando de emisora como siempre.
                     ImVec2 ip, lp, ls; float bs;
                     FloatBtnGeom((float)w, (float)h, ip, lp, ls, bs);
-                    bool onLabel = (g_cfg.mostrarGenero && !g_cfg.ocultarNombre &&
+                    bool onLabel = (!g_cfg.ocultarNombre &&
                         g_touchX >= lp.x && g_touchX <= lp.x + ls.x && g_touchY >= lp.y && g_touchY <= lp.y + ls.y);
                     if (g_current == 12 && ut_active && onLabel) {
                         // Nada: el nombre es informativo; las flechas cambian la cancion.

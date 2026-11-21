@@ -193,6 +193,7 @@ static int ut_orderPos = 0;
 static bool ut_random = true;                // aleatorio por defecto, como SAUserTracks
 static bool ut_active = false;               // estacion 12 sonando
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
+static bool ut_pausedByExit = false;         // v1.7: pausado al bajar del auto (se reanuda al subir, sin reiniciar ni cortar)
 static bool ut_decPaused = false;            // hilo decodificador en pausa
 static bool ut_stopThread = false;           // pedir salida al hilo decodificador
 static bool ut_wantStop = false;             // el hilo pide parar (sin pistas decodificables)
@@ -820,6 +821,7 @@ static void UT_Stop(const char* reason) {
     ut_active = false;
     ut_pausedDev = false;
     ut_decPaused = false;
+    ut_pausedByExit = false;  // v1.7: al parar de verdad no queda pausa pendiente
     Log("UT: parado (%s; underruns=%d)", reason ? reason : "?", ut_underruns);
 }
 
@@ -827,10 +829,18 @@ static void UT_Stop(const char* reason) {
 static void UT_Frame() {
     if (!ut_active) return;
     if (ut_wantStop) { UT_Stop("sin pistas decodificables"); return; }
-    // v1.6: al salir del vehiculo la radio SE QUEDA en la emisora (no se
-    // apaga): el reproductor sigue sonando a pie hasta que se cambie de
-    // emisora o se apague la radio. Antes se paraba aqui ("salio del vehiculo").
-    bool paused = g_paused || (ut_loadingActive && *ut_loadingActive);
+    // v1.7: al salir del vehiculo se PAUSA (no se para ni se sigue oyendo a
+    // pie): la musica se queda en silencio y se reanuda al subir, en la
+    // misma emisora (12) y en el mismo punto, sin reiniciar ni cortar.
+    // (La 1.6 la dejaba sonando a pie y al volver el juego ponia Radio Off.)
+    if (!g_inVehicle && !ut_pausedByExit) {
+        ut_pausedByExit = true;
+        Log("UT: pausado al salir del vehiculo (se reanuda al subir)");
+    } else if (g_inVehicle && ut_pausedByExit) {
+        ut_pausedByExit = false;
+        Log("UT: reanudado al subir al vehiculo");
+    }
+    bool paused = g_paused || (ut_loadingActive && *ut_loadingActive) || ut_pausedByExit;
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();
     if (!ut_diagDone && now - ut_startedAt > std::chrono::seconds(3)) {
@@ -855,6 +865,9 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
             ut_origStartRadio(trackMgr, 13, a2, a3, a4);
             return;
         }
+        // v1.7: si ya suena (al volver a subir al auto el juego vuelve a
+        // pedir la 12), NO se reinicia: UT_Start es no-op y se reanuda.
+        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; Log("UT: reanudado al subir al vehiculo (hook 12)"); }
         UT_Start();
         g_current = 12;
         // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
@@ -862,6 +875,17 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         // la emisora anterior por debajo de las canciones. Se le pide Radio
         // Off (13) a la nativa: silencio, y la musica la pone el reproductor.
         Log("UT: 12 -> nativa 13 (Radio Off; la musica la pone el reproductor)");
+        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
+        return;
+    }
+    // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
+    // volver a subir (pone Radio Off solo), NO se para el reproductor: se
+    // reanuda en la 12. A pie no se puede cambiar de emisora (no hay boton
+    // ni rueda), asi que esta llamada solo puede ser del juego al entrar.
+    if (ut_active && ut_pausedByExit) {
+        ut_pausedByExit = false;
+        g_current = 12;
+        Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
         ut_origStartRadio(trackMgr, 13, a2, a3, a4);
         return;
     }
