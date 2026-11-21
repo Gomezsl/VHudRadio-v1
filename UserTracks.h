@@ -29,6 +29,7 @@
 #pragma once
 
 #define MINIMP3_IMPLEMENTATION
+#include <set>
 #include "minimp3.h"
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
@@ -1396,6 +1397,21 @@ static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_C
         int idx = self ? *(int*)((char*)self + 0x10) : -1;
         Log("UT: SettingSelection::Render activo (primera fila idx=%d, rueda=%d)", idx, g_current);
     }
+    // v1.9.37: DIAGNOSTICO (solo registra): que filas se dibujan, con que idx y que
+    // valor tenia MS+0x240 ANTES de escribirlo (si el juego lo revierte entre cuadros, aqui se ve).
+    {
+        static std::set<long> seenRows;
+        static int rowLogs = 0;
+        if (rowLogs < 60 && self && ut_mobileSettings) {
+            int idx = *(int*)((char*)self + 0x10);
+            int before = *(int*)((char*)ut_mobileSettings + 0x240);
+            long k = (long)idx * 100 + before;
+            if (seenRows.insert(k).second) {
+                rowLogs++;
+                Log("UT: [diag] Render fila idx=%d (MS240 antes=%d, rueda=%d, pausa=%d)", idx, before, g_current, g_paused ? 1 : 0);
+            }
+        }
+    }
     if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
         *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
         *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
@@ -1419,8 +1435,17 @@ static bool UT_IsReadablePtr(uintptr_t p) {
 }
 
 static void UT_AudioScreenCtor_hook(void* self) {
+    // v1.9.37: DIAGNOSTICO: confirma si este hook corre y que hay antes/despues del ctor original.
+    static int ctorLogs = 0;
+    int before240 = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
+    if (ctorLogs < 8) {
+        ctorLogs++;
+        int after240 = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
+        int mm35 = g_menuManager ? ((unsigned char*)g_menuManager)[0x35] : -1;
+        Log("UT: [diag] AudioScreen ctor corrio (rueda=%d, MS240 antes=%d despues=%d, mm35=%d)", g_current, before240, after240, mm35);
+    }
     // Post-ctor: por si C2Ev reseteo los valores durante la construccion.
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     // Diagnostico + auto-fix (Gemini, via Daniel): la fila EMISORA guarda su
@@ -1547,8 +1572,25 @@ static void UT_RadioSelectionDtor_hook(void* self) {
 // (valor de Alex, hash no identificado; se copia tal cual).
 typedef uint32_t (*GetUppercaseKeyFn)(const char*);
 static GetUppercaseKeyFn ut_origGetUppercaseKey = nullptr;
+// v1.9.37: DIAGNOSTICO DE CLAVES DE TEXTO (solo REGISTRA; no cambia nada del juego).
+// Con el menu de pausa abierto, anota cada clave GXT distinta que el juego pide
+// (con la emisora de la rueda y si el dial esta abierto). Al cambiar EMISORA con las
+// flechas de la fila, la clave nueva que aparece es el nombre de esa emisora: con esa
+// lista se arregla el nombre por TEXTO, sin depender de direcciones de memoria.
+static void UT_LogKeyOnce(const char* key) {
+    static std::set<std::string> seen;
+    static int logged = 0;
+    if (logged >= 400) return;
+    if (strlen(key) > 48) return;
+    if (seen.insert(key).second) {
+        logged++;
+        Log("UT: [clave] \"%s\" (rueda=%d, dial=%d, activo=%d)", key, g_current, ut_inAudioMenu ? 1 : 0, ut_active ? 1 : 0);
+        if (logged == 400) Log("UT: [clave] tope de 400 claves alcanzado");
+    }
+}
 static uint32_t UT_GetUppercaseKey_hook(const char* key) {
     if (key) {
+        if (g_paused) UT_LogKeyOnce(key);  // v1.9.37
         if (strcmp(key, "FEA_MP3") == 0) return 0x9109b7c1;  // identidad (JAMCRC de FEA_MP3)
         if (ut_active && strcmp(key, "FEA_NON") == 0) return 0x9109b7c1;  // Radio Off -> nombre de User Tracks
         if (strcmp(key, "SAMP_AUDIO_HINT") == 0) return 0x93516cf0;  // hint del menu (valor de Alex)

@@ -490,6 +490,19 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.37: DIAGNOSTICO DE CLAVES DE TEXTO (DANIEL, NO CAMBIA NADA DEL JUEGO)
+// - Las escrituras de memoria (MS+0x240, +0x35, hook de Render) no consiguen
+//   que la fila EMISORA dibuje la emisora de la rueda. Como el hook de
+//   CKeyGen::GetUppercaseKey ya demuestra que se controla que nombre dibuja
+//   el menu (FEA_NON -> FEA_MP3), esta version solo REGISTRA las claves de
+//   texto distintas que el juego pide con el menu de pausa abierto, para
+//   arreglar el nombre por texto en la siguiente version.
+// - Tambien registra (sin cambiar nada) si el hook del constructor de
+//   AudioScreen llega a correr y que filas dibuja SettingSelection::Render
+//   (idx y valor de MS+0x240 antes de escribirlo). El log de la 1.9.36
+//   mostro todas las variables (mm+0x35, MS+0x240/0x244, TrackManager)
+//   iguales a la rueda al abrir y cerrar el dial, y aun asi EMISORA muestra
+//   el nombre viejo: ese nombre no se lee en vivo de esas variables.
 // v1.9.24: DIAGNOSTICO DE EMISORA (DANIEL, NO CAMBIA NADA DEL JUEGO)
 // - El log de la 1.9.23 mostro que AudioEngine+0x149 NO es la variable del
 //   menu: tras entrar y salir de opciones de sonido sin tocar nada, la
@@ -939,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.36-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.37-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.36-beta"
+#define VHUDRADIO_VERSION "1.9.37-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
