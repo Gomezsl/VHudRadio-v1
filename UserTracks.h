@@ -1136,6 +1136,18 @@ static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, 
 // el dial; comparando dos aperturas (p. ej. en 8 y en 7) el byte que se
 // queda en 3 es la del menu y el que cambia es la real.
 static void* ut_menuManager = nullptr;
+// v1.9.22/1.9.23: escribe la emisora real en AudioEngine+0x149 (la
+// variable que muestra EMISORA). Solo registra cuando cambia.
+static void UT_SyncEmisora(int station) {
+    if (!g_audioEngine || station < 1 || station > 13) return;
+    unsigned char* ae = (unsigned char*)g_audioEngine;
+    unsigned char old = ae[0x149];
+    if (old != (unsigned char)station) {
+        ae[0x149] = (unsigned char)station;
+        Log("UT: EMISORA sincronizada %d -> %d (AudioEngine+0x149)", (int)old, station);
+    }
+}
+
 static void UT_DumpHex(const char* tag, const void* ptr, size_t n) {
     if (!ptr) { Log("UT: dump %s: NULL", tag); return; }
     const unsigned char* b = (const unsigned char*)ptr;
@@ -1244,12 +1256,12 @@ static void UT_RadioSelectionCtor_hook(void* self) {
         // (cur, del TrackManager) ahi, para que EMISORA muestre la que
         // suena y no la ultima elegida en el menu. Se quita el volcado
         // (era solo diagnostico) y se registra la escritura.
-        if (g_audioEngine && cur >= 1 && cur <= 13) {
-            unsigned char* ae = (unsigned char*)g_audioEngine;
-            unsigned char old = ae[0x149];
-            ae[0x149] = (unsigned char)cur;
-            Log("UT: EMISORA sincronizada %d -> %d (AudioEngine+0x149)", (int)old, cur);
-        }
+        // v1.9.23: tambien se sincroniza al cambiar con la rueda
+        // (DoStartRadio llama a UT_SyncEmisora), porque EMISORA se lee al
+        // abrir opciones de sonido ANTES de que el ctor del dial corra; si
+        // solo se escribe al abrir el dial, la primera vista muestra el
+        // valor viejo.
+        UT_SyncEmisora(cur);
     }
 }
 

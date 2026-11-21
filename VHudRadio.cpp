@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.22-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.23-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,16 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.23: EMISORA SINCRONIZADA TAMBIEN CON LA RUEDA (DANIEL)
+// - Tu log de la 1.9.22 me mostro el problema: la escritura SI paso
+//   ("EMISORA sincronizada 2 -> 5" y "5 -> 4", y el valor quedo guardado),
+//   pero solo se escribia AL ABRIR EL DIAL. EMISORA se lee al abrir
+//   opciones de sonido ANTES de que el ctor del dial corra, asi que la
+//   primera vista seguia mostrando el valor viejo. Ahora la emisora
+//   (AudioEngine+0x149) se sincroniza TAMBIEN cada vez que cambias con
+//   la rueda (DoStartRadio), asi siempre esta al dia y EMISORA muestra
+//   la que suena desde que abres las opciones. NO se toco audio, blur
+//   ni HUD.
 // v1.9.22: EMISORA SINCRONIZADA (DANIEL, SIN TOCAR LO DEMAS)
 // - Tu log de la 1.9.21 SI registro todo, y ya encontre el valor. Con 3
 //   aperturas del dial (CSR 8, Radio X 7, CSR 8) compare los 4 objetos:
@@ -920,9 +930,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.22-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.23-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.22-beta"
+#define VHUDRADIO_VERSION "1.9.23-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1546,6 +1556,10 @@ static void DoStartRadio(int id) {
     // CAudioEngine::StartRadio; si esa via no pasa por el hook del
     // reproductor, la 12 no sonara: usar modo 0 o 1.)
     if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }  // v1.9.7: nativa a 12 (Mixtape), no a 13
+    // v1.9.23: sincronizar EMISORA al cambiar con la rueda (no solo al
+    // abrir el dial): AudioEngine+0x149 es la emisora que muestra EMISORA
+    // y la rueda usa TrackManager::StartRadio, que no la actualiza.
+    UT_SyncEmisora(id);
 }
 static void ApplyStation(int id) {
     if (id < 1 || id > 13) return;
