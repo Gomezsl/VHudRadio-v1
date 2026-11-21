@@ -74,21 +74,26 @@ static const int UT_BUF_SAMPLES = UT_BUF_FRAMES * UT_OUT_CH;  // 1764 muestras
 static const size_t UT_BUF_BYTES = UT_BUF_SAMPLES * 2;         // 3528 bytes
 static const int UT_NUM_BUFS = 4;                // 4 buffers x 20 ms = 80 ms en cola
 
-// ---- carpetas de musica (GTAVRadioMusic primero, luego las 5 de SAUserTracks; gana la primera con audio) ----
-// v1.4: la carpeta GTAVRadioMusic es la propia del mod (se crea sola); la
-// carpeta "music" vieja sigue funcionando como respaldo.
-static const char* UT_MUSIC_DIRS[10] = {
-    "/sdcard/Android_unprotected/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
-    "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
-    "/sdcard/Android/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
-    "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
-    "/storage/emulated/0/GTAVRadioMusic",
-    "/sdcard/Android_unprotected/data/com.rockstargames.gtasa/files/music",
-    "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files/music",
-    "/sdcard/Android/data/com.rockstargames.gtasa/files/music",
-    "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files/music",
-    "/storage/emulated/0/GTASA",
-};
+// ---- carpetas de musica (solo GTAVRadioMusic; se construyen en tiempo de
+// ejecucion con el paquete detectado, g_pkgName / g_gameFilesDir) ----
+// v1.4: la carpeta GTAVRadioMusic es la propia del mod (se crea sola).
+// v1.9.14 (Daniel): la carpeta "music" vieja YA NO se usa (ni como
+// respaldo): solo GTAVRadioMusic. Y las rutas usan el paquete real del
+// juego (Rehan: com.rockstargames.gtasa2/gtasa23), no el fijo
+// com.rockstargames.gtasa.
+static const int UT_NUM_MUSIC_DIRS = 6;
+static char UT_MUSIC_DIRS[6][512];
+static void UT_BuildMusicDirs() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    snprintf(UT_MUSIC_DIRS[0], sizeof UT_MUSIC_DIRS[0], "%s/GTAVRadioMusic", g_gameFilesDir.c_str());
+    snprintf(UT_MUSIC_DIRS[1], sizeof UT_MUSIC_DIRS[1], "/sdcard/Android_unprotected/data/%s/files/GTAVRadioMusic", g_pkgName.c_str());
+    snprintf(UT_MUSIC_DIRS[2], sizeof UT_MUSIC_DIRS[2], "/storage/emulated/0/Android_unprotected/data/%s/files/GTAVRadioMusic", g_pkgName.c_str());
+    snprintf(UT_MUSIC_DIRS[3], sizeof UT_MUSIC_DIRS[3], "/sdcard/Android/data/%s/files/GTAVRadioMusic", g_pkgName.c_str());
+    snprintf(UT_MUSIC_DIRS[4], sizeof UT_MUSIC_DIRS[4], "/storage/emulated/0/Android/data/%s/files/GTAVRadioMusic", g_pkgName.c_str());
+    snprintf(UT_MUSIC_DIRS[5], sizeof UT_MUSIC_DIRS[5], "/storage/emulated/0/GTAVRadioMusic");
+}
 // Crea la carpeta GTAVRadioMusic (la primera que se pueda) para que el
 // usuario tenga donde poner la musica sin crearla a mano. Solo lo intenta
 // una vez por sesion; si ya existe alguna, no hace nada.
@@ -96,7 +101,8 @@ static void UT_EnsureRadioMusicFolder() {
     static bool done = false;
     if (done) return;
     done = true;
-    for (int i = 0; i < 5; i++) {
+    UT_BuildMusicDirs();
+    for (int i = 0; i < UT_NUM_MUSIC_DIRS; i++) {
         struct stat st;
         if (stat(UT_MUSIC_DIRS[i], &st) == 0 && S_ISDIR(st.st_mode)) return;  // ya existe una
         if (mkdir(UT_MUSIC_DIRS[i], 0755) == 0) { Log("UT: carpeta GTAVRadioMusic creada: %s", UT_MUSIC_DIRS[i]); return; }
@@ -270,7 +276,7 @@ static UTAudioFmt UT_AudioExt(const char* name) {
 }
 static bool UT_HasAudioExt(const char* name) { return UT_AudioExt(name) != UT_FMT_UNKNOWN; }
 
-// Escanea las 10 carpetas en orden; la primera con al menos un archivo de
+// Escanea las 6 carpetas GTAVRadioMusic en orden; la primera con al menos un archivo de
 // audio gana. Rellena ut_tracks (alfabetico por basename) y el orden de
 // reproduccion. Devuelve true si hay al menos una pista.
 static bool UT_ScanMusic() {
@@ -279,7 +285,7 @@ static bool UT_ScanMusic() {
     ut_order.clear();
     ut_orderPos = 0;
     char dirUsed[512] = "";
-    for (int d = 0; d < 10; d++) {
+    for (int d = 0; d < UT_NUM_MUSIC_DIRS; d++) {
         DIR* dir = opendir(UT_MUSIC_DIRS[d]);
         if (!dir) continue;
         std::vector<std::string> found;
@@ -747,7 +753,7 @@ static bool UT_Start() {
     ut_playbackDisabled = false;  // v1.9.11 (Alex): al entrar a Mixtape se limpia (la nativa 12 se puede suprimir)
     SoundInit();
     if (!g_slEngine || !g_slEngineItf || !g_slMix) { Log("UT: sin motor OpenSL: no hay reproductor"); return false; }
-    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en las carpetas (se revisaron las 10)"); return false; }
+    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en GTAVRadioMusic (se revisaron las 6)"); return false; }
     if (ut_random) UT_ShuffleOrder(-1);
     ut_orderPos = 0;
     ut_underruns = 0;

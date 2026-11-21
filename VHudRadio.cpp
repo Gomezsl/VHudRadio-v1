@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.13-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.14-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,24 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.14: BLUR CONGELADO + ICONOS 8/12 OPACOS + SOLO GTAVRadioMusic + PAQUETE PERSONALIZADO
+// - Blur (Rehan): la escena se copia UNA VEZ al abrir la rueda y se congela
+//   (g_blurFrozen; se descongela al cerrar la rueda en DrawFrame, y se
+//   vuelve a copiar si se recrea el FBO). Manejando, la escena cambia cada
+//   cuadro y el blur se veia peor que parado; congelada, manejar se ve
+//   igual que parado.
+// - Iconos (Daniel): las emisoras 8 (CSR) y 12 (User tracks) quedan NORMALES,
+//   sin transparencia: su centro negro (User Track) y morado (CSR) no se
+//   transparenta (LoadPngFromMemory con blackKey=false para set 1, idx 8/12)
+//   y detras va el color de fondoIcono, dibujadas un poco mas chicas para
+//   que el color se vea como anillo. La 1.9.13 las teñia; eso era lo
+//   contrario (el logo debe quedar con sus colores).
+// - Musica (Daniel): la carpeta "music" YA NO se usa (ni como respaldo):
+//   solo GTAVRadioMusic (6 carpetas, construidas en tiempo de ejecucion).
+// - Paquete (Rehan): el paquete se detecta de /proc/self/cmdline (g_pkgName;
+//   si no se lee, com.rockstargames.gtasa) y las rutas de INI/log/musica lo
+//   usan: con un paquete personalizado (gtasa2, gtasa23...) el INI y la
+//   musica van a su carpeta, no a com.rockstargames.gtasa.
 // v1.9.13: PREVIEW DESDE EL MENU DE INICIO + PARAR AL IR A INICIO EN 1 S + ICONOS 8/12 TEÑIDOS
 // - Preview en el menu de inicio: en el menu principal no hay vehiculo,
 //   asi que UT_Frame ponia ut_pausedByExit y el preview no sonaba (la 1.9.12
@@ -807,13 +825,14 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.13-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.14-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.13-beta"
+#define VHUDRADIO_VERSION "1.9.14-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
 static std::string g_gameFilesDir;  // files del juego (se resuelve en OnModLoad)
+static std::string g_pkgName = "com.rockstargames.gtasa";  // v1.9.14: paquete del juego (detectado del proceso; Rehan usa gtasa2/gtasa23)
 static std::string g_gameDataDir;  // v2.3: carpeta data del juego (padre de files) - el .ini va en data/configs
 static void Log(const char* fmt, ...) {
     // v1.7: buf 8192 (antes 600 y el volcado CPad de 2048 bytes se truncaba a ~295)
@@ -1281,7 +1300,7 @@ static std::vector<unsigned char> B64Decode(const char* s) {
     }
     return out;
 }
-static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len) {
+static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len, bool blackKey = true) {  // v1.9.14: blackKey=false deja el icono opaco (8 y 12 a color)
     int w = 0, h = 0, ch = 0;
     unsigned char* px = stbi_load_from_memory(buf, (int)len, &w, &h, &ch, 4);
     if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return 0; }
@@ -1321,7 +1340,7 @@ static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len) {
     // v2.55: SOLO cuando fondoIcono esta activado; apagado, los iconos
     // vuelven a su fondo negro normal de siempre (al cambiar el interruptor
     // se recargan las texturas con ReloadIcons).
-    if (g_cfg.fondoIcono) for (int i = 0; i < upW * upH; i++) {
+    if (g_cfg.fondoIcono && blackKey) for (int i = 0; i < upW * upH; i++) {
         unsigned char* p = upPx + i * 4;
         if (p[3] > 0 && p[0] < 32 && p[1] < 32 && p[2] < 32) p[3] = 0;
     }
@@ -1348,7 +1367,7 @@ static GLuint LoadIconFileOrEmbedded(int set, int idx, const char** srcOut) {
     const char* b64 = EmbeddedIconB64(set, idx);
     if (b64) {
         std::vector<unsigned char> raw = B64Decode(b64);
-        if (!raw.empty()) t = LoadPngFromMemory(raw.data(), raw.size());
+        if (!raw.empty()) t = LoadPngFromMemory(raw.data(), raw.size(), !(set == 1 && (idx == 8 || idx == 12)));  // v1.9.14: CSR y User Track a color quedan opacos (su centro negro/morado no es transparente)
     }
     if (t) { if (srcOut) *srcOut = "en el .so"; return t; }
     if (srcOut) *srcOut = "-";
@@ -2093,6 +2112,7 @@ static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (
 static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (cuarto) para la piramide por mitades (blur gaussiano)
 static GLuint g_blurTmpTex = 0, g_blurTmpFBO = 0;  // v1.9: textura temporal para el pase gaussiano (ping-pong con la pequena)
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
+static bool g_blurFrozen = false;  // v1.9.14: fondo congelado al abrir la rueda (manejando se ve igual que parado)
 static int g_blurMW = 0, g_blurMH = 0;
 static int g_blurQW = 0, g_blurQH = 0;
 static int BlurFactor() {
@@ -2113,7 +2133,9 @@ static void BlurDrawBackground(float W, float H) {
     if (mw < 8) mw = 8; if (mh < 8) mh = 8;
     int qw = w / 4, qh = h / 4;  // v1.8: paso intermedio (cuarto) para la piramide por mitades
     if (qw < 8) qw = 8; if (qh < 8) qh = 8;
+    bool blurRecreated = false;  // v1.9.14: si se recrea el FBO hay que volver a copiar la escena
     if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO || !g_blurTmpTex || !g_blurTmpFBO) {
+        blurRecreated = true;
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
@@ -2233,18 +2255,25 @@ static void BlurDrawBackground(float W, float H) {
     // 1. copiar la escena del juego a g_blurCopyTex (framebuffer por defecto).
     // v1.4: con glBlitFramebuffer se resuelve el MSAA del juego (la copia
     // directa fallaba con GL 0x502). Si no hay blit, se intenta la copia.
-    glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
-    if (g_pBlitFB && g_blurResolveFBO) {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_blurResolveFBO);
-        g_pBlitFB(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    } else {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
-        glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+    // v1.9.14 (Rehan): la escena se copia UNA VEZ al abrir la rueda y se
+    // congela: manejando, la escena cambia cada cuadro y el blur se veia
+    // peor que parado (donde la escena es estatica). Congelada, manejar se
+    // ve igual que parado. Si se recreo el FBO, se vuelve a copiar.
+    if (!g_blurFrozen || blurRecreated) {
+        glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
+        if (g_pBlitFB && g_blurResolveFBO) {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_blurResolveFBO);
+            g_pBlitFB(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
+            glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+        }
+        { GLenum e = glGetError(); if (e != GL_NO_ERROR) { Log("  !! blur: no se pudo copiar la escena (GL 0x%X): sin desenfoque", (unsigned)e); goto blur_restore; } }
+        g_blurFrozen = true;
     }
-    { GLenum e = glGetError(); if (e != GL_NO_ERROR) { Log("  !! blur: no se pudo copiar la escena (GL 0x%X): sin desenfoque", (unsigned)e); goto blur_restore; } }
     // preparar el programa del boton (proyeccion ortografica, Y hacia abajo)
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
@@ -2449,21 +2478,16 @@ static void DrawWheel(float W, float H) {
         if (g_cfg.fondoIcono) dl->AddCircleFilled(p, si, IM_COL32(g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB, (int)(255 * anim)));  // v2.53: fondo de color del icono
         if (it) {
             ImVec4 tint = sel ? ImVec4(1, 1, 1, anim) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f * anim);
-            // v1.9.13: las emisoras 8 (CSR) y 12 (User tracks) tienen el logo
-            // como imagen densa (slotrad, con recuadro); con fondoIcono el
-            // circulo de color solo se veia por fuera del logo. Con iconos a
-            // color se tiñen con el color de fondoIcono (mezclado con blanco
-            // para que el logo no se oscurezca) para que el logo tambien tome
-            // el color. Solo esas dos: las demas ya se ven coloreadas.
-            if (g_cfg.fondoIcono && g_cfg.iconosColor && (i == 8 || i == 12)) {
-                float lr = (255.0f + g_cfg.fondoIconoR) / 510.0f;
-                float lg = (255.0f + g_cfg.fondoIconoG) / 510.0f;
-                float lb = (255.0f + g_cfg.fondoIconoB) / 510.0f;
-                tint = sel ? ImVec4(lr, lg, lb, anim) : ImVec4(lr * 0.55f, lg * 0.55f, lb * 0.55f, 0.75f * anim);
-            }
+            // v1.9.14 (Daniel): las emisoras 8 (CSR) y 12 (User tracks) quedan
+            // NORMALES, sin transparencia: su centro negro (User Track) y
+            // morado (CSR) no se transparenta, y detras va el color de
+            // fondoIcono. Se dibujan un poco mas chicas para que el color se
+            // vea como anillo detras del icono opaco. (La 1.9.13 las teñia;
+            // eso era lo contrario: el logo debe quedar con sus colores.)
+            float siIcon = (g_cfg.fondoIcono && g_cfg.iconosColor && (i == 8 || i == 12)) ? si * 0.85f : si;
             // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
             // un cuadrado y se notaba el cuadrado de la imagen.
-            dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-si, p.y-si), ImVec2(p.x+si, p.y+si), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), si);
+            dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), siIcon);
         } else dl->AddCircleFilled(p, si*0.5f, IM_COL32(255,255,255,(int)(120 * anim)));
         if (sel) dl->AddCircle(p, si, RingColor(), 48, 3.5f);              // anillo de seleccion (color ajustable)
         else if (i == g_current) dl->AddCircle(p, si, IM_COL32(255, 255, 255, 220), 48, 2.0f);
@@ -3352,6 +3376,7 @@ static bool VehicleHasRadio(void* veh) {
 }
 // v2.51: HexDump eliminado (solo lo usaban el volcado del vehiculo y el escaneo ptrCand).
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
+    if (!g_open) g_blurFrozen = false;  // v1.9.14: al cerrar la rueda se descongela (la proxima apertura vuelve a capturar)
     if (g_failed) return;
     EGLContext ctx = eglGetCurrentContext();
     if (ctx == EGL_NO_CONTEXT) return;
@@ -3700,14 +3725,32 @@ static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
 }
 
 extern "C" void OnModLoad() {
-    static const char* kFilesDirs[] = {
-        "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files",
-        "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files",
-        "/sdcard/Android/data/com.rockstargames.gtasa/files",
-        "/storage/self/primary/Android/data/com.rockstargames.gtasa/files",
+    // v1.9.14: el paquete se detecta del proceso (Rehan usa uno
+    // personalizado, p. ej. com.rockstargames.gtasa2; antes estaba fijo a
+    // com.rockstargames.gtasa y su INI se generaba en esa carpeta aunque el
+    // juego fuera otro). El proceso principal de una app Android se llama
+    // como su paquete; si no se puede leer, queda el original.
+    {
+        FILE* cf = fopen("/proc/self/cmdline", "rb");
+        if (cf) {
+            char cmd[256] = {0};
+            size_t n = fread(cmd, 1, sizeof(cmd) - 1, cf);
+            fclose(cf);
+            if (n > 0) {
+                std::string c(cmd);  // hasta el primer NUL = nombre del proceso
+                if (c.rfind("com.rockstargames.gtasa", 0) == 0 && c.size() < 64) g_pkgName = c;
+            }
+        }
+        Log("  paquete del juego: %s", g_pkgName.c_str());
+    }
+    std::string kFilesDirs[] = {
+        "/storage/emulated/0/Android_unprotected/data/" + g_pkgName + "/files",
+        "/storage/emulated/0/Android/data/" + g_pkgName + "/files",
+        "/sdcard/Android/data/" + g_pkgName + "/files",
+        "/storage/self/primary/Android/data/" + g_pkgName + "/files",
     };
     std::string files;
-    for (auto d : kFilesDirs) { struct stat st; if (stat(d, &st) == 0) { files = d; break; } }
+    for (auto d : kFilesDirs) { struct stat st; if (stat(d.c_str(), &st) == 0) { files = d; break; } }
     if (files.empty()) files = kFilesDirs[1];
     g_gameFilesDir = files;
     // v2.3: el .ini va en data/configs (AML: android_unprotected/... o android/.../configs),
