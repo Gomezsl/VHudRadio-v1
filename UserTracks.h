@@ -1237,10 +1237,14 @@ static void UT_RadioSelectionCtor_hook(void* self) {
         }
         // v1.9.20: volcado para encontrar la variable de EMISORA (la del
         // menu, que se quedo en 3 mientras la real es 8). Solo diagnostico.
+        // v1.9.21: la 1.9.20 NO encontro el 3 en RadioSelection, TrackManager
+        // (0x100) ni AudioEngine (0x80, casi todo ceros: su emisora esta mas
+        // alla) y FrontEndMenuManager salio NULL por el bug de arriba. Ahora
+        // se vuelca mas ancho y con el menu corregido.
         UT_DumpHex("RadioSelection", self, 0xA0);
-        UT_DumpHex("TrackManager", g_trackManager, 0x100);
-        UT_DumpHex("AudioEngine", g_audioEngine, 0x80);
-        UT_DumpHex("FrontEndMenuManager", ut_menuManager, 0x100);
+        UT_DumpHex("TrackManager", g_trackManager, 0x200);
+        UT_DumpHex("AudioEngine", g_audioEngine, 0x200);
+        UT_DumpHex("FrontEndMenuManager", ut_menuManager, 0x200);
     }
 }
 
@@ -1582,9 +1586,13 @@ static void UT_InstallHooks() {
         // RadioSelection asigna radio_TPLAYER y luego los parches del menu.
         {   // v1.9.20: FrontEndMenuManager (el sistema de menus; ahi puede
             // vivir la emisora que muestra EMISORA). Para el volcado.
+            // v1.9.21: CORRECCION — la direccion del simbolo ES el objeto
+            // (en VHudRadio.cpp sim==obj); en la 1.9.20 se desreferencio
+            // (*(void**)mm) y dio NULL porque los primeros bytes del objeto
+            // son 0. Ahora se usa la direccion directamente.
             uintptr_t mm = aml->GetSym(h, "FrontEndMenuManager");
             if (!mm) mm = aml->GetSym(h, "_ZN13CMenuManager18FrontEndMenuManagerE");
-            if (mm) { ut_menuManager = *(void**)mm; Log("UT: FrontEndMenuManager ok (%p)", ut_menuManager); }
+            if (mm) { ut_menuManager = (void*)mm; Log("UT: FrontEndMenuManager ok (%p)", ut_menuManager); }
             else Log("UT: FrontEndMenuManager no resolvio (sin volcado del menu)");
         }
         ut_getTexture = (GetTextureFn)aml->GetSym(h, "_ZN22TextureDatabaseRuntime10GetTextureEPKc");

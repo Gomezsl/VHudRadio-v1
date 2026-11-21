@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.20-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.21-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,18 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.21: DIAGNOSTICO EMISORA CORREGIDO (DANIEL, SIN TOCAR LO DEMAS)
+// - Tu log de la 1.9.20 SI registro bien los volcados, y me dejo dos cosas:
+//   (1) FrontEndMenuManager salio NULL por MI culpa: desreferencie la
+//   direccion del simbolo (*(void**)mm) cuando esa direccion ES el objeto
+//   (en el log de arranque sim==obj). Ahora se usa directo. (2) El 3
+//   (K-DST, la del menu) NO esta en RadioSelection (0xA0), ni en
+//   TrackManager (0x100), ni en AudioEngine (0x80, casi todo ceros: su
+//   emisora esta mas alla). Por eso ahora el volcado es mas ancho:
+//   TrackManager, AudioEngine y FrontEndMenuManager a 0x200. Ademas el
+//   TrackManager tiene dos zonas (0xB4 y 0xF4) con 04 05 06 06 06 06 06 y
+//   los ultimos dos bytes cambiaron de 04 04 a 07 07 al pasar por Radio X:
+//   algo ahi sigue la emisora anterior. NO se toco audio, blur ni HUD.
 // v1.9.20: DIAGNOSTICO EMISORA (DANIEL, SIN TOCAR LO DEMAS)
 // - Tu prueba con la 1.9.19 lo dejo CLARO: en CSR (8) el juego decia 8 en
 //   todo (audio=8 track=8 rueda=8, preview 0xAD/0xE9 en 8) y aun asi EMISORA
@@ -897,9 +909,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.20-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.21-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.20-beta"
+#define VHUDRADIO_VERSION "1.9.21-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
