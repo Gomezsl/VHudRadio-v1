@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.19-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.20-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,17 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.20: DIAGNOSTICO EMISORA (DANIEL, SIN TOCAR LO DEMAS)
+// - Tu prueba con la 1.9.19 lo dejo CLARO: en CSR (8) el juego decia 8 en
+//   todo (audio=8 track=8 rueda=8, preview 0xAD/0xE9 en 8) y aun asi EMISORA
+//   mostraba K-DST (3, la ultima elegida EN EL MENU). O sea que EMISORA no
+//   lee ni los getters ni el preview: la emisora del menu vive en otra
+//   variable (ajustes/frontend) que solo se actualiza al elegir en el menu.
+//   Esta version NO cambia nada del juego: al abrir el dial vuelca la
+//   memoria de RadioSelection, TrackManager, AudioEngine y FrontEndMenuManager
+//   para encontrar ese byte. Con dos aperturas (en 8 y en 7) el byte que se
+//   queda en 3 es la del menu y el que cambia es la real; la siguiente
+//   version lo corrige. NO se toco audio, blur ni HUD.
 // v1.9.19: DIAL LEE EL TRACKMANAGER (DANIEL, SIN TOCAR LO DEMAS)
 // - Solo falta el dial (Daniel, 1.9.18): estando en Radio X (7), opciones
 //   de sonido muestra EMISORA: PLAYBACK FM (1, la elegida antes en el menu).
@@ -886,9 +897,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.19-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.20-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.19-beta"
+#define VHUDRADIO_VERSION "1.9.20-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

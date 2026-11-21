@@ -1127,6 +1127,27 @@ typedef void (*ReportAudioEventFn)(void*, int, float, float);
 static uintptr_t UT_LibBase(const char* libName);
 static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, const char* name);
 
+// v1.9.20 (Daniel): volcado hex para encontrar la variable de EMISORA.
+// El log de la 1.9.19 probo que EMISORA NO lee los getters ni mgr+0xAD/0xE9:
+// en CSR (8) todo decia 8 (audio=8 track=8 rueda=8) y EMISORA mostraba
+// K-DST (3, la ultima elegida EN EL MENU). La emisora del menu vive en otra
+// variable (ajustes/frontend). Este volcado la busca: se vuelcan
+// RadioSelection, TrackManager, AudioEngine y FrontEndMenuManager al abrir
+// el dial; comparando dos aperturas (p. ej. en 8 y en 7) el byte que se
+// queda en 3 es la del menu y el que cambia es la real.
+static void* ut_menuManager = nullptr;
+static void UT_DumpHex(const char* tag, const void* ptr, size_t n) {
+    if (!ptr) { Log("UT: dump %s: NULL", tag); return; }
+    const unsigned char* b = (const unsigned char*)ptr;
+    for (size_t off = 0; off < n; off += 16) {
+        char line[96]; int w = 0;
+        w += snprintf(line + w, sizeof(line) - (size_t)w, "UT: dump %s +%02zx:", tag, off);
+        for (size_t i = 0; i < 16 && off + i < n; i++)
+            w += snprintf(line + w, sizeof(line) - (size_t)w, " %02x", b[off + i]);
+        Log("%s", line);
+    }
+}
+
 // v1.9.11 (Alex 1.8.4, RE2): silenciar la musica nativa de la 12.
 // CAEAudioHardware::StartTrackPlayback es lo que EMPIEZA la pista nativa
 // (PlayTrack solo la encola). Con User Tracks sonando y las puertas del
@@ -1214,6 +1235,12 @@ static void UT_RadioSelectionCtor_hook(void* self) {
                 m[0xE9] = (unsigned char)cur;
             }
         }
+        // v1.9.20: volcado para encontrar la variable de EMISORA (la del
+        // menu, que se quedo en 3 mientras la real es 8). Solo diagnostico.
+        UT_DumpHex("RadioSelection", self, 0xA0);
+        UT_DumpHex("TrackManager", g_trackManager, 0x100);
+        UT_DumpHex("AudioEngine", g_audioEngine, 0x80);
+        UT_DumpHex("FrontEndMenuManager", ut_menuManager, 0x100);
     }
 }
 
@@ -1553,6 +1580,13 @@ static void UT_InstallHooks() {
         }
         // v1.9.11 (Alex 1.8.4, RE2): menu Mixtape sin crash — el ctor de
         // RadioSelection asigna radio_TPLAYER y luego los parches del menu.
+        {   // v1.9.20: FrontEndMenuManager (el sistema de menus; ahi puede
+            // vivir la emisora que muestra EMISORA). Para el volcado.
+            uintptr_t mm = aml->GetSym(h, "FrontEndMenuManager");
+            if (!mm) mm = aml->GetSym(h, "_ZN13CMenuManager18FrontEndMenuManagerE");
+            if (mm) { ut_menuManager = *(void**)mm; Log("UT: FrontEndMenuManager ok (%p)", ut_menuManager); }
+            else Log("UT: FrontEndMenuManager no resolvio (sin volcado del menu)");
+        }
         ut_getTexture = (GetTextureFn)aml->GetSym(h, "_ZN22TextureDatabaseRuntime10GetTextureEPKc");
         if (!ut_getTexture) {
             Log("UT: TextureDatabaseRuntime::GetTexture no resolvio (sin menu Mixtape, sin crash)");
