@@ -913,7 +913,6 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         // audio, se revierte a 13 (build #9 probo que 13 silencia de verdad).
         Log("UT: 12 -> nativa 12 (Mixtape; la musica la pone el reproductor)");
         ut_origStartRadio(trackMgr, 12, a2, a3, a4);
-        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return;
     }
     // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
@@ -931,13 +930,10 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
         ut_origStartRadio(trackMgr, 12, a2, a3, a4);  // v1.9.7: nativa a 12 (Mixtape) con StopRadio
-        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return;
     }
-    bool wasUT = ut_active;  // v1.9.8: si se sale de la 12 por la rueda, cortar la nativa 12 antes de la nueva
     if (ut_active) UT_Stop("cambio de estacion");
     g_current = station;
-    if (wasUT && ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
     ut_origStartRadio(trackMgr, station, a2, a3, a4);
 }
 
@@ -982,7 +978,6 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
-        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return 12;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -992,7 +987,6 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         Log("UT: se queda en la 12 al subir al vehiculo (AudioRetune pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
-        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1034,7 +1028,6 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         }
         Log("UT: 12 por AudioEngine::StartRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
-        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -1044,7 +1037,6 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         Log("UT: se queda en la 12 al subir al vehiculo (AudioStart pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
-        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1065,7 +1057,6 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
         Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
-        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return 12;
     }
     // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
@@ -1076,7 +1067,6 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         Log("UT: se queda en la 12 al subir al vehiculo (RetuneRadio pedia %d)", (int)station);
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
         if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
-        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1104,6 +1094,21 @@ static ReportAudioEventFn ut_origReportAudioEvent = nullptr;
 static void UT_ReportAudioEvent_hook(void* engine, int eventId, float a, float b) {
     if (eventId == 0x22 && ut_active) return;  // estatica de sintonia: no suena con User Tracks
     if (ut_origReportAudioEvent) ut_origReportAudioEvent(engine, eventId, a, b);
+}
+
+// v1.9.9 (Alex 1.8.4, HookOf_FrontendAddAudioEvent 0x74b08): SEGUNDO bloqueo
+// de la estatica 0x22. El juego tambien dispara la estatica por
+// CAEFrontendAudioEntity::AddAudioEvent (la entidad de audio), no solo por
+// CAudioEngine::ReportFrontendAudioEvent; nuestro unico bloqueo no la veia
+// y por eso seguia la estatica. Misma firma (void, int, float, float) y
+// misma logica: tragar 0x22 si suena el reproductor. El flag de reentrancia
+// (ut_audioReentrant) es como el 0xa3c30 de Alex: nuestras propias llamadas
+// pasarian; nosotros no disparamos eventos, asi que queda en 0.
+static bool ut_audioReentrant = false;
+static ReportAudioEventFn ut_origFrontendAddAudio = nullptr;
+static void UT_FrontendAddAudioEvent_hook(void* entity, int eventId, float a, float b) {
+    if (eventId == 0x22 && ut_active && !ut_audioReentrant) return;  // estatica por la entidad de audio
+    if (ut_origFrontendAddAudio) ut_origFrontendAddAudio(entity, eventId, a, b);
 }
 
 // ---- ocultar los botones del juego con la rueda abierta (v1.9) ----
@@ -1154,6 +1159,11 @@ static void UT_ApplyStation12Patches() {
     if (!base) { Log("UT: parches 12: sin base de libGTASA"); return; }
     UT_Patch32(base + 0x47c9f8, 0x7100313F, 0x7103FD1F, "menu 12");
     UT_Patch32(base + 0x47f3ac, 0x7100311F, 0x7103FC1F, "salto 12");
+    // v1.9.9 (Alex 1.8.4, RadioSelection ctor): "12-slot menu patches" - la
+    // pantalla de seleccion de radio pasa a manejar 12 huecos; sin estos el
+    // menu de pausa no muestra Mixtape. Con chequeo de valor igual que los de arriba.
+    UT_Patch32(base + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
+    UT_Patch32(base + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
 }
 
 // Instala el hook de StartRadio (se llama en Init, con los simbolos ya resueltos).
@@ -1341,6 +1351,14 @@ static void UT_InstallHooks() {
             Log("UT: hook ReportFrontendAudioEvent %s", ut_origReportAudioEvent ? "ok (sin estatica 0x22 con User Tracks)" : "no se pudo instalar (puede quedar estatica)");
         } else {
             Log("UT: ReportFrontendAudioEvent no resolvio (puede quedar estatica)");
+        }
+        // v1.9.9 (Alex 1.8.4): SEGUNDO bloqueo 0x22 por la entidad de audio.
+        uintptr_t fae = aml->GetSym(h, "_ZN22CAEFrontendAudioEntity13AddAudioEventEiff");
+        if (fae) {
+            aml->Hook((void*)fae, (void*)UT_FrontendAddAudioEvent_hook, (void**)&ut_origFrontendAddAudio);
+            Log("UT: hook CAEFrontendAudioEntity::AddAudioEvent %s", ut_origFrontendAddAudio ? "ok (sin estatica 0x22 por la entidad)" : "no se pudo instalar (puede quedar estatica)");
+        } else {
+            Log("UT: CAEFrontendAudioEntity::AddAudioEvent no resolvio (sin segundo bloqueo 0x22)");
         }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
         if (dn) {

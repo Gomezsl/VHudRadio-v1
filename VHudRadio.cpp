@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.8-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.9-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,24 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.9: COMO ALEX 1.8.4 — SEGUNDO BLOQUEO 0x22 + PARCHES DEL MENU + SIN STOPRADIO-DESPUES (Daniel, SAUserTracks 1.8.4)
+// - Desarme del 1.8.4 de Alex (informe en files/SAUserTracks-1.8.4-RE.md):
+//   Mixtape se activa por StartRadio(12), RetuneRadio(12) y el preview de
+//   CheckForStationRetune; la nativa NUNCA se redirige a 13; el "< Mixtape >"
+//   del HUD lo dibuja el propio mod con CFont (no es del juego); M4A es
+//   MediaCodec sin codigo especifico (nuestro BASS ya lo cubre).
+// - StopRadio: Alex lo llama SOLO ANTES de StartRadio(12) (en RetuneRadio)
+//   y NUNCA DESPUES. Nuestro 1.9.8 lo llamaba despues en los 4 hooks y el
+//   log lo probo: resetea la nativa a 13. QUITADO (los 8 + el wasUT al
+//   salir por la rueda). La nativa se queda en 12.
+// - Doble audio/estatica: Alex tiene DOS bloqueos 0x22 —
+//   CAudioEngine::ReportFrontendAudioEvent Y
+//   CAEFrontendAudioEntity::AddAudioEvent. Nosotros solo teniamos el
+//   primero; la estatica sale por la entidad de audio. Anadido el segundo
+//   (UT_FrontendAddAudioEvent_hook, con flag de reentrancia como Alex).
+// - Menu de pausa Mixtape: faltaban los 2 "12-slot menu patches" de Alex
+//   (0x364628 cmp x15,#46->#50; 0x3646E0 cmp w1,#48->#52), con chequeo de
+//   valor, en UT_ApplyStation12Patches (ahora son 4 parches).
 // v1.9.8: LISTA SIN TRASPASAR + STOPRADIO DESPUES DE LA NATIVA 12 (Daniel, log 1.9.7 + captura)
 // - Lista: la primera fila traspasaba el encabezado (se veia "Darkside" encima
 //   de "LISTA DE CANCIONES"). Causa: las filas se dibujaban con la draw list
@@ -724,9 +742,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.8-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.9-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.8-beta"
+#define VHUDRADIO_VERSION "1.9.9-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
