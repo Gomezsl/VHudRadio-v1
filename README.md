@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.9.1-beta
+# VHud Radio Wheel v1.9.2-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -18,7 +18,7 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 - Los iconos van INCRUSTADOS en el .so (no hace falta ninguna carpeta): los 28 PNG (14 normales + 14 a color) están dentro del .so en base64 y se cargan de memoria al arrancar. La carpeta `VHudRadio/radio/` (y `VHudRadio/radio_color/` para los de color) es opcional: solo sirve para reemplazar un icono por uno propio. Si el PNG está en la carpeta, manda el de la carpeta; si no, se usa el incrustado. El log dice de dónde salió cada icono ("archivo" o "en el .so").
 - **Blur gaussiano de verdad:** el desenfoque del fondo ahora es un blur gaussiano (shader separable, como el de Void Radio Wheel Expanded): al 100% ya no se ven los cuadros/pixeles, sale suave. Antes era solo bajar la imagen, que al 100% se pixeleaba.
 - **Sin estática al cambiar con la radio original:** el juego cambia de emisora con RetuneRadio (no con StartRadio) cuando se usa su radio original; ahora ese cambio también se engancha (como SAUserTracks de Alex: StopRadio para cortar la anterior y luego StartRadio con 12), así la estática del cambio ya no se queda sonando junto a la música.
-- **Mixtape en el menú de pausa:** la emisora nativa queda en la 12 (Mixtape) en vez de en Radio Off, así el menú de pausa (Configuración del sonido > Emisora) ya no marca Radio Off cuando suena User Tracks.
+- **Mixtape en el menú de pausa:** la emisora nativa queda en Radio Off (13) para que no suene doble audio; el menú de pausa marca Radio Off cuando suena User Tracks. Que el menú muestre Mixtape en vez de Radio Off sigue pendiente (hay que encontrar el campo que lee el menú).
 - **Sin estática (bloqueo 0x22):** la estática de sintonía del juego (evento 0x22) se bloquea mientras suena User Tracks, como hace SAUserTracks de Alex. Es lo que se oía como "doble audio" junto a la música, sobre todo al cambiar con la radio original.
 - **Botones del juego ocultos con la rueda abierta:** mientras la rueda, el panel o la lista de canciones están abiertos, los botones del HUD del juego no se dibujan (como el Void Radio Wheel); al cerrar la rueda vuelven. Si el juego no deja enganchar esa función, simplemente no se ocultan (sin riesgo).
 

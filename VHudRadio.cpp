@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.1-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.2-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,18 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.2: NATIVA DE VUELTA A 13 (Daniel, log 1.9.1: "no solucionaste nada")
+// - La 1.9.0 y la 1.9.1 probaron que la nativa en 12 SI suena: doble audio
+//   (la emisora anterior por debajo) + estatica, aunque el diagnostico diga
+//   "nativa 12" y aunque el evento 0x22 este bloqueado. La 12 no es silencio
+//   para el juego (no existe para el: no hay audio nativo de User Tracks y
+//   el motor no la apaga). Solo Radio Off (13) la silencia de verdad, como
+//   en el build #9. Se revierte: StartRadio y RetuneRadio vuelven a pedir
+//   13. El menu de pausa marcara Radio Off: es el precio de que no suene
+//   doble. El bloqueo de estatica 0x22 se mantiene (por si ayuda al cambiar).
+// - Botones: los 5 nombres de CTouchInterface NO existen en 2.10 (log 1.9.1:
+//   todos "no"). Los botones se dibujan por otro mecanismo; queda pendiente
+//   encontrarlo (sonda del struct del widget). Esta version NO los oculta.
 // v1.9.1: SIN ESTATICA 0x22 + SONDEO DE BOTONES (Daniel, log 1.9.0)
 // - El "doble audio" de la 1.9.0 NO era la emisora anterior: era la estatica
 //   de sintonia (evento 0x22) sonando junto a la musica. SAUserTracks la
@@ -603,9 +615,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.1-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.2-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.1-beta"
+#define VHUDRADIO_VERSION "1.9.2-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1222,11 +1234,11 @@ static void DoStartRadio(int id) {
     else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
     else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
     // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
-    // v1.9: en la 12 la nativa queda en 12 (Mixtape) por diseno, asi que la
-    // lectura esperada es la 12. (En modoCambio=2 la llamada va por
+    // v1.9.2: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que
+    // la lectura esperada es 13. (En modoCambio=2 la llamada va por
     // CAudioEngine::StartRadio; si esa via no pasa por el hook del
     // reproductor, la 12 no sonara: usar modo 0 o 1.)
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
 }
 static void ApplyStation(int id) {
     if (id < 1 || id > 13) return;

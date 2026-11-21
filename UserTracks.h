@@ -886,13 +886,14 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook 12)"); }
         UT_Start();
         g_current = 12;
-        // v1.9: como SAUserTracks (Alex): la nativa queda en la 12. No hay
-        // audio nativo de User Tracks en Android, asi que es silencio, y el
-        // menu de pausa muestra Mixtape/User Tracks en vez de Radio Off.
-        // Antes se pedia 13 para silenciarla, pero eso hacia que el menu
-        // marcara Radio Off y la estatica del cambio se quedara sonando.
-        Log("UT: 12 -> nativa 12 (Mixtape; la musica la pone el reproductor)");
-        ut_origStartRadio(trackMgr, 12, a2, a3, a4);
+        // v1.9.2: REVERTIDO a 13. La 1.9.0/1.9.1 probo que la nativa en 12 SI
+        // suena: la emisora anterior por debajo (doble audio) + estatica,
+        // aunque el diagnostico diga "nativa 12". La 12 no es silencio para
+        // el juego (no existe para el). Solo Radio Off (13) la silencia de
+        // verdad (build #9). El menu de pausa marcara Radio Off: es el precio
+        // de que no suene doble. La estatica 0x22 se sigue bloqueando aparte.
+        Log("UT: 12 -> nativa 13 (Radio Off; la musica la pone el reproductor)");
+        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
         return;
     }
     // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
@@ -909,7 +910,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         ut_pausedByExit = false;
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
-        ut_origStartRadio(trackMgr, 12, a2, a3, a4);  // v1.9: nativa a la 12 (Mixtape), no a 13
+        ut_origStartRadio(trackMgr, 13, a2, a3, a4);  // v1.9.2: nativa a 13 (silencio), no a 12
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -941,8 +942,8 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         UT_Start();
         g_current = 12;
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
-        Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
-        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);
+        Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 13)");
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 13, 0, 1.0f, 0);  // v1.9.2: nativa a 13 (silencio)
         return 12;
     }
     // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
@@ -952,7 +953,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (RetuneRadio pedia %d)", (int)station);
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
-        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 13, 0, 1.0f, 0);  // v1.9.2: nativa a 13 (silencio)
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");
