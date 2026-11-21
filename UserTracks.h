@@ -1606,6 +1606,36 @@ static uint32_t UT_GetUppercaseKey_hook(const char* key) {
     return 0;
 }
 
+// v1.9.40: CText::Get — EL VERDADERO CAMINO DEL NOMBRE EMISORA.
+// La 1.9.38/1.9.39 probaron que GetUppercaseKey NUNCA se llama con una
+// clave de emisora (0 lineas [texto]): CText::Get NO lo usa. Desensamblado
+// de SettingSelection::Render (0x361c3c): la fila lee MS+0x240, calcula
+// array[current-min] (elementos de 8 bytes = punteros char*) y llama
+// CText::Get(clave) en 0x361d98 (PLT 0x219730 -> _ZN5CText3GetEPKc,
+// definida en libGTASA+0x66db9c). Se engancha DIRECTO y se redirige la
+// clave a la de la emisora de la rueda mientras las opciones de sonido
+// estan abiertas (pausa en vivo y sin dial).
+typedef char* (*CTextGetFn)(void*, const char*);
+static CTextGetFn ut_origCTextGet = nullptr;
+static char* UT_CTextGet_hook(void* self, const char* key) {
+    if (key && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
+        bool pausedLive = (g_userPause && *g_userPause) || (g_codePause && *g_codePause);
+        if (pausedLive && !ut_inAudioMenu) {
+            const char* target = UT_FEAKeyForStation(g_current);
+            if (target && strcmp(key, target) != 0 && ut_origCTextGet) {
+                static int redirLogs = 0;
+                if (redirLogs < 20) {
+                    redirLogs++;
+                    Log("UT: [texto] EMISORA \"%s\" -> \"%s\" (rueda=%d)", key, target, g_current);
+                }
+                return ut_origCTextGet(self, target);
+            }
+        }
+    }
+    if (ut_origCTextGet) return ut_origCTextGet(self, key);
+    return nullptr;
+}
+
 static ReportAudioEventFn ut_origReportAudioEvent = nullptr;
 static void UT_ReportAudioEvent_hook(void* engine, int eventId, float a, float b) {
     if (eventId == 0x22 && ut_active) return;  // estatica de sintonia: no suena con User Tracks
@@ -1966,6 +1996,15 @@ static void UT_InstallHooks() {
                 Log("UT: hook CKeyGen::GetUppercaseKey %s", ut_origGetUppercaseKey ? "ok (EMISORA con nombre de User Tracks)" : "no se pudo instalar (EMISORA dira Radio Off)");
             } else {
                 Log("UT: CKeyGen::GetUppercaseKey no resolvio (EMISORA dira Radio Off)");
+            }
+            // v1.9.40: CText::Get — la fila EMISORA resuelve su nombre aqui
+            // (Render llama CText::Get(clave) y NO pasa por GetUppercaseKey).
+            uintptr_t ct = aml->GetSym(h, "_ZN5CText3GetEPKc");
+            if (ct) {
+                aml->Hook((void*)ct, (void*)UT_CTextGet_hook, (void**)&ut_origCTextGet);
+                Log("UT: hook CText::Get %s", ut_origCTextGet ? "ok (EMISORA por texto directo)" : "no se pudo instalar");
+            } else {
+                Log("UT: CText::Get no resolvio (EMISORA por texto no disponible)");
             }
         }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
