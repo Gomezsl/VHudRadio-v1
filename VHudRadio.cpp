@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.11-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.12-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,22 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.12: MIXTAPE SUENA DESDE OPCIONES DE SONIDO + EMISORA CON NOMBRE (Alex 1.8.4, informe SAUserTracks-1.8.4-RE3.md)
+// - El tap en el dial SI llega por RetuneRadio (TrackManager), pero el
+//   juego esta en pausa (m_UserPause) y UT_Frame pausaba el reproductor:
+//   silencio. Alex tiene una rama "menu preview" que (re)arranca su
+//   reproductor con el menu abierto. Aqui: flag ut_inAudioMenu (true en el
+//   ctor de RadioSelection, false en el dtor) y ut_menuPreview (true al
+//   elegir la 12 en el menu, false en UT_Stop y en el dtor); UT_Frame
+//   salta la pausa por m_UserPause mientras ut_menuPreview. Al cerrar el
+//   menu, UT_Frame vuelve a pausar. La nativa sigue suprimida por
+//   StartTrackPlayback (el preview suena SOLO por nuestro reproductor).
+// - EMISORA: el juego busca la clave GXT "FEA_NON" (Radio Off) para la 12.
+//   Hook a CKeyGen::GetUppercaseKey: con Mixtape sonando, "FEA_NON"
+//   devuelve el hash de "FEA_MP3" (0x9109b7c1, JAMCRC verificado) y el
+//   menu muestra el nombre propio del juego para User Tracks; "FEA_MP3"
+//   devuelve lo mismo (identidad); "SAMP_AUDIO_HINT" devuelve 0x93516cf0
+//   (valor de Alex, hash no identificado, se copia tal cual).
 // v1.9.11: SILENCIAR LA NATIVA 12 + MENU MIXTAPE SIN CRASH (Alex 1.8.4, informe SAUserTracks-1.8.4-RE2.md)
 // - DOBLE AUDIO: la nativa 12 reproduce SUS PROPIOS User Tracks
 //   (PlayTrack encola la pista, StartTrackPlayback la empieza). Alex lo
@@ -775,9 +791,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.11-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.12-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.11-beta"
+#define VHUDRADIO_VERSION "1.9.12-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

@@ -195,6 +195,8 @@ static int ut_orderPos = 0;
 static bool ut_random = true;                // aleatorio por defecto, como SAUserTracks
 static bool ut_active = false;               // estacion 12 sonando
 static bool ut_playbackDisabled = false;  // v1.9.11: PlayTrack lo pone si a2 == -1 (puerta de StartTrackPlayback)
+static bool ut_inAudioMenu = false;  // v1.9.12: la pantalla de seleccion de radio (opciones de sonido) esta construida
+static bool ut_menuPreview = false;  // v1.9.12: preview de Mixtape en el menu (suena aunque el juego este en pausa)
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
 static bool ut_pausedByExit = false;         // v1.7: pausado al bajar del auto (se reanuda al subir, sin reiniciar ni cortar)
 static std::chrono::steady_clock::time_point ut_resumeAt{};  // v1.8: momento de la reanudacion (gracia de 2 s contra el Radio Off del juego)
@@ -838,6 +840,7 @@ static void UT_Stop(const char* reason) {
     ut_pausedDev = false;
     ut_decPaused = false;
     ut_pausedByExit = false;  // v1.7: al parar de verdad no queda pausa pendiente
+    ut_menuPreview = false;  // v1.9.12: al parar se acabo el preview
     Log("UT: parado (%s; underruns=%d)", reason ? reason : "?", ut_underruns);
 }
 
@@ -860,7 +863,7 @@ static void UT_Frame() {
         ut_resumeAt = std::chrono::steady_clock::now();  // v1.8: gracia de 2 s (el juego pide Radio Off DESPUES de esto)
         Log("UT: reanudado al subir al vehiculo");
     }
-    bool paused = g_paused || (ut_loadingActive && *ut_loadingActive) || ut_pausedByExit;
+    bool paused = (g_paused && !ut_menuPreview) || (ut_loadingActive && *ut_loadingActive) || ut_pausedByExit;  // v1.9.12: en el menu (preview) suena aunque el juego este en pausa
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();
     if (!ut_diagDone && now - ut_startedAt > std::chrono::seconds(3)) {
@@ -896,6 +899,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook 12)"); }
         bool utWasActive = ut_active;
         UT_Start();
+        ut_menuPreview = ut_inAudioMenu;  // v1.9.12: si se eligio en el menu, preview (suena en pausa)
         g_current = 12;
         // v1.9.3 (Claude): si se viene de otra emisora (K-Rose, etc.), cortarla con
         // StopRadio ANTES de poner la nativa en 13, igual que ya hace el hook
@@ -976,6 +980,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         }
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook AudioRetune 12)"); }
         UT_Start();
+        ut_menuPreview = ut_inAudioMenu;  // v1.9.12: si se eligio en el menu, preview (suena en pausa)
         g_current = 12;
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 12)");
@@ -1023,6 +1028,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook AudioStart 12)"); }
         bool utWasActive = ut_active;
         UT_Start();
+        ut_menuPreview = ut_inAudioMenu;  // v1.9.12: si se eligio en el menu, preview (suena en pausa)
         g_current = 12;
         if (!utWasActive && ut_active && ut_stopRadio && g_trackManager) {
             ut_stopRadio(g_trackManager, nullptr, 0);
@@ -1055,6 +1061,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         }
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook RetuneRadio 12)"); }
         UT_Start();
+        ut_menuPreview = ut_inAudioMenu;  // v1.9.12: si se eligio en el menu, preview (suena en pausa)
         g_current = 12;
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
         Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
@@ -1144,11 +1151,40 @@ static void UT_RadioSelectionCtor_hook(void* self) {
     *(volatile uint32_t*)((uintptr_t)tex + 0x64) += 1;  // refcount+1
     *(volatile void**)((uintptr_t)self + 0x80) = tex;   // RadioSelection+0x80
     Log("UT: radio_TPLAYER asignada en RadioSelection+0x80");
+    ut_inAudioMenu = true;  // v1.9.12: el menu de seleccion de radio existe (preview posible)
     if (!ut_menuPatchesDone) {
         ut_menuPatchesDone = true;
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
     }
+}
+
+// v1.9.12 (Alex 1.8.4, RE3): destructor de RadioSelection — al cerrar el
+// menu se acabo el preview (UT_Frame vuelve a pausar, el juego sigue en pausa).
+typedef void (*RadioSelectionDtorFn)(void*);
+static RadioSelectionDtorFn ut_origRadioSelectionDtor = nullptr;
+static void UT_RadioSelectionDtor_hook(void* self) {
+    ut_inAudioMenu = false;
+    ut_menuPreview = false;
+    if (ut_origRadioSelectionDtor) ut_origRadioSelectionDtor(self);
+}
+
+// v1.9.12 (Alex 1.8.4, RE3): CKeyGen::GetUppercaseKey — el nombre EMISORA.
+// El juego busca la clave "FEA_NON" (Radio Off) para la emisora 12; con
+// Mixtape sonando, devolver el hash de "FEA_MP3" (0x9109b7c1, JAMCRC
+// verificado) para que muestre el nombre propio del juego para User Tracks
+// en lugar de "RADIO OFF". "SAMP_AUDIO_HINT" se redirige a 0x93516cf0
+// (valor de Alex, hash no identificado; se copia tal cual).
+typedef uint32_t (*GetUppercaseKeyFn)(const char*);
+static GetUppercaseKeyFn ut_origGetUppercaseKey = nullptr;
+static uint32_t UT_GetUppercaseKey_hook(const char* key) {
+    if (key) {
+        if (strcmp(key, "FEA_MP3") == 0) return 0x9109b7c1;  // identidad (JAMCRC de FEA_MP3)
+        if (ut_active && strcmp(key, "FEA_NON") == 0) return 0x9109b7c1;  // Radio Off -> nombre de User Tracks
+        if (strcmp(key, "SAMP_AUDIO_HINT") == 0) return 0x93516cf0;  // hint del menu (valor de Alex)
+    }
+    if (ut_origGetUppercaseKey) return ut_origGetUppercaseKey(key);
+    return 0;
 }
 
 static ReportAudioEventFn ut_origReportAudioEvent = nullptr;
@@ -1453,6 +1489,22 @@ static void UT_InstallHooks() {
                 Log("UT: hook AudioScreen::RadioSelection %s", ut_origRadioSelectionCtor ? "ok (menu Mixtape con textura)" : "no se pudo instalar (sin menu Mixtape)");
             } else {
                 Log("UT: AudioScreen::RadioSelection no resolvio (sin menu Mixtape)");
+            }
+            // v1.9.12 (Alex 1.8.4, RE3): destructor — al cerrar el menu se acaba el preview.
+            uintptr_t rsd = aml->GetSym(h, "_ZN11AudioScreen14RadioSelectionD2Ev");
+            if (rsd) {
+                aml->Hook((void*)rsd, (void*)UT_RadioSelectionDtor_hook, (void**)&ut_origRadioSelectionDtor);
+                Log("UT: hook AudioScreen::RadioSelectionDtor %s", ut_origRadioSelectionDtor ? "ok" : "no se pudo instalar");
+            } else {
+                Log("UT: AudioScreen::RadioSelectionDtor no resolvio");
+            }
+            // v1.9.12 (Alex 1.8.4, RE3): nombre EMISORA — FEA_NON -> FEA_MP3 con Mixtape sonando.
+            uintptr_t kg = aml->GetSym(h, "_ZN7CKeyGen15GetUppercaseKeyEPKc");
+            if (kg) {
+                aml->Hook((void*)kg, (void*)UT_GetUppercaseKey_hook, (void**)&ut_origGetUppercaseKey);
+                Log("UT: hook CKeyGen::GetUppercaseKey %s", ut_origGetUppercaseKey ? "ok (EMISORA con nombre de User Tracks)" : "no se pudo instalar (EMISORA dira Radio Off)");
+            } else {
+                Log("UT: CKeyGen::GetUppercaseKey no resolvio (EMISORA dira Radio Off)");
             }
         }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
