@@ -1,4 +1,7 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.0.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.1.0-beta.
+// v1 1.1.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
+// TODAS las funciones de la 2.59 (interruptores, blur FBO, bloquear juego,
+// modoCambio, iconos en circulo). Base: VHudRadio.cpp 2.59.0-beta.
 // Repo aparte: Gomezsl/VHudRadio-aml-mod. ARCX no se toca.
 // Idea: v-hud de PC leia los iconos de VHud\radio\radio_1..13.png sin importarlos.
 // Aqui igual: el plugin lee radio_1.png ... radio_13.png de files del juego (vhud/radio/),
@@ -13,10 +16,8 @@
 // v2.29: ICONOS INCRUSTADOS EN EL .SO (YA NO HACE FALTA LA CARPETA)
 // - Los 28 PNG (14 normales + 14 a color) van dentro del .so en base64
 //   (icons_embedded.h, generado por script). Al arrancar se cargan de
-//   memoria con stb_image; la carpeta (radio/ o radio_color/) ya es
-//   opcional: solo sirve para reemplazar un icono por uno propio. Si el
-//   PNG no esta en la carpeta, se usa el incrustado. El log dice de donde
-//   salio cada icono ("archivo" o "en el .so"). El .so crece ~0.5 MB.
+//   memoria con stb_image (v2.55: solo incrustados, sin carpeta). El log dice
+//   de donde salio cada icono ("en el .so"). El .so crece ~0.5 MB.
 // v2.28: DOS JUEGOS DE ICONOS (NORMALES Y A COLOR) CON INTERRUPTOR
 // - Las emisoras tienen dos versiones: las normales (blancas, de radio/) y
 //   las de color (de radio_color/). Un interruptor en el panel ("Iconos de las
@@ -47,6 +48,101 @@
 //   volvia a su mismo lugar. Ahora al soltar el dedo se olvida el valor
 //   guardado (savedPtr = nullptr), asi que solo se restaura durante el
 //   mismo arrastre que empezo en esa barra.
+// v2.50: EL DOBLE TOQUE AL BOTON MUEVE LAS BARRAS + PANEL MEJOR ORDENADO
+// - La 2.49 no basto: con solo el boton visible no se dibuja ImGui y los
+//   toques del doble toque se acumulan en la cola de entrada; al abrir el
+//   panel se procesan todos en su primer cuadro (MouseClicked en true) y
+//   activan barras/botones. Ahora los toques solo llegan a ImGui con la
+//   rueda, la vista previa o el panel abiertos; con solo el boton, no se
+//   alimentan (la logica del boton/rueda/claxon es del juego y sigue igual).
+// - Panel mejor ordenado (como ARCX): mas espacio entre controles, controles
+//   mas altos al tacto y dos secciones con titulo (Rueda de radio / Boton
+//   flotante).
+// v2.51: OPTIMIZACIONES LIGERAS (del chat de Claude, verificadas)
+// - Logs de diagnostico apagados: cada Log() hace fopen/fclose sobre
+//   Android/data (ruta lenta) y en cada entrada a un vehiculo se escribian
+//   el volcado hex + el escaneo ptrCand (mincore por candidato) + rt/rid.
+//   Ya cumplieron su funcion: la entidad de audio (0x458/0x1B0) y el modelo
+//   en 0x32 se conocen, y el bloqueo usa la lista de modelos, no el escaneo.
+//   Se quitan: ptrCand, volcado hex, rt/rid, MenuSnapCheck, la escala leida
+//   cada segundo y el log por toque. Los logs importantes quedan (version,
+//   simbolos, iconos, cambios de estacion, panel, errores).
+// - eglQuerySurface cacheado: antes 2 llamadas por cuadro; ahora una vez y
+//   cada 120 cuadros (por si gira la pantalla).
+// - glGetUniformLocation cacheado en GLBtnInit: antes 2 por cuadro.
+// - imgui_demo.cpp quitado del Android.mk (no se usa).
+// - NO se toco la camara lenta (el desarmado probo que SAUserTracks nunca lee
+//   la escala de tiempo) ni el guardado de estado GL del boton (la 2.33 puso
+//   la pantalla en negro por no guardarlo).
+// v2.52: PARCHE DE SONIDO (de Claude, verificado contra el codigo)
+// - El reproductor OpenSL de los clics quedaba en PLAYING para siempre con
+//   la cola vacia (SoundInit lo ponia en PLAYING y nunca se paraba). Eso
+//   deja una pista activa en el mezclador de Android mientras SAUserTracks
+//   reproduce la suya, y el motor se creaba en el hilo de render justo al
+//   cambiar a User Track (el primer clic). Hipotesis sin medir, pero el
+//   codigo del parche es correcto y no quita funciones.
+// - Ahora el reproductor esta en PAUSED y solo pasa a PLAYING mientras suena
+//   el clic; todas las llamadas OpenSL van a un hilo aparte (SoundWorker).
+//   El clic suena igual. Si OpenSL falla, no pasa nada (g_soundOk = false).
+// - Ojo: la prueba limpia (5 mods, 2.47) tenia este reproductor y la musica
+//   sonaba bien, asi que por si solo no es la causa; solo pesaria con el
+//   telefono ya saturado (carga acumulada de los 44 mods). El telefono dira.
+// v2.53: FUNCIONES PEDIDAS EN DISCORD (dotexe + Rehan, bien hechas)
+// - Ocultar ventana de emisora: interruptor + hook a DisplayRadioStationName.
+// - Ocultar genero: interruptor; quita el genero del centro, la etiqueta y
+//   el boton GL; el nombre queda centrado.
+// - Fondo de color del icono: interruptor + color (muestra nueva, objetivo 3
+//   del selector RGB); circulo de color detras de cada icono de la rueda.
+// - Animacion al abrir: la rueda crece 0.85->1.0 y se funde en 150 ms.
+// - (v2.55: los iconos personalizados de carpeta se quitaron por peticion
+//   de Daniel; solo van los incrustados en el .so.)
+// - NO se hace el blur (muy caro en el A14) ni sonidos/textos propios ni
+//   ocultar botones del juego (arriesgado sin probar).
+// v2.54: CORRECCIONES a la 2.53 (prueba de Daniel, log VHudRadioLog_2_rlyz.txt)
+// - Recuadro del boton: se oculta ENTERO (fondo+estacion+genero) si el genero
+//   esta apagado o si esta activa "Ocultar ventana de emisora" (ImGui y GL).
+// - Fondo de icono: los PNG traen negro opaco de fondo; se vuelve transparente
+//   el negro casi puro al cargar (LoadPngFromMemory), asi el color se ve.
+// - Animacion: el inicio se guarda al abrir (global), no en DrawWheel (que no
+//   se llama con solo el boton); 250 ms y desde 0.75 para que siempre se vea.
+// - Iconos propios: LoadRadioTextures se llama cada cuadro (antes solo una
+//   vez al inicio), asi al apagar/encender vuelven a cargar.
+// v2.55: QUITAR iconos personalizados (carpeta) por peticion de Daniel (evitar
+// iconos mal posicionados/errores): solo van los incrustados en el .so. El
+// fondo de color solo quita el negro cuando esta ACTIVADO (apagado = negro
+// normal de siempre); el boton recupera su disco negro detras del icono; los
+// interruptores se acomodan en su seccion (rueda / boton).
+// v2.56: "Ocultar ventana de emisora" pasa a la seccion Boton flotante (la
+// ventana es la etiqueta del boton). Iconos en CIRCULO (AddImageRounded y
+// disco en GL) para que no se note el cuadrado. Blur de fondo con barra
+// (experimental): copia del framebuffer dibujada 5 veces con desplazamiento,
+// antes del fondo oscuro; 0 = apagado (por defecto).
+// v2.57: blur DE VERDAD por reduccion en FBO (la 2.56 no se notaba: solo
+// 12 px de desplazamiento). Desactivar camara y botones del juego con la
+// rueda abierta (interruptor bloquearJuego, por defecto activado).
+// v2.58 PRUEBA (sin clics): PlayClick devuelve de inmediato, sin crear la
+// salida OpenSL del mod. Prueba de Claude: si con esta build nunca falla al
+// cambiar a User Tracks por la rueda (15-20 veces, reiniciando el juego),
+// el culpable es la salida de audio del mod; si sigue fallando, el audio
+// queda descartado y se prueba la forma de llamar a StartRadio.
+// v2.58 FALLO al 2o intento -> audio DESCARTADO. v2.59: 3 modos de cambio
+// (INI modoCambio: 0 = actual por CAERadioTrackManager::StartRadio;
+// 1 = esperar 3 cuadros con la rueda cerrada antes de llamar a StartRadio;
+// 2 = por CAudioEngine::StartRadio). Clics restaurados (el audio no era).
+// - Interruptores: solo se activan tocando la pastilla, no toda la fila azul.
+// v2.49: EL PANEL DEJA TOCAR LOS BOTONES DEL JUEGO DE DETRAS + BARRAS QUE SE MUEVEN
+// - Touch_hook solo observaba: todos los toques llegaban al juego Y a ImGui.
+//   Ahora cada toque pertenece al panel (si cae dentro al bajar el dedo) o al
+//   juego (si cae fuera): los del panel no llegan al juego (no se pulsa
+//   bajarse ni se mueve la camara detras del panel) y los movimientos del juego
+//   no llegan a ImGui (no se mueven las barras ni los botones solos). Ademas el
+//   primer cuadro del panel arranca con el raton limpio.
+// v2.48: BARRAS QUE SE MUEVEN SOLAS AL ABRIR EL PANEL + TEXTURAS AL CARGAR
+// - Al reabrir el panel se descarta el estado de arrastre/desplazamiento de
+//   la sesion anterior (savedPtr, g_panelScrolling, inercia del scroll): si
+//   no, una barra se restauraba a su valor viejo al reabrir y el panel podia
+//   desplazarse solo. No se inicia ImGui ni se cargan los iconos mientras
+//   CLoadingScreen::m_bActive esta en true (cargando partida).
 // v2.24: DESPLAZAR CON EL SELECTOR ABIERTO + BARRA DE TONO QUE NO SE REGRESA
 // - La v2.20-v2.23 no permitia desplazar el panel con el selector de color
 //   abierto (para no robarle sus arrastres verticales), asi que con el
@@ -469,6 +565,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <thread>  // v2.52: hilo de sonido (SoundWorker)
+#include <condition_variable>  // v2.52: aviso de clic al hilo de sonido
 #include <string>
 #include <vector>
 #include "imgui.h"
@@ -480,9 +578,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.0.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.1.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.0.0-beta"
+#define VHUDRADIO_VERSION "1.1.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -496,7 +594,8 @@ static void Log(const char* fmt, ...) {
     if (!g_logPath.empty()) { FILE* f = fopen(g_logPath.c_str(), "a"); if (f) { fprintf(f, "%s\n", buf); fclose(f); } }
 }
 
-// ---- sonido (v2.2): clic corto generado con OpenSL ES (sin depender del juego) ----
+// ---- sonido (v2.2, v2.52): clic corto con OpenSL ES; desde la 2.52 el reproductor
+// queda en PAUSED cuando no suena y todo OpenSL corre en un hilo aparte (SoundWorker) ----
 static void* g_slHandle = nullptr;
 typedef SLresult (*SlCreateEngineFn)(SLObjectItf*, SLuint32, const SLEngineOption*, SLuint32, const SLInterfaceID*, const SLboolean*);
 static SlCreateEngineFn g_slCreateEngine = nullptr;
@@ -507,6 +606,8 @@ static SLBufferQueueItf g_slQueue = nullptr;
 static short g_clickLo[1600];
 static short g_clickHi[1600];
 static bool g_soundTried = false, g_soundOk = false;
+
+// Solo se llama desde el hilo de sonido (SoundWorker).
 static void SoundInit() {
     if (g_soundTried) return; g_soundTried = true;
     g_slHandle = dlopen("libOpenSLES.so", RTLD_NOW);
@@ -529,7 +630,8 @@ static void SoundInit() {
     if ((*g_slPlayer)->Realize(g_slPlayer, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
     if ((*g_slPlayer)->GetInterface(g_slPlayer, SL_IID_PLAY, &g_slPlay) != SL_RESULT_SUCCESS) return;
     if ((*g_slPlayer)->GetInterface(g_slPlayer, SL_IID_BUFFERQUEUE, &g_slQueue) != SL_RESULT_SUCCESS) return;
-    if ((*g_slPlay)->SetPlayState(g_slPlay, SL_PLAYSTATE_PLAYING) != SL_RESULT_SUCCESS) return;
+    // CAMBIO: antes aqui se ponia SL_PLAYSTATE_PLAYING y se quedaba asi para siempre.
+    if ((*g_slPlay)->SetPlayState(g_slPlay, SL_PLAYSTATE_PAUSED) != SL_RESULT_SUCCESS) return;
     for (int i = 0; i < 1600; i++) {
         float t = (float)i / 22050.0f;
         float env = expf(-t * 60.0f);
@@ -537,13 +639,45 @@ static void SoundInit() {
         g_clickHi[i] = (short)(sinf(2.0f * 3.14159265f * 1318.0f * t) * env * 12000.0f);
     }
     g_soundOk = true;
-    Log("  sonido: OpenSL ES listo");
+    Log("  sonido: OpenSL ES listo (reproductor en pausa hasta el primer clic)");
 }
-static void PlayClick(bool hi) {
+
+static std::mutex g_sndMtx;
+static std::condition_variable g_sndCv;
+static int g_clickReq = 0;            // 0 = nada, 1 = clic grave, 2 = clic agudo (protegido por g_sndMtx)
+static bool g_sndStarted = false;     // solo se toca desde PlayClick (hilo del juego)
+
+static void SoundWorker() {
     SoundInit();
-    if (!g_soundOk || !g_slQueue) return;
-    (*g_slQueue)->Clear(g_slQueue);
-    (*g_slQueue)->Enqueue(g_slQueue, hi ? g_clickHi : g_clickLo, 1600 * 2);
+    std::unique_lock<std::mutex> lk(g_sndMtx);
+    for (;;) {
+        g_sndCv.wait(lk, [] { return g_clickReq != 0; });
+        while (g_clickReq != 0) {
+            int req = g_clickReq; g_clickReq = 0;
+            lk.unlock();
+            if (g_soundOk && g_slQueue && g_slPlay) {
+                (*g_slQueue)->Clear(g_slQueue);
+                (*g_slQueue)->Enqueue(g_slQueue, req == 2 ? g_clickHi : g_clickLo, 1600 * 2);
+                (*g_slPlay)->SetPlayState(g_slPlay, SL_PLAYSTATE_PLAYING);
+            }
+            lk.lock();
+            // El clic dura ~73 ms. Se espera 150 ms; si llega otro clic, se repite.
+            g_sndCv.wait_for(lk, std::chrono::milliseconds(150), [] { return g_clickReq != 0; });
+        }
+        // Sin clics pendientes: el reproductor vuelve a pausa (no queda activo en el mezclador).
+        lk.unlock();
+        if (g_soundOk && g_slPlay) (*g_slPlay)->SetPlayState(g_slPlay, SL_PLAYSTATE_PAUSED);
+        lk.lock();
+    }
+}
+
+// Se llama desde el hilo de render/toque: ya no toca OpenSL, solo avisa al hilo de sonido.
+static void PlayClick(bool hi) {
+    // v2.59: clics restaurados (la 2.58 sin clics fallo al 2o intento: el
+    // audio del mod NO era la causa del ruido de User Tracks).
+    if (!g_sndStarted) { g_sndStarted = true; std::thread(SoundWorker).detach(); }
+    { std::lock_guard<std::mutex> lk(g_sndMtx); g_clickReq = hi ? 2 : 1; }
+    g_sndCv.notify_one();
 }
 
 // ---- estaciones 1..13 (VERIFIED por plugin-sdk eRadioID + GTAMods + v-hud) ----
@@ -557,14 +691,14 @@ static const char* kStationName[14] = { "", "Playback FM", "K-Rose", "K-DST", "B
 enum LangId { L_ES = 0, L_EN, L_ID, L_PT, L_FR, L_DE, L_COUNT };
 static const char* kLangNames[L_COUNT] = { "Español", "English", "Bahasa Indonesia", "Portugues (BR)", "Francais", "Deutsch" };
 static const char* kLangCodes[L_COUNT] = { "es", "en", "id", "pt", "fr", "de" };
-enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_COUNT };
+enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_COUNT };  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego
 static const char* kUI[L_COUNT][STR_COUNT] = {
-    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante" },
-    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button" },
-    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang" },
-    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante" },
-    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant" },
-    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen" },
+    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta" },
+    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open" },
+    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka" },
+    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta" },
+    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte" },
+    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist" },
 };
 // v2.0: genero de cada estacion, para el centro de la rueda estilo GTA V
 static const char* kGenre[L_COUNT][14] = {
@@ -637,10 +771,20 @@ static void LoadHornPos() {
 //   (posicion del panel, fraccion de W/H; -1 = centrado) panelAncho=0.44
 //   (ancho del panel, fraccion de W, 0.36..0.70) (v2.17)
 // iconosColor=0 (0 = iconos normales de radio/, 1 = iconos a color de radio_color/) (v2.28)
-struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; };
+struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
 static WheelCfg g_cfg;
 static const char* S(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 0 || id >= STR_COUNT) return ""; return kUI[l][id]; }  // v2.16: texto del panel en el idioma elegido
 static const char* Genre(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 1 || id > 13) return ""; return kGenre[l][id]; }  // v2.16: genero en el idioma elegido
+// v2.53: ocultar la ventana de emisora del juego ("User tracks / Your own
+// music" al cambiar). Se engancha CAERadioTrackManager::DisplayRadioStationName
+// y, si el interruptor esta activo, no se llama al original (no se dibuja).
+// Es solo dibujo: no se toca ningun estado de la radio. Va aqui (tras g_cfg)
+// porque el hook lee g_cfg.ocultarNombre y antes no existia (error de compilacion).
+static void (*DisplayRadioStationName_orig)(void* self) = nullptr;
+static void DisplayRadioStationName_hook(void* self) {
+    if (g_cfg.ocultarNombre) return;
+    if (DisplayRadioStationName_orig) DisplayRadioStationName_orig(self);
+}
 static bool g_settings = false;   // v2.2: panel de personalizacion abierto
 static bool g_preview = false;    // v2.2: vista previa de la rueda (solo se ve, no cambia la estacion)
 static std::string CfgPath() { return g_gameDataDir + "/configs/VHudRadio.ini"; }  // v2.36: el .ini vuelve a data/configs (v2.3-2.15); la carpeta VHudRadio ya no existe
@@ -667,10 +811,18 @@ static void SaveCfg() {
     fprintf(f, "iconosColor=%d\n", g_cfg.iconosColor);
     fprintf(f, "camaraLenta=%d\n", g_cfg.camaraLenta);
     fprintf(f, "botonVisible=%d\n", g_cfg.botonVisible);
+    fprintf(f, "mostrarGenero=%d\n", g_cfg.mostrarGenero);
+    fprintf(f, "ocultarNombre=%d\n", g_cfg.ocultarNombre);
+    fprintf(f, "fondoIcono=%d\n", g_cfg.fondoIcono);
+    fprintf(f, "fondoIconoColor=%d,%d,%d\n", g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB);
+    fprintf(f, "animacion=%d\n", g_cfg.animacion);
+    fprintf(f, "blur=%d\n", g_cfg.blur);
+    fprintf(f, "bloquearJuego=%d\n", g_cfg.bloquearJuego);
+    fprintf(f, "modoCambio=%d\n", g_cfg.modoCambio);
     fclose(f);
 }
 static void LoadCfg() {
-    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1;
+    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
     bool fromOld = false;
     FILE* f = fopen(CfgPath().c_str(), "r");
     if (!f) {
@@ -726,6 +878,17 @@ static void LoadCfg() {
         else if (strcmp(k, "iconosColor") == 0) g_cfg.iconosColor = atoi(v);
         else if (strcmp(k, "camaraLenta") == 0) g_cfg.camaraLenta = atoi(v);
         else if (strcmp(k, "botonVisible") == 0) g_cfg.botonVisible = atoi(v);
+        else if (strcmp(k, "mostrarGenero") == 0) g_cfg.mostrarGenero = atoi(v);
+        else if (strcmp(k, "ocultarNombre") == 0) g_cfg.ocultarNombre = atoi(v);
+        else if (strcmp(k, "fondoIcono") == 0) g_cfg.fondoIcono = atoi(v);
+        else if (strcmp(k, "fondoIconoColor") == 0) {
+            int r = 20, g = 40, b = 80;
+            if (sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) { g_cfg.fondoIconoR = r; g_cfg.fondoIconoG = g; g_cfg.fondoIconoB = b; }
+        }
+        else if (strcmp(k, "animacion") == 0) g_cfg.animacion = atoi(v);
+        else if (strcmp(k, "blur") == 0) g_cfg.blur = atoi(v);
+        else if (strcmp(k, "bloquearJuego") == 0) g_cfg.bloquearJuego = atoi(v);
+        else if (strcmp(k, "modoCambio") == 0) g_cfg.modoCambio = atoi(v);
     }
     fclose(f);
     if (g_cfg.fondo < 0) g_cfg.fondo = 0; if (g_cfg.fondo > 100) g_cfg.fondo = 100;
@@ -752,6 +915,16 @@ static void LoadCfg() {
     if (g_cfg.iconosColor != 0 && g_cfg.iconosColor != 1) g_cfg.iconosColor = 0;
     if (g_cfg.camaraLenta != 0 && g_cfg.camaraLenta != 1) g_cfg.camaraLenta = 1;
     if (g_cfg.botonVisible != 0 && g_cfg.botonVisible != 1) g_cfg.botonVisible = 1;
+    if (g_cfg.mostrarGenero != 0 && g_cfg.mostrarGenero != 1) g_cfg.mostrarGenero = 1;
+    if (g_cfg.ocultarNombre != 0 && g_cfg.ocultarNombre != 1) g_cfg.ocultarNombre = 0;
+    if (g_cfg.fondoIcono != 0 && g_cfg.fondoIcono != 1) g_cfg.fondoIcono = 0;
+    if (g_cfg.fondoIconoR < 0) g_cfg.fondoIconoR = 0; if (g_cfg.fondoIconoR > 255) g_cfg.fondoIconoR = 255;
+    if (g_cfg.fondoIconoG < 0) g_cfg.fondoIconoG = 0; if (g_cfg.fondoIconoG > 255) g_cfg.fondoIconoG = 255;
+    if (g_cfg.fondoIconoB < 0) g_cfg.fondoIconoB = 0; if (g_cfg.fondoIconoB > 255) g_cfg.fondoIconoB = 255;
+    if (g_cfg.animacion != 0 && g_cfg.animacion != 1) g_cfg.animacion = 1;
+    if (g_cfg.blur < 0) g_cfg.blur = 0; if (g_cfg.blur > 100) g_cfg.blur = 100;
+    if (g_cfg.bloquearJuego != 0 && g_cfg.bloquearJuego != 1) g_cfg.bloquearJuego = 1;
+    if (g_cfg.modoCambio < 0 || g_cfg.modoCambio > 2) g_cfg.modoCambio = 0;
     // v2.20: el tamano por defecto vuelve a ser mediano (0.44 x automatico);
     // un .ini con los valores grandes de la v2.19 (0.60 x 0.90, nunca se
     // redimensiono o se restablecio en la v2.19) vuelve al mediano
@@ -764,6 +937,7 @@ static std::string g_vhudDir;   // /storage/emulated/0/vhud
 static int g_current = 1;       // estacion actual conocida (1..13)
 static int g_selected = 1;      // segmento bajo el dedo mientras la rueda esta abierta
 static bool g_open = false;
+static std::chrono::steady_clock::time_point g_wheelAnimStart = std::chrono::steady_clock::now();  // v2.54: cuando se abrio la rueda (para la animacion)
 static bool g_btnPending = false;  // v2.1: un toque al boton flotante esperando (siguiente estacion si no hay segundo toque)
 static std::chrono::steady_clock::time_point g_btnPendingAt;
 static bool g_btnDrag = false;   // v2.16: el toque actual empezo en el boton flotante (puede ser arrastre)
@@ -775,6 +949,9 @@ static bool g_centerTap = false;    // v2.31: el toque actual empezo en el centr
 static bool g_ignoreNextUp = false; // v1.5: el toque que ABRIO la rueda no debe cerrarla al soltar
 static float g_touchX = -1.0f, g_touchY = -1.0f;  // v2.18: ultima posicion de toque (io.MousePos llega con un frame de retraso y el bajar leia una posicion vieja)
 static bool g_panelScrolling = false;  // v2.20: el arrastre actual es un desplazamiento del panel (no un deslizador)
+static bool g_panelJustOpened = false;  // v2.48: el panel se abrio en este cuadro (para descartar el estado de arrastre viejo)
+static float g_panelRectX = -1.0f, g_panelRectY = -1.0f, g_panelRectW = 0.0f, g_panelRectH = 0.0f;  // v2.49: rect real del panel en pantalla (lo escribe DrawSettings)
+static bool g_touchForPanel = false;  // v2.49: el toque actual (dedo 0) pertenece al panel
 
 // v2.2: geometria de la rueda segun los ajustes (fondo/tamano/anillo)
 static float WheelR(float H) { return H * g_cfg.tamano / 100.0f; }
@@ -817,6 +994,7 @@ static bool g_menuDrawn = false;      // CMenuManager::DrawFrontEnd se llamo en 
 static bool* g_slowActive = nullptr;  // CTimer::bSlowMotionActive (slow-motion propio del juego)
 static float* g_slowScale = nullptr;  // CTimer::ms_fSlowMotionScale
 static float* g_timeScale = nullptr;  // CTimer::ms_fTimeScale (respaldo si no hay slow-motion)
+static bool* g_loadingActive = nullptr;  // v2.48: CLoadingScreen::m_bActive (true mientras carga la partida)
 // v1: reproductor de User Tracks propio (minimp3 + OpenSL). Se incluye aqui
 // porque usa las globales de arriba (g_startTrack, g_userPause, g_inVehicle...).
 #include "UserTracks.h"
@@ -827,22 +1005,7 @@ static void DrawFrontEnd_hook() {
 }
 // v2.6: diagnostico - registra que bytes del objeto CMenuManager cambian, para
 // encontrar el byte real de pausa en este telefono (el 0x5C no basto en la v2.5)
-static unsigned char g_menuSnap[96];
-static bool g_menuSnapInit = false;
-static int g_menuSnapTick = 0;
-static void MenuSnapCheck() {
-    if ((++g_menuSnapTick % 30) != 0) return;
-    const unsigned char* m = (const unsigned char*)g_menuManager;
-    if (!g_menuSnapInit) { memcpy(g_menuSnap, m, 96); g_menuSnapInit = true; return; }
-    char buf[1024]; int n = 0;
-    n += snprintf(buf + n, sizeof buf - (size_t)n, "menu: bytes que cambiaron:");
-    bool diff = false;
-    for (int i = 0; i < 96; i++) {
-        if (m[i] != g_menuSnap[i]) { diff = true; n += snprintf(buf + n, sizeof buf - (size_t)n, " [%02X]=%02X", i, m[i]); }
-    }
-    if (diff) Log("%s", buf);
-    memcpy(g_menuSnap, m, 96);
-}
+// v2.51: MenuSnapCheck eliminado (el byte de menu 0x5C ya se conoce; era solo diagnostico).
 // v2.4: FrontEndMenuManager es una REFERENCIA (puntero al objeto) en plugin-sdk:
 // GetSym devuelve la direccion del puntero, hay que desreferenciarla. Si el
 // simbolo ya es el objeto, sus primeros 8 bytes no son una direccion valida
@@ -908,6 +1071,21 @@ static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len) {
             upPx = pxSmall; upW = nw; upH = nh;
         }
     }
+    // v2.54: quitar el fondo negro opaco de los iconos (los PNG de V-HUD y
+    // slotrad traen el logo sobre negro opaco, no transparente: el normal
+    // tiene ~4670 px negros puros y el de color ~28085). Si no, el circulo de
+    // color de fondoIcono queda tapado por el negro y solo se ve por los
+    // bordes. Se vuelve transparente todo pixel opaco casi negro (max canal
+    // < 32); el logo es claro/de color y no se toca (hay un hueco claro entre
+    // el negro puro y el logo). Se hace aqui (tras achicar) para que el borde
+    // del achicado tambien se limpie. No toca radio_current (sin negros).
+    // v2.55: SOLO cuando fondoIcono esta activado; apagado, los iconos
+    // vuelven a su fondo negro normal de siempre (al cambiar el interruptor
+    // se recargan las texturas con ReloadIcons).
+    if (g_cfg.fondoIcono) for (int i = 0; i < upW * upH; i++) {
+        unsigned char* p = upPx + i * 4;
+        if (p[3] > 0 && p[0] < 32 && p[1] < 32 && p[2] < 32) p[3] = 0;
+    }
     GLint last = 0; glGetIntegerv(GL_TEXTURE_BINDING_2D, &last);
     GLuint tex = 0; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
     // Mipmaps solo si el tamano es potencia de 2 (en ES 2.0 no hay mipmaps
@@ -924,21 +1102,10 @@ static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len) {
     stbi_image_free(px);
     return glGetError() == GL_NO_ERROR ? tex : 0;
 }
-static GLuint LoadPngToGl(const std::string& path) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return 0;
-    fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
-    if (len <= 0 || len > 4*1024*1024) { fclose(f); return 0; }
-    std::vector<unsigned char> buf((size_t)len);
-    if (fread(buf.data(), 1, buf.size(), f) != buf.size()) { fclose(f); return 0; }
-    fclose(f);
-    return LoadPngFromMemory(buf.data(), buf.size());
-}
-// v2.29: un icono: primero la carpeta (si el usuario puso su propio PNG, manda),
-// si no esta, el PNG incrustado en el .so. srcOut dice de donde salio.
-static GLuint LoadIconFileOrEmbedded(int set, int idx, const std::string& path, const char** srcOut) {
-    GLuint t = LoadPngToGl(path);
-    if (t) { if (srcOut) *srcOut = "archivo"; return t; }
+// v2.55: un icono: SOLO el PNG incrustado en el .so (se quitaron los iconos
+// personalizados de carpeta por peticion de Daniel). srcOut dice de donde salio.
+static GLuint LoadIconFileOrEmbedded(int set, int idx, const char** srcOut) {
+    GLuint t = 0;
     const char* b64 = EmbeddedIconB64(set, idx);
     if (b64) {
         std::vector<unsigned char> raw = B64Decode(b64);
@@ -948,41 +1115,43 @@ static GLuint LoadIconFileOrEmbedded(int set, int idx, const std::string& path, 
     if (srcOut) *srcOut = "-";
     return 0;
 }
-// v2.28: carga un juego de iconos (normales de radio/ o a color de radio_color/)
-// con los mismos respaldos de carpeta que antes.
-// v2.29: la carpeta ya es opcional: si el PNG no esta en la carpeta, se usa el
-// incrustado en el .so (icons_embedded.h). La carpeta sigue mandando si existe.
-static void LoadIconSet(GLuint* tex, const char* subdir, const char* etiqueta, int set) {
-    // v2.36: la carpeta VHudRadio/ ya no existe; los iconos se buscan en
-    // las carpetas vhud/ viejas y si no, van los incrustados en el .so.
-    std::string dir = g_gameFilesDir + "/vhud/" + subdir;
-    { struct stat st; if (stat((dir + "/radio_1.png").c_str(), &st) != 0) dir = g_vhudDir + "/" + subdir; }
-    Log("carpeta de iconos %s: %s/ (si falta, va el incrustado en el .so)", etiqueta, dir.c_str());
+// v2.55: carga un juego de iconos SOLO del .so (incrustados). La carpeta de
+// iconos personalizados se quito por peticion de Daniel.
+static void LoadIconSet(GLuint* tex, const char* etiqueta, int set) {
+    Log("iconos %s: incrustados en el .so", etiqueta);
     int ok = 0;
     for (int i = 1; i <= 13; i++) {
         const char* src = "-";
-        std::string p = dir + "/radio_" + std::to_string(i) + ".png";
-        tex[i] = LoadIconFileOrEmbedded(set, i, p, &src);
+        tex[i] = LoadIconFileOrEmbedded(set, i, &src);
         if (tex[i]) ok++;
         Log("  %s %s radio_%d.png (%s)", etiqueta, tex[i] ? "ok    " : "FALTA ", i, src);
     }
     const char* src0 = "-";
-    tex[0] = LoadIconFileOrEmbedded(set, 0, dir + "/radio_current.png", &src0);
+    tex[0] = LoadIconFileOrEmbedded(set, 0, &src0);
     Log("  %s %s radio_current.png (%s)", etiqueta, tex[0] ? "ok    " : "FALTA ", src0);
     Log("iconos %s cargados: %d/13 (+marco %s)", etiqueta, ok, tex[0] ? "si" : "no");
 }
 static void LoadRadioTextures() {
     if (g_texTried) return; g_texTried = true;
     // v2.16: iconos normales en files del juego (Android/data/.../files/VHudRadio/radio/);
-    // si no estan ahi, se busca en la carpeta de antes (files/vhud/radio) y
-    // luego en /storage/emulated/0/vhud/radio/.
-    LoadIconSet(g_tex, "radio", "normales", 0);
-    // v2.28: iconos a color en VHudRadio/radio_color/ (mismos respaldos); si a
-    // alguno le falta, se usa el normal de esa emisora para que la rueda no se rompa.
-    LoadIconSet(g_texColor, "radio_color", "a color", 1);
+    // v2.55: solo incrustados en el .so (sin carpeta).
+    LoadIconSet(g_tex, "normales", 0);
+    // v2.28: iconos a color (incrustados); si a alguno le falta, se usa el
+    // normal de esa emisora para que la rueda no se rompa.
+    LoadIconSet(g_texColor, "a color", 1);
     for (int i = 0; i <= 13; i++) if (!g_texColor[i]) g_texColor[i] = g_tex[i];
     int ok = 0; for (int i = 1; i <= 13; i++) if (g_tex[i]) ok++;
-    if (ok == 0) Log("  !! sin iconos ni en carpeta ni incrustados en el .so (no deberia pasar)");
+    if (ok == 0) Log("  !! sin iconos incrustados en el .so (no deberia pasar)");
+}
+// v2.55: recargar iconos (al cambiar el interruptor de fondo de color):
+// borra las texturas GL y marca para recargar en el siguiente cuadro, con el
+// black-key segun el nuevo valor de fondoIcono (apagado = negro normal).
+static void ReloadIcons() {
+    for (int i = 0; i < 14; i++) {
+        if (g_tex[i]) { glDeleteTextures(1, &g_tex[i]); g_tex[i] = 0; }
+        if (g_texColor[i]) { glDeleteTextures(1, &g_texColor[i]); g_texColor[i] = 0; }
+    }
+    g_texTried = false;
 }
 // v2.28: el icono que se dibuja segun el interruptor (a color si esta activo y existe)
 static GLuint IconTex(int i) {
@@ -992,6 +1161,35 @@ static GLuint IconTex(int i) {
 }
 
 // ---- cambiar de estacion: solo con funciones que resolvieron ----
+// v2.59: modoCambio=1 aplaza el cambio 3 cuadros (la rueda ya esta cerrada).
+static int g_pendingStation = 0;   // 0 = no hay cambio pendiente
+static int g_pendingFrames = 0;    // cuadros que faltan para el cambio
+
+// v2.59: el cambio real (llamada al juego + lectura). Lo hace ApplyStation
+// directo (modo 0 y 2) o 3 cuadros despues de cerrar la rueda (modo 1).
+static void DoStartRadio(int id) {
+    // v2.59 modo 2: por CAudioEngine::StartRadio (ya resolvia en el arranque
+    // y es el respaldo del modo 0; aqui es la via principal). El simbolo
+    // Android es StartRadio(signed char, signed char), no el (int, char)
+    // del plugin-sdk de PC: el typedef ya es (void*, signed char, signed
+    // char) y pasa (signed char)id y 0. Nunca se ha llamado de verdad
+    // (solo era respaldo), asi que es una via sin probar: si falla en el
+    // telefono, no se vuelve a usar.
+    if (g_cfg.modoCambio == 2 && g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0) [modoCambio=2]", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
+    // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
+    // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
+    else if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0) [modoCambio=%d]", id, kStationName[id], g_cfg.modoCambio); g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); }
+    else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
+    else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
+    else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
+    else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
+    // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
+    // v1: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que no
+    // es "NO COINCIDE" cuando la nativa lee 13. (En modoCambio=2 la llamada
+    // va por CAudioEngine::StartRadio; si esa via no pasa por el hook del
+    // reproductor, la 12 no sonara: usar modo 0 o 1.)
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
+}
 static void ApplyStation(int id) {
     if (id < 1 || id > 13) return;
     // v2.32: restaurar la escala de tiempo ANTES de cambiar la estacion.
@@ -1010,18 +1208,18 @@ static void ApplyStation(int id) {
     if (g_slowScale) *g_slowScale = 1.0f;
     // v1: vehiculo sin radio -> la 12 es Radio Off (misma lista que SAUserTracks).
     if (id == 12 && UT_VehicleBlocked()) { id = 13; Log("rueda: vehiculo sin radio (modelo %d): User Tracks -> Radio Off", UT_BlockedModel()); }
-    // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
-    // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
-    if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0)", id, kStationName[id]); g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); }
-    else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
-    else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
-    else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
-    else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
+    // v2.59: modo 1 espera 3 cuadros con la rueda ya cerrada (sin UI ni
+    // camara lenta) antes de llamar a StartRadio, para que SAUserTracks
+    // arranque sin la carga de dibujar la rueda. El cambio pendiente se
+    // ejecuta en DrawFrame.
+    if (g_cfg.modoCambio == 1) {
+        g_pendingStation = id;
+        g_pendingFrames = 3;
+        Log("cambio a %d (%s) aplazado 3 cuadros [modoCambio=1]", id, kStationName[id]);
+    } else {
+        DoStartRadio(id);
+    }
     g_current = id;
-    // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
-    // v1: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que no
-    // es "NO COINCIDE" cuando la nativa lee 13.
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
 }
 static void RefreshCurrent() {
     // v1: en la 12 manda el reproductor, no la radio nativa. La nativa NUNCA
@@ -1040,7 +1238,7 @@ static void ToggleWheel(const char* why) {
     auto now = std::chrono::steady_clock::now();
     if (now - lastToggle < std::chrono::milliseconds(600)) return;
     lastToggle = now;
-    if (!g_open) { g_open = true; g_ignoreNextUp = true; RefreshCurrent(); g_selected = g_current; Log("rueda abierta por %s (estacion actual %d %s)", why, g_current, kStationName[g_current]); PlayClick(false); }
+    if (!g_open) { g_open = true; g_wheelAnimStart = std::chrono::steady_clock::now(); g_ignoreNextUp = true; RefreshCurrent(); g_selected = g_current; Log("rueda abierta por %s (estacion actual %d %s)", why, g_current, kStationName[g_current]); PlayClick(false); }
     else { g_open = false; g_centerTap = false; Log("rueda cerrada por %s", why); }
 }
 
@@ -1051,9 +1249,32 @@ struct TouchEv { int kind; float x, y; };
 static std::vector<TouchEv> g_evs;
 static bool g_cap = false;
 static uintptr_t (*Touch_orig)(int, int, int, int);
+static bool g_touchForWheel = false;  // v2.57: el toque es de la rueda (el juego no lo ve)
 static uintptr_t Touch_hook(int type, int idx, int x, int y) {
     bool down = (type == 2), up = (type == 1 || type == 4);
     if (idx == 0) {
+        // v2.49: si el panel esta abierto, cada toque pertenece al panel (si
+        // cae dentro de el al bajar el dedo) o al juego (si cae fuera). Los del
+        // panel van solo a ImGui (el juego no los ve: asi no se pulsan los
+        // botones del juego que estan detras ni se mueve la camara); los
+        // movimientos del juego no llegan a ImGui (asi no se mueven las barras
+        // ni los botones del panel solos). El dueno se decide al bajar y no
+        // cambia durante el arrastre, aunque el panel se cierre a mitad del toque.
+        if (down) {
+            bool inPanel = false;
+            if (g_settings && g_panelRectW > 0.0f) {
+                inPanel = (float)x >= g_panelRectX && (float)x <= g_panelRectX + g_panelRectW &&
+                          (float)y >= g_panelRectY && (float)y <= g_panelRectY + g_panelRectH;
+            }
+            g_touchForPanel = inPanel;
+            // v2.57: con la rueda abierta (y no el panel), el toque es de la
+            // rueda: el juego no lo ve, asi no se mueve la camara ni
+            // responden los botones del juego. El doble toque del claxon
+            // sigue funcionando porque se detecta por POSICION en g_evs
+            // (DrawFrame), no por el juego. El dueno se decide al bajar.
+            g_touchForWheel = (!inPanel && g_open && g_cfg.bloquearJuego);
+        }
+        bool forPanel = g_touchForPanel;
         std::lock_guard<std::mutex> lk(g_inMtx);
         if (down) { g_evs.push_back({0, (float)x, (float)y}); g_evs.push_back({1, 0, 0}); }
         // v2.18: el soltar SIEMPRE se encola CON su posicion - la v2.17 lo
@@ -1064,8 +1285,13 @@ static uintptr_t Touch_hook(int type, int idx, int x, int y) {
         else if (up) { g_evs.push_back({0, (float)x, (float)y}); g_evs.push_back({2, 0, 0}); }
         // v2.4: sin esto el panel no funcionaba - los eventos de mover solo
         // llegaban a ImGui con la rueda abierta; con el panel abierto (rueda cerrada)
-        // ImGui recibia el toque de bajar pero nunca el de mover
-        else if (g_open || g_cap || g_settings || g_preview || g_btnDrag) { g_evs.push_back({0, (float)x, (float)y}); }
+        // ImGui recibia el toque de bajar pero nunca el de mover.
+        // v2.49: con el panel abierto el mover solo llega si el toque es del panel;
+        // si es del juego (fuera del panel) no se encola.
+        else if (forPanel || g_open || g_cap || g_preview || g_btnDrag) { g_evs.push_back({0, (float)x, (float)y}); }
+        if (up) { g_touchForPanel = false; g_touchForWheel = false; }
+        if (forPanel) return 0;  // consumido por el panel: el juego no lo ve
+        if (g_touchForWheel) return 0;  // v2.57: consumido por la rueda: el juego no lo ve
     }
     return Touch_orig ? Touch_orig(type, idx, x, y) : 0;
 }
@@ -1150,6 +1376,7 @@ static bool FloatBtnHit(float x, float y, float W, float H) {
 // su menu esta cerrado. La rueda/panel/vista previa siguen con ImGui.
 struct GLBtnVert { float x, y, u, v, r, g, b, a; };
 static GLuint g_glBtnProg = 0, g_glBtnVBO = 0, g_glBtnWhite = 0, g_glBtnVAO = 0;
+static GLint g_glBtnUProj = -1, g_glBtnUTex = -1;  // v2.51: ubicaciones de uniformes cacheadas (antes 2 glGetUniformLocation por cuadro)
 static bool g_glBtnTried = false, g_glBtnOk = false, g_glBtnUseVAO = false;
 #ifndef GL_VERTEX_ARRAY_BINDING
 #define GL_VERTEX_ARRAY_BINDING 0x85B5
@@ -1187,6 +1414,8 @@ static bool GLBtnInit() {
     GLint ok = 0; glGetProgramiv(g_glBtnProg, GL_LINK_STATUS, &ok);
     glDeleteShader(vsh); glDeleteShader(fsh);
     if (!ok) { char buf[512]; glGetProgramInfoLog(g_glBtnProg, sizeof(buf), nullptr, buf); Log("  !! boton GL: programa no enlazo: %s", buf); glDeleteProgram(g_glBtnProg); g_glBtnProg = 0; return false; }
+    g_glBtnUProj = glGetUniformLocation(g_glBtnProg, "uProj");  // v2.51: se cachean una vez al crear el programa
+    g_glBtnUTex = glGetUniformLocation(g_glBtnProg, "uTex");
     glGenBuffers(1, &g_glBtnVBO);
     // v2.34: VAO propio. Sin el, glVertexAttribPointer toca el VAO del
     // juego (ES 3.x) y la pantalla se pone en negro al subir a un auto.
@@ -1267,8 +1496,21 @@ static bool DrawButtonGL(float W, float H) {
         dst.push_back({x1, y1, u1, v1, r, g, b, a});
         dst.push_back({x0, y1, u0, v1, r, g, b, a});
     };
+    // v2.56: disco lleno (abanico de triangulos) para el fondo del boton: la
+    // 2.55 usaba un cuadro negro y se notaban las esquinas del cuadrado.
+    auto circleTo = [&](std::vector<GLBtnVert>& dst, float cx, float cy, float rr, float r, float g, float b, float a) {
+        const int SEG = 32;
+        for (int i = 0; i < SEG; i++) {
+            float a0 = (float)i / SEG * 2.0f * 3.14159265f;
+            float a1 = (float)(i + 1) / SEG * 2.0f * 3.14159265f;
+            dst.push_back({cx, cy, 0.0f, 0.0f, r, g, b, a});
+            dst.push_back({cx + cosf(a0) * rr, cy + sinf(a0) * rr, 0.0f, 0.0f, r, g, b, a});
+            dst.push_back({cx + cosf(a1) * rr, cy + sinf(a1) * rr, 0.0f, 0.0f, r, g, b, a});
+        }
+    };
     // Fondo de la etiqueta (negro semitransparente, textura blanca 1x1).
-    quadTo(vBg, lp.x, lp.y, lp.x + ls.x, lp.y + ls.y, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 140.0f * opF / 255.0f);
+    // v2.54: el recuadro entero se oculta como en ImGui (ver DrawWheel).
+    if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) quadTo(vBg, lp.x, lp.y, lp.x + ls.x, lp.y + ls.y, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 140.0f * opF / 255.0f);
     // Texto: nombre y genero con los glifos del atlas de ImGui (UTF-8).
     auto drawText = [&](const char* str, float x, float y, float size, float r, float g, float b, float a) {
         float scale = size / font->FontSize;
@@ -1287,9 +1529,15 @@ static bool DrawButtonGL(float W, float H) {
             cx += gl->AdvanceX * scale;
         }
     };
-    drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
-    drawText(Genre(g_current), lp.x + H * 0.01f, lp.y + H * 0.008f + ns, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+    if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
+        drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
+        drawText(Genre(g_current), lp.x + H * 0.01f, lp.y + H * 0.008f + ns, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+    }
     // Icono de la estacion.
+    // v2.55: fondo negro detras del icono (como en ImGui: el fondo negro que
+    // siempre tuvo el boton; el icono puede ser transparente con el fondo de
+    // color encendido). v2.56: DISCO negro (no cuadro: se notaba el cuadrado).
+    circleTo(vBg, bp.x + bs / 2, bp.y + bs / 2, bs / 2, 0.0f, 0.0f, 0.0f, opF);
     GLuint it = IconTex(g_current);
     if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
     // Guardar estado GL del juego (incluido el VAO y el framebuffer).
@@ -1324,8 +1572,8 @@ static bool DrawButtonGL(float W, float H) {
     }
     glActiveTexture(GL_TEXTURE0);
     glUseProgram(g_glBtnProg);
-    GLint uProj = glGetUniformLocation(g_glBtnProg, "uProj");
-    GLint uTex = glGetUniformLocation(g_glBtnProg, "uTex");
+    GLint uProj = g_glBtnUProj;  // v2.51: cacheados en GLBtnInit
+    GLint uTex = g_glBtnUTex;
     glUniformMatrix4fv(uProj, 1, GL_FALSE, proj);
     glUniform1i(uTex, 0);
     glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
@@ -1369,9 +1617,155 @@ static bool DrawButtonGL(float W, float H) {
     return true;
 }
 
+// v2.57: BLUR DE FONDO POR REDUCCION (FBO). La 2.56 no se notaba nada al
+// 100%: mezclaba 5 copias con solo 12 px de desplazamiento, imperceptible
+// en 2408 px. Ahora: se copia el framebuffer a una textura, se reduce a una
+// textura pequena (4x/8x/16x segun la barra) dibujandola en un FBO con el
+// programa del boton, y se amplifica a pantalla completa con filtro lineal:
+// eso SI se ve borroso. La barra 0-100 sigue igual (0 = apagado, 1-33 = 4x
+// suave, 34-66 = 8x medio, 67-100 = 16x fuerte). Si el FBO no esta
+// completo, no hay blur (solo el fondo oscuro). Cuesta una copia + 2 quads
+// por cuadro con la rueda abierta. Las UVs van invertidas en Y (la copia
+// del framebuffer sale al reves). Se dibuja con GL directo (no ImGui) antes
+// de que ImGui pinte el fondo oscuro y la rueda.
+static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0;
+static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
+static int BlurFactor() {
+    if (g_cfg.blur <= 0) return 0;
+    if (g_cfg.blur <= 33) return 4;
+    if (g_cfg.blur <= 66) return 8;
+    return 16;
+}
+static void BlurDrawBackground(float W, float H) {
+    int factor = BlurFactor();
+    if (factor <= 0) return;
+    int w = (int)W, h = (int)H;
+    if (w <= 0 || h <= 0) return;
+    if (!GLBtnInit()) return;
+    int sw = w / factor, sh = h / factor;
+    if (sw < 8) sw = 8; if (sh < 8) sh = 8;
+    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO) {
+        if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
+        if (g_blurCopyTex) { glDeleteTextures(1, &g_blurCopyTex); g_blurCopyTex = 0; }
+        if (g_blurSmallTex) { glDeleteTextures(1, &g_blurSmallTex); g_blurSmallTex = 0; }
+        glGenTextures(1, &g_blurCopyTex);
+        glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenTextures(1, &g_blurSmallTex);
+        glBindTexture(GL_TEXTURE_2D, g_blurSmallTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenFramebuffers(1, &g_blurFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blurSmallTex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            Log("  !! blur: FBO incompleto, sin desenfoque");
+            glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor;
+    }
+    // guardar estado GL del juego
+    GLint prevProg = 0, prevTex = 0, prevArr = 0, prevElem = 0, prevActive = 0, prevFB = 0, prevVAO = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevArr);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &prevElem);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+    if (g_glBtnUseVAO) glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean prevDepth = glIsEnabled(GL_DEPTH_TEST);
+    GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
+    // 1. copiar la escena del juego a g_blurCopyTex (framebuffer por defecto)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+    if (glGetError() != GL_NO_ERROR) goto blur_restore;
+    // preparar el programa del boton (proyeccion ortografica, Y hacia abajo)
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (g_glBtnUseVAO) g_pBindVA(g_glBtnVAO);
+    else {
+        glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+        glEnableVertexAttribArray(0); glEnableVertexAttribArray(1); glEnableVertexAttribArray(2);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)0);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)8);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(GLBtnVert), (void*)16);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    glUseProgram(g_glBtnProg);
+    glUniform1i(g_glBtnUTex, 0);
+    // quad a pantalla completa (x0,y0)-(x1,y1), UV invertida en Y, blanco opaco
+    {
+        auto drawQuad = [&](GLuint tex, float x0, float y0, float x1, float y1, const float* proj) {
+            GLBtnVert q[6] = {
+                {x0, y0, 0.0f, 1.0f, 1,1,1,1}, {x1, y0, 1.0f, 1.0f, 1,1,1,1}, {x1, y1, 1.0f, 0.0f, 1,1,1,1},
+                {x0, y0, 0.0f, 1.0f, 1,1,1,1}, {x1, y1, 1.0f, 0.0f, 1,1,1,1}, {x0, y1, 0.0f, 0.0f, 1,1,1,1},
+            };
+            glUniformMatrix4fv(g_glBtnUProj, 1, GL_FALSE, proj);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glBindBuffer(GL_ARRAY_BUFFER, g_glBtnVBO);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        };
+        float projS[16] = {0}, projF[16] = {0};
+        projS[0] = 2.0f / sw; projS[5] = -2.0f / sh; projS[10] = -1.0f; projS[12] = -1.0f; projS[13] = 1.0f; projS[15] = 1.0f;
+        projF[0] = 2.0f / w; projF[5] = -2.0f / h; projF[10] = -1.0f; projF[12] = -1.0f; projF[13] = 1.0f; projF[15] = 1.0f;
+        // 2. reducir: dibujar la copia en el FBO (textura pequena = borrosa)
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+        glViewport(0, 0, sw, sh);
+        drawQuad(g_blurCopyTex, 0, 0, (float)sw, (float)sh, projS);
+        // 3. ampliar: dibujar la textura pequena en el framebuffer por defecto
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, w, h);
+        drawQuad(g_blurSmallTex, 0, 0, (float)w, (float)h, projF);
+    }
+blur_restore:
+    // restaurar estado
+    if (g_glBtnUseVAO) g_pBindVA((GLuint)prevVAO);
+    else { glDisableVertexAttribArray(0); glDisableVertexAttribArray(1); glDisableVertexAttribArray(2); }
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFB);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevArr);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, (GLuint)prevElem);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
+    glActiveTexture((GLenum)prevActive);
+    glUseProgram((GLuint)prevProg);
+    if (prevBlend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (prevScissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    if (prevDepth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+}
+
 static void DrawWheel(float W, float H) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
+    // v2.53: animacion de apertura (solo si esta activa): la rueda crece de
+    // 0.85 a 1.0 y se funde en 150 ms. Se mide desde que se abrio (cualquier
+    // via: claxon, boton, vista previa); si esta apagada, anim = 1 siempre.
+    // v2.54: el inicio se guarda en g_wheelAnimStart al abrir (ToggleWheel /
+    // vista previa), no aqui: DrawWheel NO se llama cuando solo esta el boton
+    // (DrawFrame usa DrawButtonGL y sale antes), asi que el static de antes
+    // nunca se reseteaba al cerrar y la animacion solo se veia "entre veces".
+    // Dura 250 ms y crece desde 0.75 para que siempre se note.
+    float anim = 1.0f;
+    if (g_cfg.animacion && g_open) {
+        float t = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - g_wheelAnimStart).count() / 250.0f;
+        if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+        anim = 1.0f - (1.0f - t) * (1.0f - t);  // ease-out
+    }
     // v2.2: boton flotante + etiqueta con estacion y genero; v2.16: sin radio
     // el boton no se ve (y el panel tampoco se puede abrir); con opacidad ajustable
     if (g_hasRadio && g_cfg.botonVisible) {
@@ -1379,10 +1773,18 @@ static void DrawWheel(float W, float H) {
         FloatBtnGeom(W, H, bp, lp, ls, bs);
         float ns = H * 0.022f, ts = H * 0.018f;
         int op = g_cfg.btnOpac * 255 / 100;
-        dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
-        dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
-        dl->AddText(font, ts, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f + ns), IM_COL32(200,225,235,230 * op / 255), Genre(g_current));
-        { GLuint it = IconTex(g_current); if (it) dl->AddImage((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op)); else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
+        // v2.54: el recuadro ENTERO (fondo + estacion + genero) se oculta si
+        // el genero esta apagado o si esta activa "Ocultar ventana de emisora".
+        // En la 2.53 solo se quitaba el texto del genero y el recuadro quedaba.
+        if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
+            dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
+            dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
+            dl->AddText(font, ts, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f + ns), IM_COL32(200,225,235,230 * op / 255), Genre(g_current));
+        }
+        // v2.55: disco negro detras del icono de la emisora (el fondo negro
+        // que siempre tuvo el boton; con el fondo de color encendido el icono
+        // queda transparente y sin esto se veria el fondo del boton).
+        { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); dl->AddImageRounded((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
         dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
     }
 
@@ -1390,9 +1792,10 @@ static void DrawWheel(float W, float H) {
     // v2.2: rueda estilo GTA V - 12 logos en circulo + apagar la radio en el centro
     ImVec2 c(W * 0.5f, H * 0.5f);
     float R = WheelR(H);
-    float Ri = WheelRi(H);
-    float s = WheelIconS(H);
-    dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB, g_cfg.fondo * 255 / 100));  // v2.17: color de fondo ajustable (oscuridad = alfa)
+    float Ri = WheelRi(H) * (0.75f + 0.25f * anim);
+    float s = WheelIconS(H) * (0.75f + 0.25f * anim);
+    BlurDrawBackground(W, H);  // v2.56: escena borrosa detras (si el blur esta activo)
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), IM_COL32(g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB, (int)(g_cfg.fondo * 255 / 100 * anim)));  // v2.17: color de fondo ajustable (oscuridad = alfa)
     dl->AddCircle(c, Ri, IM_COL32(255, 255, 255, 70), 64, 2.0f);          // anillo fino
     for (int i = 1; i <= 13; i++) {
         float a0 = -3.14159265f/2 + (i-1) * 2*3.14159265f/13.0f;
@@ -1402,10 +1805,13 @@ static void DrawWheel(float W, float H) {
         bool sel = (i == g_selected);
         float si = sel ? s * 1.12f : s;
         GLuint it = IconTex(i);
+        if (g_cfg.fondoIcono) dl->AddCircleFilled(p, si, IM_COL32(g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB, (int)(255 * anim)));  // v2.53: fondo de color del icono
         if (it) {
-            ImVec4 tint = sel ? ImVec4(1, 1, 1, 1) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f);
-            dl->AddImage((ImTextureID)(uintptr_t)it, ImVec2(p.x-si, p.y-si), ImVec2(p.x+si, p.y+si), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint));
-        } else dl->AddCircleFilled(p, si*0.5f, IM_COL32(255,255,255,120));
+            ImVec4 tint = sel ? ImVec4(1, 1, 1, anim) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f * anim);
+            // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
+            // un cuadrado y se notaba el cuadrado de la imagen.
+            dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-si, p.y-si), ImVec2(p.x+si, p.y+si), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), si);
+        } else dl->AddCircleFilled(p, si*0.5f, IM_COL32(255,255,255,(int)(120 * anim)));
         if (sel) dl->AddCircle(p, si, RingColor(), 48, 3.5f);              // anillo de seleccion (color ajustable)
         else if (i == g_current) dl->AddCircle(p, si, IM_COL32(255, 255, 255, 220), 48, 2.0f);
     }
@@ -1416,10 +1822,13 @@ static void DrawWheel(float W, float H) {
     ImVec2 nsz = font->CalcTextSizeA(nameSize, FLT_MAX, 0.0f, name, nullptr);
     ImVec2 tsz = font->CalcTextSizeA(tagSize, FLT_MAX, 0.0f, tag, nullptr);
     // v2.6: el texto del centro usa el color elegido (por defecto blanco)
-    ImU32 txtCol = IM_COL32(g_cfg.textoR, g_cfg.textoG, g_cfg.textoB, 255);
-    ImU32 tagCol = IM_COL32((int)(g_cfg.textoR * 0.8f), (int)(g_cfg.textoG * 0.8f), (int)(g_cfg.textoB * 0.8f), 230);
-    dl->AddText(font, nameSize, ImVec2(c.x - nsz.x*0.5f, c.y - nsz.y*0.5f - H*0.015f), txtCol, name);
-    dl->AddText(font, tagSize, ImVec2(c.x - tsz.x*0.5f, c.y + nsz.y*0.5f + H*0.005f), tagCol, tag);
+    // v2.53: genero opcional; sin genero el nombre queda centrado (antes iba
+    // desplazado arriba para dejar hueco al genero)
+    ImU32 txtCol = IM_COL32(g_cfg.textoR, g_cfg.textoG, g_cfg.textoB, (int)(255 * anim));
+    ImU32 tagCol = IM_COL32((int)(g_cfg.textoR * 0.8f), (int)(g_cfg.textoG * 0.8f), (int)(g_cfg.textoB * 0.8f), (int)(230 * anim));
+    float nameDy = g_cfg.mostrarGenero ? -H*0.015f : 0.0f;
+    dl->AddText(font, nameSize, ImVec2(c.x - nsz.x*0.5f, c.y - nsz.y*0.5f + nameDy), txtCol, name);
+    if (g_cfg.mostrarGenero) dl->AddText(font, tagSize, ImVec2(c.x - tsz.x*0.5f, c.y + nsz.y*0.5f + H*0.005f), tagCol, tag);
     // v2.2: marca de vista previa
     if (g_preview) {
         const char* pv = S(STR_PREVIEW_LABEL);
@@ -1478,6 +1887,7 @@ static void PickerSyncFromRGB() {
     int r, g, b;
     if (g_pickTarget == 1) { r = g_cfg.textoR; g = g_cfg.textoG; b = g_cfg.textoB; }
     else if (g_pickTarget == 2) { r = g_cfg.fondoR; g = g_cfg.fondoG; b = g_cfg.fondoB; }  // v2.17: color del fondo
+    else if (g_pickTarget == 3) { r = g_cfg.fondoIconoR; g = g_cfg.fondoIconoG; b = g_cfg.fondoIconoB; }  // v2.53: fondo del icono
     else { r = g_cfg.ringR; g = g_cfg.ringG; b = g_cfg.ringB; }
     float h, s, v;
     ImGui::ColorConvertRGBtoHSV(r / 255.0f, g / 255.0f, b / 255.0f, h, s, v);
@@ -1495,6 +1905,7 @@ static void PickerApplyToRGB() {
     int ri = (int)(r * 255.0f + 0.5f), gi = (int)(g * 255.0f + 0.5f), bi = (int)(b * 255.0f + 0.5f);
     if (g_pickTarget == 1) { g_cfg.textoR = ri; g_cfg.textoG = gi; g_cfg.textoB = bi; }
     else if (g_pickTarget == 2) { g_cfg.fondoR = ri; g_cfg.fondoG = gi; g_cfg.fondoB = bi; }  // v2.17: color del fondo
+    else if (g_pickTarget == 3) { g_cfg.fondoIconoR = ri; g_cfg.fondoIconoG = gi; g_cfg.fondoIconoB = bi; }  // v2.53: fondo del icono
     else { g_cfg.ringR = ri; g_cfg.ringG = gi; g_cfg.ringB = bi; }
 }
 // ---- controles propios del panel (no los de ImGui por defecto) ----------------
@@ -1572,7 +1983,7 @@ static bool PanelSlider(const char* label, int* v, int vmin, int vmax, const cha
     dl->AddText(ImVec2(lp.x + w - vs.x - H*0.008f, lp.y), IM_COL32(255, 255, 255, 255), vb);
     ImGui::Dummy(ImVec2(w, ImGui::GetTextLineHeight()));
     ImVec2 p0 = ImGui::GetCursorScreenPos();
-    float zoneH = H * 0.045f;
+    float zoneH = H * 0.050f;  // v2.50: barra mas alta al tacto
     ImGui::InvisibleButton(label, ImVec2(w, zoneH));
     bool active = ImGui::IsItemActive();
     ImGuiIO& io = ImGui::GetIO();
@@ -1580,6 +1991,7 @@ static bool PanelSlider(const char* label, int* v, int vmin, int vmax, const cha
     // v2.20: valor antes de pulsar (si el arrastre acaba siendo un
     // desplazamiento del panel, se restaura para que la barra no se mueva)
     static int* savedPtr = nullptr; static int savedVal = 0;
+    if (g_panelJustOpened) savedPtr = nullptr;  // v2.48: al reabrir, olvidar el valor guardado de la sesion anterior
     if (ImGui::IsItemActivated()) { savedPtr = v; savedVal = *v; }
     if (g_panelScrolling && savedPtr == v) *v = savedVal;
     // v2.25: al soltar se olvida el valor guardado; si no, un desplazamiento
@@ -1609,7 +2021,7 @@ static bool PanelSlider(const char* label, int* v, int vmin, int vmax, const cha
 static bool PanelSwitch(const char* label, bool* v, float H) {
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
-    float bh = H * 0.050f;
+    float bh = H * 0.056f;  // v2.50: interruptor mas alto
     float rd = H * 0.012f;
     bool clicked = ImGui::InvisibleButton(label, ImVec2(w, bh));
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1625,13 +2037,19 @@ static bool PanelSwitch(const char* label, bool* v, float H) {
     float sx = p0.x + w - H*0.016f - sw, sy = p0.y + (bh - sh) * 0.5f;
     dl->AddRectFilled(ImVec2(sx, sy), ImVec2(sx + sw, sy + sh), *v ? IM_COL32(20, 110, 255, 255) : IM_COL32(74, 76, 88, 255), sh * 0.5f);
     dl->AddCircleFilled(ImVec2(*v ? sx + sw - sh * 0.5f : sx + sh * 0.5f, sy + sh * 0.5f), sh * 0.5f - H*0.004f, IM_COL32(255, 255, 255, 255), 24);
-    if (clicked) *v = !*v;
-    return clicked;
+    // v2.54: solo se activa tocando la pastilla del interruptor (derecha, con
+    // un poco de margen tactil). Antes el InvisibleButton cubria toda la fila
+    // azul y al desplazar el panel o tocar la etiqueta se cambiaban solos.
+    ImVec2 mp = ImGui::GetIO().MousePos;
+    float m = H * 0.012f;
+    bool onSwitch = (mp.x >= sx - m && mp.x <= sx + sw + m && mp.y >= sy - m && mp.y <= sy + sh + m);
+    if (clicked && onSwitch) *v = !*v;
+    return clicked && onSwitch;
 }
 static bool PanelButtonIcon(const char* label, float H, float w, int icon) {
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     if (w <= 0.0f) w = ImGui::GetContentRegionAvail().x;  // 0 = todo el ancho
-    float bh = H * 0.050f;
+    float bh = H * 0.056f;  // v2.50: boton mas alto
     float rd = H * 0.012f;  // v2.22: esquinas redondeadas (como las filas de ARCX)
     bool clicked = ImGui::InvisibleButton(label, ImVec2(w, bh));
     bool active = ImGui::IsItemActive();
@@ -1682,7 +2100,7 @@ static void DrawSettings(float W, float H) {
     else ImGui::SetNextWindowPos(ImVec2(W * 0.5f, H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(W * g_cfg.panelAncho, g_cfg.panelAlto >= 0.0f ? H * g_cfg.panelAlto : 0), ImGuiCond_Always);  // v2.18: alto ajustable (-1 = automatico)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H*0.014f, H*0.014f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(H*0.010f, H*0.010f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(H*0.010f, H*0.016f));  // v2.50: mas aire entre controles (antes todo iba muy junto)
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, H*0.015f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.05f, 0.13f, 0.97f));  // azul casi oscuro
@@ -1702,6 +2120,7 @@ static void DrawSettings(float W, float H) {
     ImVec2 ts = ImGui::CalcTextSize(title);
     float titleW = ImGui::GetContentRegionAvail().x;
     ImVec2 wp = ImGui::GetWindowPos(); ImVec2 ws = ImGui::GetWindowSize();  // v2.22: se necesitan arriba (cabecera fija y desplazamiento)
+    g_panelRectX = wp.x; g_panelRectY = wp.y; g_panelRectW = ws.x; g_panelRectH = ws.y;  // v2.49: rect real del panel para repartir los toques
     float pad = H * 0.014f;  // relleno de la ventana
     float xr = H * 0.020f;   // v2.23: radio de la X (mas chica que en la v2.22)
     float titleY = wp.y + pad;  // titulo
@@ -1754,6 +2173,7 @@ static void DrawSettings(float W, float H) {
     // mueve el panel), la X o la esquina (que lo redimensiona).
     static bool panelScrolling = false; static bool scrollDecided = false; static ImVec2 scrollStart;
     static bool scrollStartInPanel = false; static bool scrollStartOnPicker = false; static float scrollStartY = 0.0f; static float scrollVel = 0.0f;
+    if (g_panelJustOpened) { panelScrolling = false; scrollDecided = false; g_panelScrolling = false; scrollVel = 0.0f; panelMoving = false; panelMoved = false; xPressed = false; panelResizing = false; }  // v2.48: al reabrir, olvidar el arrastre/desplazamiento de la sesion anterior
     if (io.MouseClicked[0]) {
         scrollStart = io.MousePos; scrollDecided = false; panelScrolling = false; g_panelScrolling = false; scrollVel = 0.0f;
         scrollStartY = ImGui::GetScrollY();
@@ -1784,7 +2204,12 @@ static void DrawSettings(float W, float H) {
         scrollVel = 0.0f;
     }
     // v2.22: el titulo, el subtitulo y la linea van en primer plano (cabecera fija, abajo)
+    // v2.50: secciones con titulo (como ARCX) - Rueda de radio / Boton flotante
+    ImGui::TextColored(titleCol, "%s", S(STR_SEC_RUEDA));
+    ImGui::Separator();
     if (PanelSlider(S(STR_FONDO), &g_cfg.fondo, 0, 100, "%d%%", H, IC_SUN)) g_cfgDirty = true;
+    // v2.56: barra del blur de fondo (0 = apagado)
+    if (PanelSlider(S(STR_BLUR), &g_cfg.blur, 0, 100, "%d%%", H, IC_SUN)) { g_cfgDirty = true; Log("desenfoque de fondo: %d%%", g_cfg.blur); }
     if (PanelSlider(S(STR_TAMANO), &g_cfg.tamano, 25, 45, "%d%%", H, IC_SIZE)) g_cfgDirty = true;
     // recuadros de color: al tocar uno se abre el panel RGB para ese color
     ImGui::BeginGroup();
@@ -1807,8 +2232,15 @@ static void DrawSettings(float W, float H) {
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (H*0.055f - ImGui::GetTextLineHeight()) * 0.5f);
     ImGui::Text("%s", S(STR_FONDO_LBL));
     ImGui::EndGroup();
+    ImGui::SameLine(0, H*0.05f);
+    ImGui::BeginGroup();
+    if (PanelSwatch("##swFondoIcono", ImVec4(g_cfg.fondoIconoR / 255.0f, g_cfg.fondoIconoG / 255.0f, g_cfg.fondoIconoB / 255.0f, 1.0f), g_pickTarget == 3, H)) { g_pickTarget = (g_pickTarget == 3) ? -1 : 3; PlayClick(false); }
+    ImGui::SameLine(0, H*0.012f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (H*0.055f - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::Text("%s", S(STR_FONDOICONO));
+    ImGui::EndGroup();
     if (g_pickTarget >= 0) {
-        ImGui::TextColored(titleCol, "%s", g_pickTarget == 1 ? S(STR_TEXTO) : (g_pickTarget == 2 ? S(STR_FONDO_LBL) : S(STR_ANILLO)));
+        ImGui::TextColored(titleCol, "%s", g_pickTarget == 1 ? S(STR_TEXTO) : (g_pickTarget == 2 ? S(STR_FONDO_LBL) : (g_pickTarget == 3 ? S(STR_FONDOICONO) : S(STR_ANILLO))));
         // ---- panel RGB tactil (como ARCX 3.1.38): cuadro saturacion/valor + barra de tono ----
         const float gap = H * 0.012f;
         const float hueW = H * 0.045f;
@@ -1848,6 +2280,7 @@ static void DrawSettings(float W, float H) {
         int cr, cg, cb;
         if (g_pickTarget == 1) { cr = g_cfg.textoR; cg = g_cfg.textoG; cb = g_cfg.textoB; }
         else if (g_pickTarget == 2) { cr = g_cfg.fondoR; cg = g_cfg.fondoG; cb = g_cfg.fondoB; }  // v2.17: color del fondo
+        else if (g_pickTarget == 3) { cr = g_cfg.fondoIconoR; cg = g_cfg.fondoIconoG; cb = g_cfg.fondoIconoB; }  // v2.53: fondo del icono
         else { cr = g_cfg.ringR; cg = g_cfg.ringG; cb = g_cfg.ringB; }
         const ImU32 pickU = ImGui::GetColorU32(ImVec4(cr / 255.0f, cg / 255.0f, cb / 255.0f, 1.0f));
         const ImVec2 mk(sq0.x + g_pickS * sq, sq0.y + (1.0f - g_pickV) * sq);
@@ -1875,6 +2308,24 @@ static void DrawSettings(float W, float H) {
         snprintf(vals, sizeof vals, "R %d   G %d   B %d    #%02X%02X%02X", cr, cg, cb, cr, cg, cb);
         ImGui::Text("%s", vals);
     }
+    // v2.55: interruptores de la rueda en su seccion (antes estaban todos
+    // amontonados bajo "Boton flotante").
+    {
+        bool color = g_cfg.iconosColor != 0;
+        if (PanelSwitch(S(STR_ICONOSCOLOR), &color, H)) { g_cfg.iconosColor = color ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("iconos de las emisoras: %s", g_cfg.iconosColor ? "a color" : "normales"); }
+        bool lenta = g_cfg.camaraLenta != 0;
+        if (PanelSwitch(S(STR_CAMARALENTA), &lenta, H)) { g_cfg.camaraLenta = lenta ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("camara lenta: %s", g_cfg.camaraLenta ? "activada" : "apagada"); }
+        bool genero = g_cfg.mostrarGenero != 0;
+        if (PanelSwitch(S(STR_GENERO), &genero, H)) { g_cfg.mostrarGenero = genero ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("genero en la rueda: %s", g_cfg.mostrarGenero ? "visible" : "oculto"); }
+        bool fIco = g_cfg.fondoIcono != 0;
+        if (PanelSwitch(S(STR_FONDOICONO), &fIco, H)) { g_cfg.fondoIcono = fIco ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); ReloadIcons(); Log("fondo del icono: %s", g_cfg.fondoIcono ? "activado" : "apagado"); }
+        bool anim = g_cfg.animacion != 0;
+        if (PanelSwitch(S(STR_ANIMACION), &anim, H)) { g_cfg.animacion = anim ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("animacion de la rueda: %s", g_cfg.animacion ? "activada" : "apagada"); }
+        bool bloqJ = g_cfg.bloquearJuego != 0;
+        if (PanelSwitch(S(STR_BLOQUEARJUEGO), &bloqJ, H)) { g_cfg.bloquearJuego = bloqJ ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("bloquear juego con la rueda abierta: %s", g_cfg.bloquearJuego ? "activado" : "apagado"); }
+    }
+    ImGui::Separator();
+    ImGui::TextColored(titleCol, "%s", S(STR_SEC_BOTON));
     ImGui::Separator();
     // v2.16: idioma + boton flotante (tamano, opacidad, bloqueo, posicion)
     // v2.23: globo a la izquierda de "Idioma" (como la imagen)
@@ -1901,13 +2352,14 @@ static void DrawSettings(float W, float H) {
         if (PanelSwitch(S(STR_BTN_LOCK), &bloq, H)) { g_cfg.btnBloq = bloq ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.btnBloq ? "bloqueado" : "libre"); }
     }
     {
-        // v2.28: interruptor de iconos a color (carpeta radio_color/)
-        bool color = g_cfg.iconosColor != 0;
-        if (PanelSwitch(S(STR_ICONOSCOLOR), &color, H)) { g_cfg.iconosColor = color ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("iconos de las emisoras: %s", g_cfg.iconosColor ? "a color" : "normales"); }
-        bool lenta = g_cfg.camaraLenta != 0;
-        if (PanelSwitch(S(STR_CAMARALENTA), &lenta, H)) { g_cfg.camaraLenta = lenta ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("camara lenta: %s", g_cfg.camaraLenta ? "activada" : "apagada"); }
+        // v2.55: solo los interruptores del boton (los de la rueda estan en
+        // su seccion; el de iconos propios se quito).
+        // v2.56: "Ocultar ventana de emisora" va aqui (la ventana es la
+        // etiqueta junto al boton chiquito, no de la rueda).
         bool btnVis = g_cfg.botonVisible != 0;
         if (PanelSwitch(S(STR_BOTONVIS), &btnVis, H)) { g_cfg.botonVisible = btnVis ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.botonVisible ? "visible" : "oculto"); }
+        bool ocNom = g_cfg.ocultarNombre != 0;
+        if (PanelSwitch(S(STR_OCULTARNOMBRE), &ocNom, H)) { g_cfg.ocultarNombre = ocNom ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("ventana de emisora: %s", g_cfg.ocultarNombre ? "oculta" : "visible"); }
     }
     // v2.23: botones en rejilla de 2 columnas con icono (como la imagen)
     {
@@ -1915,7 +2367,7 @@ static void DrawSettings(float W, float H) {
         if (PanelButtonIcon(S(STR_BTN_RESET_POS), H, bw, IC_RESET)) { g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("posicion del boton restablecida"); }
         ImGui::SameLine(0, H*0.010f);
         if (PanelButtonIcon(S(STR_PREVIEW), H, bw, IC_EYE)) {
-            g_preview = true; g_open = true; g_selected = g_current; g_settings = false;
+            g_preview = true; g_open = true; g_wheelAnimStart = std::chrono::steady_clock::now(); g_selected = g_current; g_settings = false;
             PlayClick(false);
             Log("vista previa de la rueda");
         }
@@ -1924,7 +2376,7 @@ static void DrawSettings(float W, float H) {
     if (PanelButtonIcon(S(STR_RESET), H, 0.0f, IC_RESET)) {
         g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255;
         g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0;
-        g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1;
+        g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
         g_cfgDirty = false; SaveCfg();
         Log("ajustes restablecidos");
     }
@@ -2002,12 +2454,7 @@ static void DrawSettings(float W, float H) {
     ImGui::PopStyleVar(4);
 }
 
-// v2.7: un puntero es creible si, quitandole el byte de etiqueta (0xb4...),
-// cae en el rango del heap del juego (0x100000000..0x1000000000000)
-static bool PlausiblePtr(uintptr_t v) {
-    uintptr_t t = v & 0x00FFFFFFFFFFFFFFULL;
-    return t > 0x100000000ULL && t < 0x1000000000000ULL;
-}
+// v2.51: PlausiblePtr eliminado (solo lo usaba el escaneo ptrCand, que ya se quito).
 // v2.9: true si la pagina de p esta mapeada (mincore devuelve 0); quita el
 // byte de etiqueta (0xb4...) antes de preguntar al kernel. Sin esto, leer un
 // valor que "parece" puntero pero no esta mapeado cierra el juego (v2.8).
@@ -2048,23 +2495,29 @@ static bool VehicleHasRadio(void* veh) {
     Log("  vehiculo: modelo=%u tieneRadio=%d", (unsigned)modelId, noRadio ? 0 : 1);
     return !noRadio;
 }
-// v2.7: vuelca n bytes en hexadecimal a un buffer (para el diagnostico)
-static void HexDump(char* out, size_t outSz, const void* p, int n) {
-    const unsigned char* b = (const unsigned char*)p;
-    int w = 0;
-    for (int i = 0; i < n && w < (int)outSz - 4; i++) w += snprintf(out + w, outSz - (size_t)w, "%02X ", b[i]);
-    if (w > 0 && w < (int)outSz) out[w - 1] = 0;  // quitar el ultimo espacio
-}
+// v2.51: HexDump eliminado (solo lo usaban el volcado del vehiculo y el escaneo ptrCand).
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     if (g_failed) return;
     EGLContext ctx = eglGetCurrentContext();
     if (ctx == EGL_NO_CONTEXT) return;
-    EGLint w = 0, h = 0; eglQuerySurface(dpy, surf, EGL_WIDTH, &w); eglQuerySurface(dpy, surf, EGL_HEIGHT, &h);
-    if (w < 200 || h < 200) return;
     // v1: durante la pantalla de carga no hacer nada (ni leer el vehiculo ni
     // dibujar): el juego esta cargando texturas y la rueda/boton no se ven.
     // ut_loadingActive es CLoadingScreen::m_bActive (resuelto en UT_InstallHooks).
+    // Va ANTES del cambio aplazado para que este espere a que termine la carga.
     if (ut_loadingActive && *ut_loadingActive) return;
+    // v2.59: cambio de estacion aplazado (modoCambio=1): 3 cuadros despues
+    // de cerrar la rueda, sin UI ni camara lenta.
+    if (g_pendingStation != 0 && --g_pendingFrames <= 0) {
+        int pid = g_pendingStation;
+        g_pendingStation = 0; g_pendingFrames = 0;
+        DoStartRadio(pid);
+    }
+    // v2.51: el tamano de pantalla se consulta una vez y cada 120 cuadros
+    // (antes 2 eglQuerySurface en cada cuadro)
+    static EGLint cw = 0, ch = 0; static int qTick = 0;
+    if (cw <= 0 || ch <= 0 || (++qTick % 120) == 0) { eglQuerySurface(dpy, surf, EGL_WIDTH, &cw); eglQuerySurface(dpy, surf, EGL_HEIGHT, &ch); }
+    EGLint w = cw, h = ch;
+    if (w < 200 || h < 200) return;
     void* veh = FindPlayerVehicle ? FindPlayerVehicle(-1, false) : nullptr;
     bool wasInVehicle = g_inVehicle;
     g_inVehicle = veh != nullptr;
@@ -2079,66 +2532,15 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (!g_hasRadio) g_open = false;  // rueda cerrada si no tiene radio
         }
     }
-    // v2.9: diagnostico RadioType - la v2.8 SE CERRO al entrar a un auto de
-    // policia: el escaneo leyo un valor (0x23F800000) que "parecia" un puntero
-    // (cae en el rango 2^32..2^48) pero no esta mapeado, y al leerlo el juego
-    // hizo SIGSEGV. Ahora cada puntero se valida con mincore (IsMapped) ANTES
-    // de leerlo, y tambien la ventana que se vuelca. Rango mas amplio
-    // (0x100..0x500) y hasta 20 candidatos. Aun no bloquea nada.
+    // v2.51: el escaneo ptrCand y el volcado hex del vehiculo ya cumplieron
+    // su funcion (encontraron la entidad de audio y m_nModelIndex en 0x32);
+    // el bloqueo usa la lista de modelos, no el escaneo. Se quitan para no
+    // hacer mincore + fopen/fclose en cada entrada a un vehiculo.
     if (g_inVehicle && !wasInVehicle && veh) {
         Log("  vehiculo: %p estacion=%d", veh, g_current);
-        // v2.12: volcar los primeros 64 bytes del vehiculo para buscar
-        // m_nModelIndex (el modelo es estable por vehiculo: bici 481/509/510,
-        // tractor 531, patrulla 596-599). El bloqueo por rid fallo porque ese
-        // byte cambia; el modelo no cambia.
-        {
-            char hex[64*3+1];
-            HexDump(hex, sizeof hex, veh, 64);
-            Log("  vehiculo bytes[0x00..0x3F]=%s", hex);
-        }
-        int cands = 0;
-        for (int off = 0x100; off <= 0x500 && cands < 20; off += 8) {
-            void* cand = *(void**)((char*)veh + off);
-            if (!PlausiblePtr((uintptr_t)cand)) continue;
-            if (!IsMapped(cand)) continue;  // v2.9: la pagina debe estar mapeada
-            void* vt = *(void**)cand;
-            if (!PlausiblePtr((uintptr_t)vt)) continue;
-            if (!IsMapped((char*)cand + 0x70) || !IsMapped((char*)cand + 0xAF)) continue;
-            char hex[64*3+1];
-            HexDump(hex, sizeof hex, (char*)cand + 0x70, 64);
-            Log("  ptrCand(0x%X)=%p bytes[0x70..0xAF]=%s", off, cand, hex);
-            cands++;
-        }
-        if (cands == 0) Log("  ptrCand: ninguno en 0x100..0x500");
     }
-    // v2.12: diagnostico de audio SIN bloqueo - la v2.11 demostro que rid(0x9A)
-    // NO es estable (en un mismo carro dio 0, 2, 0, 0) y bloqueo carros y dejo
-    // pasar la bici, al reves de lo que se queria. Se registra rt/rid solo
-    // cuando cambian, para entender que es ese byte. El bloqueo por modelo
-    // (m_nModelIndex) se hara cuando se encuentre su offset (ver el volcado
-    // de los primeros bytes del vehiculo en el bloque de escaneo).
-    {
-        static void* lastVeh = nullptr;
-        static int lastRt = -999, lastRid = -999;
-        if (!g_inVehicle) { lastVeh = nullptr; lastRt = -999; lastRid = -999; }
-        else if (veh && veh != lastVeh) { lastVeh = veh; lastRt = -999; lastRid = -999; }
-        if (g_inVehicle && !wasInVehicle && veh) {
-            int aoffs[2] = {0x458, 0x1B0};
-            for (int i = 0; i < 2; i++) {
-                void* aud = *(void**)((char*)veh + aoffs[i]);
-                if (!PlausiblePtr((uintptr_t)aud)) continue;
-                if (!IsMapped(aud)) continue;
-                if (!IsMapped((char*)aud + 0x9A) || !IsMapped((char*)aud + 0x9B)) continue;
-                int rt = (int)*(signed char*)((char*)aud + 0x9B);
-                int rid = (int)*(signed char*)((char*)aud + 0x9A);
-                if (rt != lastRt || rid != lastRid) {
-                    Log("  audio(0x%X): rt(0x9B)=%d rid(0x9A)=%d", aoffs[i], rt, rid);
-                    lastRt = rt; lastRid = rid;
-                }
-                break;
-            }
-        }
-    }
+    // v2.51: diagnostico de audio (rt/rid) eliminado: el rid se probo
+    // inestable en la v2.11 y el bloqueo no lo usa (usa la lista de modelos).
     // v2.6: pausa por varias senales (el byte 0x5C solo no basto en la v2.5):
     // CMenuManager::m_bMenuActive, CTimer::m_UserPause / m_CodePause, y si
     // CMenuManager::DrawFrontEnd se llamo en este frame (menu dibujado)
@@ -2146,8 +2548,6 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     bool wasPaused = g_paused;
     g_paused = MenuActive() || (g_userPause && *g_userPause) || (g_codePause && *g_codePause) || fe;
     if (g_paused != wasPaused) { Log("menu de pausa: %s (byte=%d user=%d code=%d frontEnd=%d)", g_paused ? "abierto (UI oculta)" : "cerrado", MenuActive() ? 1 : 0, (g_userPause && *g_userPause) ? 1 : 0, (g_codePause && *g_codePause) ? 1 : 0, fe ? 1 : 0); if (g_menuCheck == 0) g_menuCheck = 1; }  // v2.4: el byte cambio: el offset es valido
-    // v2.6: diagnostico del menu - si los bytes del objeto cambian, registrar que offsets
-    if (g_menuManager) MenuSnapCheck();
     // v2.7: ralentizacion estilo GTA V - la v2.6 solo escribia los valores al
     // abrir/cerrar y el juego los borraba en el siguiente frame (el log decia
     // "activada" pero no se veia nada). Ahora se escriben EN CADA FRAME
@@ -2158,7 +2558,6 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         static bool slowOn = false;
         static float savedTimeScale = 1.0f, savedSlowScale = 0.3f;
         static bool savedSlowActive = false;
-        static int slowTick = 0;
         if (g_open && !slowOn && g_cfg.camaraLenta) {
             slowOn = true;
             if (g_timeScale) savedTimeScale = *g_timeScale;
@@ -2176,15 +2575,13 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (g_slowActive) *g_slowActive = true;
             if (g_slowScale) *g_slowScale = 0.3f;
             if (g_timeScale) *g_timeScale = 0.3f;
-            // diagnostico: cada segundo, leer lo que el juego tiene puesto
-            // (si la escala dice 1.00, el juego esta borrando nuestros valores)
-            if (++slowTick >= 60) {
-                slowTick = 0;
-                Log("ralentizacion: escala leida=%.2f activa=%d (deberia ser 0.30)", g_timeScale ? *g_timeScale : -1.0f, (g_slowActive && *g_slowActive) ? 1 : 0);
-            }
-        } else slowTick = 0;
+        }
     }
     if (!g_inited) {
+        // v2.48: mientras carga la partida no iniciar ImGui ni cargar los
+        // iconos: las subidas de textura en plena carga ensucian el estado GL
+        // del juego y se ven texturas del juego a pantalla completa al reanudar.
+        if (g_loadingActive && *g_loadingActive) return;
         if (!FindPlayerPed || !FindPlayerPed(-1)) return;
         ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr; io.LogFilename = nullptr;
@@ -2204,6 +2601,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         g_inited = true; LoadRadioTextures(); RefreshCurrent();
         Log("ImGui listo (%.0fx%.0f), estacion actual: %d (%s)", (float)w, (float)h, g_current, kStationName[g_current]);
     }
+    LoadRadioTextures();  // v2.54: recargar si ReloadIcons marco g_texTried=false (antes solo se cargaba una vez al inicio; al apagar/encender los iconos propios desaparecian y no volvian). Con el guarda es un no-op si ya estan.
     ImGuiIO& io = ImGui::GetIO();
     static auto last = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
@@ -2215,7 +2613,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     static bool mouseDown = false;
     for (auto& e : evs) {
         if (e.kind == 0) {
-            io.AddMousePosEvent(e.x, e.y);
+            if (g_open || g_preview || g_settings) io.AddMousePosEvent(e.x, e.y);  // v2.50: con solo el boton, el toque no llega a ImGui
             g_touchX = e.x; g_touchY = e.y;  // v2.18: posicion propia del toque
             if (g_open && !g_settings && !g_paused) {
                 int seg = SegmentAt(e.x, e.y, (float)w, (float)h);
@@ -2235,7 +2633,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_cfg.btnX = nx; g_cfg.btnY = ny;
                 }
             }
-        } else if (e.kind == 1) { io.AddMouseButtonEvent(0, true); mouseDown = true;
+        } else if (e.kind == 1) { if (g_open || g_preview || g_settings) io.AddMouseButtonEvent(0, true); mouseDown = true;  // v2.50: con solo el boton, el toque no llega a ImGui
             // v2.3: en el menu de pausa los toques son del juego; con el panel abierto, del panel (ImGui)
             if (g_paused) {
                 // nada: el menu de pausa procesa el toque
@@ -2255,8 +2653,6 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             }
             // v1.2: doble toque al boton de claxon (zona derecha) abre/cierra la rueda
             if (g_inVehicle && !g_settings && !g_paused) {
-                static int tapLogN = 0;
-                if (tapLogN < 30 && g_touchX > (float)w*0.70f) { tapLogN++; Log("tap vehiculo #%d en (%.0f, %.0f)%s", tapLogN, g_touchX, g_touchY, InHornRegion(g_touchX, g_touchY, (float)w, (float)h) ? "  <- zona claxon" : ""); }
                 if (InHornRegion(g_touchX, g_touchY, (float)w, (float)h)) {
                     static auto lastHornTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
                     auto now = std::chrono::steady_clock::now();
@@ -2281,7 +2677,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_dragBY = (g_cfg.btnY >= 0.0f ? g_cfg.btnY : ip.y / (float)h);
                 }
             }
-        } else if (e.kind == 2) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+        } else if (e.kind == 2) { if (g_open || g_preview || g_settings) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); }  // v2.50: con solo el boton, el toque no llega a ImGui
             // v2.16: el toque al boton flotante se resuelve al soltar
             if (g_btnDrag) {
                 g_btnDrag = false;
@@ -2361,6 +2757,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     // oculto), saltar el frame de ImGui: es el trabajo que la rueda hace en
     // CADA frame y el que le quita CPU al decodificador de MP3 del mod de
     // User Tracks. Con el boton visible se dibuja como siempre.
+    // v2.48: al abrir el panel, descartar el estado de arrastre/desplazamiento
+    // de la sesion anterior (si no, una barra se restauraba a su valor viejo
+    // al reabrir, y el panel podia desplazarse solo por la inercia guardada).
+    static bool prevSettings = false;
+    if (g_settings && !prevSettings) g_panelJustOpened = true;
+    prevSettings = g_settings;
     bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && g_hasRadio && g_cfg.botonVisible;
     if (onlyButton && g_inited) {
         // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
@@ -2376,11 +2778,15 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || (g_settings && !g_paused);
     if (needDraw) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // v2.49: en el primer cuadro del panel el raton va limpio (sin el clic
+        // que lo abrio): asi ese clic no activa una barra o un boton del panel.
+        if (g_panelJustOpened) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); }
         ImGui_ImplOpenGL3_NewFrame(); ImGui::NewFrame();
         if (g_inVehicle && !g_paused) DrawWheel((float)w, (float)h);
         if (g_settings && !g_paused) DrawSettings((float)w, (float)h);
         ImGui::Render(); ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
+    g_panelJustOpened = false;  // v2.48: el reseteo de apertura solo vale para el primer cuadro
 }
 
 static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
@@ -2446,13 +2852,17 @@ extern "C" void OnModLoad() {
     SYM(g_slowActive, "_ZN6CTimer17bSlowMotionActiveE");
     SYM(g_slowScale, "_ZN6CTimer19ms_fSlowMotionScaleE");
     SYM(g_timeScale, "_ZN6CTimer13ms_fTimeScaleE");
+    SYM(g_loadingActive, "_ZN14CLoadingScreen9m_bActiveE");  // v2.48: true mientras carga la partida
     if (!g_slowActive && !g_timeScale) Log("  !! sin escala de tiempo: no habra ralentizacion al abrir la rueda");
     void* dfe = (void*)aml->GetSym(h, "_ZN12CMenuManager12DrawFrontEndEv");
     Log("  %s CMenuManager::DrawFrontEnd", dfe ? "ok" : "FALTA");
     if (dfe) aml->Hook(dfe, (void*)DrawFrontEnd_hook, (void**)&DrawFrontEnd_orig);
+    void* drsn = (void*)aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");
+    Log("  %s CAERadioTrackManager::DisplayRadioStationName", drsn ? "ok" : "FALTA");
+    if (drsn) aml->Hook(drsn, (void*)DisplayRadioStationName_hook, (void**)&DisplayRadioStationName_orig);
     #undef SYM
     Log("  globales: AudioEngine=%p AERadioTrackManager=%p", g_audioEngine, g_trackManager);
-    UT_InstallHooks();  // v1: engancha StartRadio para el reproductor de User Tracks propio
+    UT_InstallHooks();  // v1: engancha StartRadio para el reproductor de User Tracks propio (y DisplayRadioStationName, despues del hook de la 2.59, para que encadenen)
     if (!g_audioEngine || !g_trackManager) Log("  !! falta un objeto global de radio: no se llamara a ninguna funcion de radio");
     if (!g_retuneAudio && !g_retuneTrack && !g_startAudio && !g_startTrack)
         Log("!! ningun Retune/Start resolvio: la rueda se dibujara pero no cambiara la radio. Ver VHudRadioProbe.txt");
