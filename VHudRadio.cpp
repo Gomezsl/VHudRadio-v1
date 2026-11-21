@@ -1255,7 +1255,7 @@ static void ToggleWheel(const char* why) {
     if (now - lastToggle < std::chrono::milliseconds(600)) return;
     lastToggle = now;
     if (!g_open) { g_open = true; g_wheelAnimStart = std::chrono::steady_clock::now(); g_ignoreNextUp = true; RefreshCurrent(); g_selected = g_current; Log("rueda abierta por %s (estacion actual %d %s)", why, g_current, kStationName[g_current]); PlayClick(false); }
-    else { g_open = false; g_centerTap = false; g_listBtnTap = false; g_trackBtn = 0; Log("rueda cerrada por %s", why); }
+    else { g_open = false; g_centerTap = false; g_listBtnTap = false; Log("rueda cerrada por %s", why); }
 }
 
 
@@ -1463,10 +1463,21 @@ static bool g_glBtnTried = false, g_glBtnOk = false, g_glBtnUseVAO = false;
 #ifndef GL_VERTEX_ARRAY_BINDING
 #define GL_VERTEX_ARRAY_BINDING 0x85B5
 #endif
+// v1.4: constantes de ES 3.0 (no estan en <GLES2/gl2.h>) para el blit del blur.
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
 typedef void (*PFNGLGENVA)(GLsizei, GLuint*);
 typedef void (*PFNGLBINDVA)(GLuint);
 static PFNGLGENVA g_pGenVA = nullptr;
 static PFNGLBINDVA g_pBindVA = nullptr;
+// v1.4: glBlitFramebuffer (ES 3.0) para resolver el MSAA del juego en el blur.
+// Se declara aqui (antes de GLBtnInit) porque GLBtnInit lo resuelve.
+typedef void (*PFNGLBLITFB)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+static PFNGLBLITFB g_pBlitFB = nullptr;
 static GLuint GLBtnCompile(GLenum type, const char* src) {
     GLuint sh = glCreateShader(type);
     glShaderSource(sh, 1, &src, nullptr);
@@ -1754,11 +1765,6 @@ static bool DrawButtonGL(float W, float H) {
 // de que ImGui pinte el fondo oscuro y la rueda.
 static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolveFBO = 0;
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
-// v1.4: glBlitFramebuffer (ES 3.0) para resolver el framebuffer del juego
-// (GTA usa MSAA: glCopyTexImage2D falla con GL_INVALID_OPERATION 0x502
-// porque no se puede copiar directo de un buffer multisample).
-typedef void (*PFNGLBLITFB)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
-static PFNGLBLITFB g_pBlitFB = nullptr;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
     if (g_cfg.blur <= 33) return 8;   // v1.3: mas fuerte (antes 4x, casi no se notaba)
