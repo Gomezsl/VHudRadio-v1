@@ -411,13 +411,18 @@ static int UT_CurrentTrackIdx() {
 // ---- callback de OpenSL (hilo interno de OpenSL) ----
 // slBufferQueueCallback: void (SLBufferQueueItf, void*). Mismo uso que el
 // ejemplo native-audio del NDK (SL_IID_BUFFERQUEUE + RegisterCallback).
-// v1.8: si el juego lleva >3 s sin dibujar un cuadro (se fue a la pantalla
-// de inicio / fondo), se pausa el reproductor. Al volver, UT_Frame lo
-// reanuda. Sin esto la musica seguia sonando en la pantalla de inicio.
+// v1.8: si el juego lleva un tiempo sin dibujar un cuadro (se fue a la
+// pantalla de inicio / fondo), se pausa el reproductor. Al volver,
+// UT_Frame lo reanuda. Sin esto la musica seguia sonando en la pantalla
+// de inicio. v1.9.13: el umbral baja de 3 s a 1 s (Rehan: con 3 s sonaba
+// 4-5 s al ir a inicio; con 1 s se corta casi al momento; si el juego se
+// traba 1 s en partida, UT_Frame lo reanuda al siguiente cuadro).
+// No depende de ut_menuPreview (la 1.9.12 no lo toco): el callback es un
+// hilo de OpenSL independiente de los cuadros del juego.
 static void UT_PauseDevice(bool pause);  // v1.8: declaracion adelantada (se define mas abajo)
 static void UT_BufferCallback(SLBufferQueueItf bq, void* /*ctx*/) {
     if (ut_active && ut_lastFrameAt.time_since_epoch().count() > 0 &&
-        std::chrono::steady_clock::now() - ut_lastFrameAt > std::chrono::seconds(3)) {
+        std::chrono::steady_clock::now() - ut_lastFrameAt > std::chrono::seconds(1)) {
         UT_PauseDevice(true);
     }
     pthread_mutex_lock(&ut_cbMutex);
@@ -863,7 +868,7 @@ static void UT_Frame() {
         ut_resumeAt = std::chrono::steady_clock::now();  // v1.8: gracia de 2 s (el juego pide Radio Off DESPUES de esto)
         Log("UT: reanudado al subir al vehiculo");
     }
-    bool paused = (g_paused && !ut_menuPreview) || (ut_loadingActive && *ut_loadingActive) || ut_pausedByExit;  // v1.9.12: en el menu (preview) suena aunque el juego este en pausa
+    bool paused = (g_paused && !ut_menuPreview) || (ut_loadingActive && *ut_loadingActive) || (ut_pausedByExit && !ut_menuPreview);  // v1.9.13: el preview tambien salta la pausa por salir del vehiculo (en el menu de inicio no hay vehiculo)
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();
     if (!ut_diagDone && now - ut_startedAt > std::chrono::seconds(3)) {

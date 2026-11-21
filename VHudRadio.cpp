@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.12-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.13-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,22 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.13: PREVIEW DESDE EL MENU DE INICIO + PARAR AL IR A INICIO EN 1 S + ICONOS 8/12 TEÑIDOS
+// - Preview en el menu de inicio: en el menu principal no hay vehiculo,
+//   asi que UT_Frame ponia ut_pausedByExit y el preview no sonaba (la 1.9.12
+//   solo saltaba la pausa por m_UserPause). Ahora ut_menuPreview tambien
+//   salta la pausa por salir del vehiculo: menu inicio -> ajustes ->
+//   opciones de sonido -> tocar User Track suena.
+// - Pantalla de inicio: el umbral del callback de OpenSL baja de 3 s a 1 s
+//   (Rehan: con 3 s la musica sonaba 4-5 s al ir a inicio). La 1.9.12 NO
+//   toco este mecanismo (el callback es un hilo de OpenSL independiente de
+//   ut_menuPreview); el retraso era el umbral de la 1.8.0.
+// - Iconos: las emisoras 8 (CSR) y 12 (User tracks) tienen el logo como
+//   imagen densa (slotrad, con recuadro); con fondoIcono el circulo de color
+//   solo se veia por fuera del logo (el black-key deja el logo opaco, ~16%
+//   del cuadro, y el resto ya es fondoIconoColor). Con iconos a color se
+//   tiñen con el color de fondoIcono (mezclado con blanco para no
+//   oscurecerlos) para que el logo tambien tome el color. Solo esas dos.
 // v1.9.12: MIXTAPE SUENA DESDE OPCIONES DE SONIDO + EMISORA CON NOMBRE (Alex 1.8.4, informe SAUserTracks-1.8.4-RE3.md)
 // - El tap en el dial SI llega por RetuneRadio (TrackManager), pero el
 //   juego esta en pausa (m_UserPause) y UT_Frame pausaba el reproductor:
@@ -791,9 +807,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.12-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.13-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.12-beta"
+#define VHUDRADIO_VERSION "1.9.13-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2433,6 +2449,18 @@ static void DrawWheel(float W, float H) {
         if (g_cfg.fondoIcono) dl->AddCircleFilled(p, si, IM_COL32(g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB, (int)(255 * anim)));  // v2.53: fondo de color del icono
         if (it) {
             ImVec4 tint = sel ? ImVec4(1, 1, 1, anim) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f * anim);
+            // v1.9.13: las emisoras 8 (CSR) y 12 (User tracks) tienen el logo
+            // como imagen densa (slotrad, con recuadro); con fondoIcono el
+            // circulo de color solo se veia por fuera del logo. Con iconos a
+            // color se tiñen con el color de fondoIcono (mezclado con blanco
+            // para que el logo no se oscurezca) para que el logo tambien tome
+            // el color. Solo esas dos: las demas ya se ven coloreadas.
+            if (g_cfg.fondoIcono && g_cfg.iconosColor && (i == 8 || i == 12)) {
+                float lr = (255.0f + g_cfg.fondoIconoR) / 510.0f;
+                float lg = (255.0f + g_cfg.fondoIconoG) / 510.0f;
+                float lb = (255.0f + g_cfg.fondoIconoB) / 510.0f;
+                tint = sel ? ImVec4(lr, lg, lb, anim) : ImVec4(lr * 0.55f, lg * 0.55f, lb * 0.55f, 0.75f * anim);
+            }
             // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
             // un cuadrado y se notaba el cuadrado de la imagen.
             dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-si, p.y-si), ImVec2(p.x+si, p.y+si), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), si);
