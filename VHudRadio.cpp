@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.4.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.5.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -579,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.4.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.5.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.4.0-beta"
+#define VHUDRADIO_VERSION "1.5.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1408,22 +1408,59 @@ static int TrackArrowAt(float x, float y) {
     if (dx*dx + dy*dy <= rr*rr) return 1;
     return 0;
 }
+// v1.5: tamanos de texto de la etiqueta del boton flotante. Escalan con el
+// tamano del boton (btnTam), asi el boton entero (icono + etiqueta) crece
+// o encoge junto (antes el texto era fijo y solo el icono escalaba).
+static void BtnLabelSizes(float H, float& ns, float& ts) {
+    float sc = g_cfg.btnTam / 100.0f;
+    ns = H * 0.022f * sc;
+    ts = H * 0.018f * sc;
+}
+// v1.5: flechas anterior/siguiente DENTRO de la ventana de la etiqueta (solo
+// en la 12): van a los lados del nombre de la cancion, dentro de la etiqueta
+// (antes iban fuera, a los lados del icono y la etiqueta, y quedaban mal).
+static ImVec2 g_lblPrevC, g_lblNextC;
+static float g_lblArrowR = 0;
+static bool g_lblArrows = false;
+static float g_lblClipL = 0, g_lblClipR = 0;  // hueco del nombre entre las flechas
+static float g_lblTrackY = 0;  // Y de la linea de la cancion en la etiqueta
 // v2.2: geometria del boton flotante (icono + etiqueta con estacion y genero).
 // El toque vale en todo el conjunto (icono o etiqueta).
 static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, ImVec2& labelSize, float& bs) {
     bs = BtnSize(H);
     iconPos = BtnPos(W, H, bs);
     ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
-    float ns = H * 0.022f, ts = H * 0.018f;
+    float ns, ts;
+    BtnLabelSizes(H, ns, ts);
     ImVec2 nsz = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, kStationName[g_current], nullptr);
     ImVec2 tsz = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, BtnSubLine(), nullptr);
     float subW = tsz.x;
-    if (g_current == 12 && ut_active && subW > H * 0.22f) subW = H * 0.22f;  // v1.3: la etiqueta no crece con nombres largos (marquesina)
-    float lw = (nsz.x > subW ? nsz.x : subW) + H * 0.02f;
+    float cap = H * 0.22f * (g_cfg.btnTam / 100.0f);  // v1.5: el tope escala con el boton
+    if (g_current == 12 && ut_active && subW > cap) subW = cap;  // v1.3: la etiqueta no crece con nombres largos (marquesina)
+    // v1.5: en la 12 la etiqueta se ensancha para que quepan las flechas
+    // dentro (a los lados del nombre de la cancion).
+    float ar = ts * 0.8f;  // radio de las flechas de la etiqueta
+    float agap = H * 0.008f;
+    float arrowW = 0.0f;
+    if (g_current == 12 && ut_active) arrowW = 2.0f * (2.0f * ar + agap);
+    float lw = (nsz.x > subW + arrowW ? nsz.x : subW + arrowW) + H * 0.02f;
     float lh = ns + ts + H * 0.02f;
     labelSize = ImVec2(lw, lh);
     if (iconPos.x < W * 0.5f) labelPos = ImVec2(iconPos.x + bs + H * 0.015f, iconPos.y + bs * 0.5f - lh * 0.5f);
     else labelPos = ImVec2(iconPos.x - H * 0.015f - lw, iconPos.y + bs * 0.5f - lh * 0.5f);
+    // Geometria de las flechas dentro de la etiqueta (para dibujarlas y tocarlas).
+    g_lblArrows = (g_current == 12 && ut_active && g_cfg.mostrarGenero && !g_cfg.ocultarNombre);
+    if (g_lblArrows) {
+        g_lblArrowR = ar;
+        float subY = labelPos.y + H * 0.008f + ns;  // Y de la linea 2 (la cancion)
+        float cy = subY + ts * 0.5f;
+        float pad = H * 0.01f;
+        g_lblPrevC = ImVec2(labelPos.x + pad + ar, cy);
+        g_lblNextC = ImVec2(labelPos.x + lw - pad - ar, cy);
+        g_lblClipL = g_lblPrevC.x + ar + agap;
+        g_lblClipR = g_lblNextC.x - ar - agap;
+        g_lblTrackY = subY;
+    }
 }
 static bool FloatBtnHit(float x, float y, float W, float H) {
     if (!g_hasRadio) return false;  // v2.16: sin radio no hay boton que tocar
@@ -1432,24 +1469,6 @@ static bool FloatBtnHit(float x, float y, float W, float H) {
     if (x >= ip.x && x <= ip.x + bs && y >= ip.y && y <= ip.y + bs) return true;
     if (x >= lp.x && x <= lp.x + ls.x && y >= lp.y && y <= lp.y + ls.y) return true;
     return false;
-}
-
-// v1.4: flechas anterior/siguiente junto al boton flotante (solo en la 12):
-// cambian de cancion sin abrir la rueda y sin tocar el cambio de emisora.
-// La anterior va a la izquierda del icono y la siguiente a la derecha de
-// la etiqueta (o del icono si la etiqueta esta oculta).
-static ImVec2 g_btnPrevC, g_btnNextC;
-static float g_btnArrowR = 0;
-static bool g_btnArrows = false;
-static void FloatBtnArrows(float W, float H, ImVec2& prevC, ImVec2& nextC, float& ar) {
-    ImVec2 bp, lp, ls; float bs;
-    FloatBtnGeom(W, H, bp, lp, ls, bs);
-    ar = H * 0.02f;
-    float gap = H * 0.012f;
-    float cy = bp.y + bs / 2;
-    prevC = ImVec2(bp.x - gap - ar, cy);
-    float rightX = (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) ? (lp.x + ls.x) : (bp.x + bs);
-    nextC = ImVec2(rightX + gap + ar, cy);
 }
 
 // v2.33: boton flotante con OpenGL directo (sin ImGui) para no hacer un
@@ -1578,7 +1597,8 @@ static bool DrawButtonGL(float W, float H) {
     GLuint atlasTex = (GLuint)(uintptr_t)atlas;
     ImVec2 bp, lp, ls; float bs;
     FloatBtnGeom(W, H, bp, lp, ls, bs);
-    float ns = H * 0.022f, ts = H * 0.018f;
+    float ns, ts;
+    BtnLabelSizes(H, ns, ts);  // v1.5: la etiqueta escala con el tamano del boton
     int op = g_cfg.btnOpac * 255 / 100;
     float opF = op / 255.0f;
     std::vector<GLBtnVert> vBg, vTxt, vIco, vTrk;  // v1.3: vTrk = nombre de la cancion (se dibuja con tijera)
@@ -1630,16 +1650,18 @@ static bool DrawButtonGL(float W, float H) {
     if (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) {
         drawText(kStationName[g_current], lp.x + H * 0.01f, lp.y + H * 0.008f, ns, 1.0f, 1.0f, 1.0f, opF);
         // v1.3: en la 12, el nombre de la cancion se desplaza si no cabe en la etiqueta.
+        // v1.5: el nombre va ENTRE las flechas (dentro de la etiqueta) y la
+        // tijera recorta solo ese hueco (antes era toda la etiqueta).
         const char* sub = BtnSubLine();
         float subX = lp.x + H * 0.01f;
         float subY = lp.y + H * 0.008f + ns;
         if (g_current == 12 && ut_active) {
             float subW = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, sub, nullptr).x;
-            float availW = ls.x - H * 0.02f;
+            float availW = g_lblClipR - g_lblClipL;
             float off = MarqueeOff(sub, subW, availW);
             trkSubY = subY;
-            drawTextTo(vTrk, sub, subX - off, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
-            if (off > 0) drawTextTo(vTrk, sub, subX - off + subW + 60.0f, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+            drawTextTo(vTrk, sub, g_lblClipL - off, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
+            if (off > 0) drawTextTo(vTrk, sub, g_lblClipL - off + subW + 60.0f, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
         } else {
             drawText(sub, subX, subY, ts, 200.0f/255.0f, 225.0f/255.0f, 235.0f/255.0f, 230.0f * opF / 255.0f);
         }
@@ -1651,12 +1673,11 @@ static bool DrawButtonGL(float W, float H) {
     circleTo(vBg, bp.x + bs / 2, bp.y + bs / 2, bs / 2, 0.0f, 0.0f, 0.0f, opF);
     GLuint it = IconTex(g_current);
     if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
-    // v1.4: flechas anterior/siguiente junto al boton (solo en la 12).
-    g_btnArrows = false;
-    if (g_current == 12 && ut_active) {
-        ImVec2 ap, an; float ar;
-        FloatBtnArrows(W, H, ap, an, ar);
-        g_btnPrevC = ap; g_btnNextC = an; g_btnArrowR = ar; g_btnArrows = true;
+    // v1.5: flechas anterior/siguiente DENTRO de la etiqueta (solo en la 12),
+    // a los lados del nombre de la cancion.
+    if (g_lblArrows) {
+        ImVec2 ap = g_lblPrevC, an = g_lblNextC;
+        float ar = g_lblArrowR;
         circleTo(vBg, ap.x, ap.y, ar, 1.0f, 1.0f, 1.0f, 60.0f * opF / 255.0f);
         circleTo(vBg, an.x, an.y, ar, 1.0f, 1.0f, 1.0f, 60.0f * opF / 255.0f);
         float tr = ar * 0.55f;
@@ -1713,10 +1734,13 @@ static bool DrawButtonGL(float W, float H) {
     drawVerts(vBg, g_glBtnWhite);
     drawVerts(vTxt, atlasTex);
     // v1.3: el nombre de la cancion se recorta a la etiqueta (marquesina).
+    // v1.5: el recorte es el hueco ENTRE las flechas (no toda la etiqueta).
     // La tijera va en coordenadas GL (Y desde abajo).
     if (!vTrk.empty()) {
         glEnable(GL_SCISSOR_TEST);
-        glScissor((GLint)lp.x, (GLint)(H - (trkSubY + ts * 1.2f)), (GLint)ls.x, (GLint)(ts * 1.2f));
+        float scX = g_lblArrows ? g_lblClipL : lp.x;
+        float scW = g_lblArrows ? (g_lblClipR - g_lblClipL) : ls.x;
+        glScissor((GLint)scX, (GLint)(H - (trkSubY + ts * 1.2f)), (GLint)scW, (GLint)(ts * 1.2f));
         drawVerts(vTrk, atlasTex);
         glDisable(GL_SCISSOR_TEST);
     }
@@ -1767,9 +1791,9 @@ static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolv
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
-    if (g_cfg.blur <= 33) return 8;   // v1.3: mas fuerte (antes 4x, casi no se notaba)
-    if (g_cfg.blur <= 66) return 16;
-    return 32;  // v1.3: 32x en vez de 16x (mucho mas borroso al 100%)
+    if (g_cfg.blur <= 33) return 4;   // v1.5: menos pixeliado (el 32x dejaba la textura en 75x33 y se veian los cuadros)
+    if (g_cfg.blur <= 66) return 8;
+    return 16;  // v1.5: 16x al 100% (150x67): borroso pero sin bloques
 }
 static void BlurDrawBackground(float W, float H) {
     int factor = BlurFactor();
@@ -1927,7 +1951,8 @@ static void DrawWheel(float W, float H) {
     if (g_hasRadio && g_cfg.botonVisible) {
         ImVec2 bp, lp, ls; float bs;
         FloatBtnGeom(W, H, bp, lp, ls, bs);
-        float ns = H * 0.022f, ts = H * 0.018f;
+        float ns, ts;
+        BtnLabelSizes(H, ns, ts);  // v1.5: la etiqueta escala con el tamano del boton
         int op = g_cfg.btnOpac * 255 / 100;
         // v2.54: el recuadro ENTERO (fondo + estacion + genero) se oculta si
         // el genero esta apagado o si esta activa "Ocultar ventana de emisora".
@@ -1936,19 +1961,20 @@ static void DrawWheel(float W, float H) {
             dl->AddRectFilled(lp, ImVec2(lp.x + ls.x, lp.y + ls.y), IM_COL32(0, 0, 0, 140 * op / 255), H * 0.01f);
             dl->AddText(font, ns, ImVec2(lp.x + H * 0.01f, lp.y + H * 0.008f), IM_COL32(255,255,255,op), kStationName[g_current]);
             // v1.3: en la 12, el nombre de la cancion se desplaza si no cabe en la etiqueta.
+            // v1.5: el nombre va ENTRE las flechas (dentro de la etiqueta).
             const char* sub = BtnSubLine();
             float subX = lp.x + H * 0.01f;
             float subY = lp.y + H * 0.008f + ns;
             if (g_current == 12 && ut_active) {
                 float subW = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, sub, nullptr).x;
-                float availW = ls.x - H * 0.02f;
+                float availW = g_lblClipR - g_lblClipL;
                 float off = MarqueeOff(sub, subW, availW);
-                dl->PushClipRect(ImVec2(subX, subY), ImVec2(lp.x + ls.x - H * 0.01f, subY + ts * 1.2f), true);
+                dl->PushClipRect(ImVec2(g_lblClipL, subY), ImVec2(g_lblClipR, subY + ts * 1.2f), true);
                 if (off <= 0.0f) {
-                    dl->AddText(font, ts, ImVec2(subX, subY), IM_COL32(200,225,235,230 * op / 255), sub);
+                    dl->AddText(font, ts, ImVec2(g_lblClipL, subY), IM_COL32(200,225,235,230 * op / 255), sub);
                 } else {
-                    dl->AddText(font, ts, ImVec2(subX - off, subY), IM_COL32(200,225,235,230 * op / 255), sub);
-                    dl->AddText(font, ts, ImVec2(subX - off + subW + 60.0f, subY), IM_COL32(200,225,235,230 * op / 255), sub);
+                    dl->AddText(font, ts, ImVec2(g_lblClipL - off, subY), IM_COL32(200,225,235,230 * op / 255), sub);
+                    dl->AddText(font, ts, ImVec2(g_lblClipL - off + subW + 60.0f, subY), IM_COL32(200,225,235,230 * op / 255), sub);
                 }
                 dl->PopClipRect();
             } else {
@@ -1960,12 +1986,11 @@ static void DrawWheel(float W, float H) {
         // queda transparente y sin esto se veria el fondo del boton).
         { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); dl->AddImageRounded((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
         dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
-        // v1.4: flechas anterior/siguiente junto al boton (solo en la 12).
-        g_btnArrows = false;
-        if (g_current == 12 && ut_active) {
-            ImVec2 ap, an; float ar;
-            FloatBtnArrows(W, H, ap, an, ar);
-            g_btnPrevC = ap; g_btnNextC = an; g_btnArrowR = ar; g_btnArrows = true;
+        // v1.5: flechas anterior/siguiente DENTRO de la etiqueta (solo en la 12),
+        // a los lados del nombre de la cancion.
+        if (g_lblArrows) {
+            ImVec2 ap = g_lblPrevC, an = g_lblNextC;
+            float ar = g_lblArrowR;
             dl->AddCircleFilled(ap, ar, IM_COL32(255,255,255,(int)(60 * op / 255)), 24);
             dl->AddCircleFilled(an, ar, IM_COL32(255,255,255,(int)(60 * op / 255)), 24);
             float tr = ar * 0.55f;
@@ -2343,29 +2368,45 @@ static bool PanelSwatch(const char* label, ImVec4 col, bool active, float H) {
 
 // v2.2: panel de personalizacion (se abre con doble toque al boton flotante)
 // v1.4: lista de canciones de User Tracks (como la de GTA V): se abre desde
-// la rueda y muestra todas las pistas; la que suena va marcada con SONANDO.
+// la rueda y muestra todas las pistas; la que suena va marcada con PLAYING.
 // Tocar una pista la pone a sonar. La X de arriba a la derecha la cierra.
+// v1.5: UI mejorada (icono de User Track en la cabecera, fila actual con
+// fondo azul y pastilla amarilla PLAYING como en GTA V, filas mas altas).
 static void DrawTrackList(float W, float H) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, H * 0.012f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H * 0.014f, H * 0.014f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H * 0.016f, H * 0.014f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.05f, 0.13f, 0.97f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(H * 0.008f, H * 0.006f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.03f, 0.04f, 0.10f, 0.98f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
-    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.10f, 0.45f, 1.0f, 0.35f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.10f, 0.45f, 1.0f, 0.55f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.10f, 0.45f, 1.0f, 0.75f));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.10f, 0.35f, 0.75f, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.10f, 0.45f, 1.0f, 0.65f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.10f, 0.45f, 1.0f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.10f, 0.45f, 1.0f, 0.4f));
     if (g_fontUI) ImGui::PushFont(g_fontUI);
-    float pw = W * 0.42f, ph = H * 0.72f;
+    float pw = W * 0.46f, ph = H * 0.72f;
     ImGui::SetNextWindowSize(ImVec2(pw, ph), ImGuiCond_Always);
     ImGui::SetNextWindowPos(ImVec2((W - pw) * 0.5f, (H - ph) * 0.5f), ImGuiCond_Always);
     bool opened = ImGui::Begin("##vhudtracklist", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-    if (!opened) { ImGui::End(); if (g_fontUI) ImGui::PopFont(); ImGui::PopStyleColor(5); ImGui::PopStyleVar(3); return; }
+    if (!opened) { ImGui::End(); if (g_fontUI) ImGui::PopFont(); ImGui::PopStyleColor(6); ImGui::PopStyleVar(4); return; }
     ImVec2 wp = ImGui::GetWindowPos(); ImVec2 ws = ImGui::GetWindowSize();
     g_trackListRectX = wp.x; g_trackListRectY = wp.y; g_trackListRectW = ws.x; g_trackListRectH = ws.y;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    // Cabecera: icono de User Track + TRACK LIST + X.
+    float iconS = H * 0.045f;
+    GLuint it = IconTex(12);
+    if (it) {
+        ImVec2 ip0 = ImGui::GetCursorScreenPos();
+        dl->AddImageRounded((ImTextureID)(uintptr_t)it, ip0, ImVec2(ip0.x + iconS, ip0.y + iconS), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255,255,255,255), H * 0.008f);
+        ImGui::Dummy(ImVec2(iconS, iconS));
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
     ImGui::Text("TRACK LIST");
+    ImGui::Text("User Track Player");
+    ImGui::EndGroup();
     ImGui::SameLine(ImGui::GetWindowWidth() - H * 0.05f);
     if (ImGui::Button("X", ImVec2(H * 0.04f, H * 0.04f))) { g_trackList = false; Log("lista de canciones cerrada"); }
-    ImGui::Text("User Track Player");
     ImGui::Separator();
     ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
     int cur = UT_CurrentTrackIdx();
@@ -2373,17 +2414,26 @@ static void DrawTrackList(float W, float H) {
         const char* nm = UT_TrackNameFor((int)i);
         bool isCur = ((int)i == cur);
         char label[320];
-        if (isCur) snprintf(label, sizeof label, "%d  %s  [SONANDO]", (int)i + 1, nm);
-        else snprintf(label, sizeof label, "%d  %s", (int)i + 1, nm);
-        if (ImGui::Selectable(label, isCur)) {
+        snprintf(label, sizeof label, "%d  %s", (int)i + 1, nm);
+        if (ImGui::Selectable(label, isCur, 0, ImVec2(0, H * 0.032f))) {
             if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
+        }
+        if (isCur) {
+            // Pastilla amarilla PLAYING a la derecha de la fila (como en GTA V).
+            ImVec2 rMin = ImGui::GetItemRectMin(), rMax = ImGui::GetItemRectMax();
+            const char* pill = "PLAYING";
+            ImVec2 psz = ImGui::CalcTextSize(pill);
+            float pw2 = psz.x + H * 0.02f, ph2 = psz.y + H * 0.008f;
+            ImVec2 p0(rMax.x - pw2 - H * 0.008f, rMin.y + (rMax.y - rMin.y - ph2) * 0.5f);
+            dl->AddRectFilled(p0, ImVec2(p0.x + pw2, p0.y + ph2), IM_COL32(255, 200, 40, 255), ph2 * 0.5f);
+            dl->AddText(ImVec2(p0.x + H * 0.01f, p0.y + H * 0.004f), IM_COL32(20, 20, 20, 255), pill);
         }
     }
     ImGui::EndChild();
     ImGui::End();
     if (g_fontUI) ImGui::PopFont();
-    ImGui::PopStyleColor(5);
-    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(6);
+    ImGui::PopStyleVar(4);
 }
 
 static void DrawSettings(float W, float H) {
@@ -2970,18 +3020,20 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             // (si el dedo se movio, fue un arrastre para mover el boton, no un toque)
             // v1.4: las flechas de cancion junto al boton se resuelven AL TOCAR
             // (cambian de cancion sin abrir la rueda ni tocar la emisora).
+            // v1.5: las flechas van DENTRO de la etiqueta (a los lados del nombre).
             bool arrowTap = false;
-            if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible && g_current == 12 && ut_active) {
-                ImVec2 ap, an; float ar;
-                FloatBtnArrows((float)w, (float)h, ap, an, ar);
-                float dx = g_touchX - ap.x, dy = g_touchY - ap.y;
+            if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible && g_lblArrows) {
+                ImVec2 bp, lp, ls; float bs;
+                FloatBtnGeom((float)w, (float)h, bp, lp, ls, bs);  // refresca g_lblPrevC/g_lblNextC
+                float ar = g_lblArrowR;
+                float dx = g_touchX - g_lblPrevC.x, dy = g_touchY - g_lblPrevC.y;
                 if (dx*dx + dy*dy <= ar*ar*1.44f) {
                     UT_PrevTrack();
                     PlayClick(true);
                     Log("boton flotante: anterior cancion (flecha)");
                     arrowTap = true;
                 } else {
-                    dx = g_touchX - an.x; dy = g_touchY - an.y;
+                    dx = g_touchX - g_lblNextC.x; dy = g_touchY - g_lblNextC.y;
                     if (dx*dx + dy*dy <= ar*ar*1.44f) {
                         UT_NextTrack();
                         PlayClick(true);
@@ -3006,16 +3058,15 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 g_btnDrag = false;
                 if (g_btnMoved) { SaveCfg(); Log("boton flotante movido a (%.2f, %.2f)", g_cfg.btnX, g_cfg.btnY); }
                 else if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
-                    // v1.3: tocar la ETIQUETA (el nombre de la cancion) en la 12
-                    // cambia de cancion sin abrir la rueda. El icono sigue
-                    // cambiando de emisora como siempre.
+                    // v1.5: en la 12, tocar la ETIQUETA ya no cambia de cancion
+                    // (para eso estan las flechas dentro de la etiqueta); el
+                    // icono sigue cambiando de emisora como siempre.
                     ImVec2 ip, lp, ls; float bs;
                     FloatBtnGeom((float)w, (float)h, ip, lp, ls, bs);
-                    if (g_current == 12 && ut_active && g_cfg.mostrarGenero && !g_cfg.ocultarNombre &&
-                        g_touchX >= lp.x && g_touchX <= lp.x + ls.x && g_touchY >= lp.y && g_touchY <= lp.y + ls.y) {
-                        UT_NextTrack();
-                        PlayClick(true);
-                        Log("boton flotante: siguiente cancion (etiqueta)");
+                    bool onLabel = (g_cfg.mostrarGenero && !g_cfg.ocultarNombre &&
+                        g_touchX >= lp.x && g_touchX <= lp.x + ls.x && g_touchY >= lp.y && g_touchY <= lp.y + ls.y);
+                    if (g_current == 12 && ut_active && onLabel) {
+                        // Nada: el nombre es informativo; las flechas cambian la cancion.
                     } else {
                         static auto lastBtnTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
                         auto now = std::chrono::steady_clock::now();

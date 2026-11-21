@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.4.0-beta
+# VHud Radio Wheel v1.5.0-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -9,9 +9,9 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 - Rueda de radio táctil de 13 segmentos (11 emisoras + User Tracks + Radio Off), como en GTA V.
 - Botón flotante: 1 toque cambia a la siguiente emisora, 2 toques abren la rueda. La rueda también se abre con doble toque al claxon.
 - Reproductor de User Tracks integrado (estación 12): busca la música en la carpeta **GTAVRadioMusic** (se crea sola si no existe) o, si no hay nada ahí, en las carpetas de siempre (music), y la reproduce con más buffer de audio que el mod externo, para que no se trabe en teléfonos con poca CPU. Formatos: **MP3, WAV, OGG Vorbis, FLAC y M4A/AAC** (el M4A usa BASS, que viene con BassMod; si no lo tienes instalado, los M4A se saltan sin romper nada).
-- **Siguiente/anterior canción:** con la rueda abierta en la 12, las flechas a los lados del nombre de la canción cambian de pista (la rueda sigue abierta). También hay dos flechas junto al botón flotante (una a cada lado) para cambiar de canción sin abrir la rueda y sin tocar el cambio de emisora; tocar la etiqueta del botón (el nombre de la canción) también pasa a la siguiente.
+- **Siguiente/anterior canción:** con la rueda abierta en la 12, las flechas a los lados del nombre de la canción cambian de pista (la rueda sigue abierta). En la 12, la ventana del botón flotante lleva las flechas DENTRO (a los lados del nombre de la canción) para cambiar de canción sin abrir la rueda y sin tocar el cambio de emisora. El tamaño del botón (icono + ventana) se ajusta en el panel (Botón flotante > Tamaño del botón) y su posición se puede bloquear ahí mismo.
 - **Nombre de la canción:** aparece en el centro de la rueda (debajo del género) y en la ventana del botón flotante (en lugar del género) cuando suena la 12. Si es largo, se desplaza solo (marquesina) en los dos sitios; las flechas están en posición fija para que no se junten al texto.
-- **Lista de canciones:** en la rueda, con la 12, el botón "Lista de canciones" abre la lista de todas las pistas (como en GTA V); la que suena va marcada con SONANDO y tocar una la pone a sonar.
+- **Lista de canciones:** en la rueda, con la 12, el botón "Lista de canciones" abre la lista de todas las pistas (como en GTA V, con icono, fila actual resaltada y pastilla amarilla PLAYING); tocar una la pone a sonar.
 - **Programa de cada emisora:** en el centro de la rueda, debajo del género, sale el programa o locutor que se está transmitiendo (por ejemplo, The Dusty Show en K-DST, WCTR News en WCTR).
 - **Sin retraso:** la rueda y el botón ya no se quedan en la emisora anterior justo después de cambiar (la lectura del juego va una estación por detrás; ahora se ignora 2 s tras el cambio).
 - Panel de personalización: colores, tamaño, opacidad, cámara lenta al abrir la rueda, iconos a color, y los interruptores de la 2.59: mostrar género, ocultar ventana de emisora, fondo de color de los iconos, animación al abrir, blur de fondo (con barra, ahora más fuerte: 8x/16x/32x), bloquear el juego con la rueda abierta, y modoCambio (forma de llamar a StartRadio: 0 normal, 1 aplazado 3 cuadros, 2 por CAudioEngine).
