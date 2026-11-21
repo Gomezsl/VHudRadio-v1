@@ -1590,6 +1590,12 @@ static bool GLBtnInit() {
 // textura temporal. Los pesos/offsets son los del gaussiano 9-tap optimizado
 // (5 lecturas con filtrado lineal): 0.2270 centro, 0.3162 a +-1.3846,
 // 0.0703 a +-3.2308.
+// v1.9: programa del blur gaussiano. Se declara aqui (antes de GLBlurInit)
+// porque GLBlurInit lo usa; el resto de globales del blur esta junto a
+// BlurDrawBackground. (El build #27 fallo por declararlas despues de usarlas.)
+static GLuint g_blurProg = 0;  // programa del blur gaussiano (separable 5-tap)
+static GLint g_blurUProj = -1, g_blurUTex = -1, g_blurUDir = -1;
+static bool g_blurTried = false, g_blurOk = false;
 static bool GLBlurInit() {
     if (g_blurTried) return g_blurOk;
     g_blurTried = true;
@@ -1867,9 +1873,6 @@ static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolv
 static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (mitad) para bajar en 2 pasos y que no se pixele
 static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (cuarto) para la piramide por mitades (blur gaussiano)
 static GLuint g_blurTmpTex = 0, g_blurTmpFBO = 0;  // v1.9: textura temporal para el pase gaussiano (ping-pong con la pequena)
-static GLuint g_blurProg = 0;  // v1.9: programa del blur gaussiano (separable 5-tap)
-static GLint g_blurUProj = -1, g_blurUTex = -1, g_blurUDir = -1;
-static bool g_blurTried = false, g_blurOk = false;
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
 static int g_blurMW = 0, g_blurMH = 0;
 static int g_blurQW = 0, g_blurQH = 0;
