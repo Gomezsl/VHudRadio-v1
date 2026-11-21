@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.7.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.8.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -579,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.7.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.8.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.7.0-beta"
+#define VHUDRADIO_VERSION "1.8.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -799,7 +799,7 @@ static std::string CfgPath() { return g_gameDataDir + "/configs/VHudRadio.ini"; 
 static void SaveCfg() {
     mkdir((g_gameDataDir + "/configs").c_str(), 0777);
     FILE* f = fopen(CfgPath().c_str(), "w");
-    if (!f) return;
+    if (!f) { Log("  !! ajustes: no se pudo escribir %s (errno=%d)", CfgPath().c_str(), errno); return; }  // v1.8: avisar si no se crea (a Rehan no le regeneraba)
     fprintf(f, "[VHudRadio]\n");
     fprintf(f, "fondo=%d\n", g_cfg.fondo);
     fprintf(f, "tamano=%d\n", g_cfg.tamano);
@@ -1189,7 +1189,10 @@ static void DoStartRadio(int id) {
     if (g_cfg.modoCambio == 2 && g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0) [modoCambio=2]", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
     // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
     // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
-    else if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0) [modoCambio=%d]", id, kStationName[id], g_cfg.modoCambio); g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); }
+    // v1.8: se marca que el cambio lo pidio el usuario (rueda/boton) para
+    // que el hook no lo confunda con el Radio Off que el juego pone solo al
+    // entrar al auto (ese NO para el reproductor: gracia de 2 s).
+    else if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0) [modoCambio=%d]", id, kStationName[id], g_cfg.modoCambio); ut_userStationCmd = true; g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); ut_userStationCmd = false; }
     else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
     else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
     else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
@@ -1437,23 +1440,27 @@ static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, Im
     // v1.7: "Ocultar genero" solo quita la SEGUNDA linea (genero/cancion);
     // la ventana (nombre de la emisora) sigue. Antes ocultaba toda la
     // ventana; para eso ya esta "Ocultar ventana de emisora" (ocultarNombre).
+    // v1.8: en la 12 la 2a linea es el NOMBRE DE LA CANCION (no un genero) y
+    // las flechas cambian de cancion: "Ocultar genero" NO quita nada en la
+    // 12 (ni el nombre ni las flechas). Solo quita el genero en la 1-11.
+    bool showSub = g_cfg.mostrarGenero || (g_current == 12 && ut_active);
     float subW = 0.0f;
     float arrowW = 0.0f;
     float ar = ts * 0.8f;
     float agap = H * 0.008f;
-    if (g_cfg.mostrarGenero) {
+    if (showSub) {
         subW = tsz.x;
         float cap = H * 0.22f * (g_cfg.btnTam / 100.0f);
         if (g_current == 12 && ut_active && subW > cap) subW = cap;  // v1.3: la etiqueta no crece con nombres largos (marquesina)
         if (g_current == 12 && ut_active) arrowW = 2.0f * (2.0f * ar + agap);
     }
     float lw = (nsz.x > subW + arrowW ? nsz.x : subW + arrowW) + H * 0.02f;
-    float lh = ns + (g_cfg.mostrarGenero ? ts : 0.0f) + H * 0.02f;
+    float lh = ns + (showSub ? ts : 0.0f) + H * 0.02f;
     labelSize = ImVec2(lw, lh);
     if (iconPos.x < W * 0.5f) labelPos = ImVec2(iconPos.x + bs + H * 0.015f, iconPos.y + bs * 0.5f - lh * 0.5f);
     else labelPos = ImVec2(iconPos.x - H * 0.015f - lw, iconPos.y + bs * 0.5f - lh * 0.5f);
     // Geometria de las flechas dentro de la etiqueta (para dibujarlas y tocarlas).
-    g_lblArrows = (g_current == 12 && ut_active && g_cfg.mostrarGenero && !g_cfg.ocultarNombre);
+    g_lblArrows = (g_current == 12 && ut_active && !g_cfg.ocultarNombre);  // v1.8: las flechas de la 12 NO dependen de mostrarGenero (cambian la cancion, no son genero)
     if (g_lblArrows) {
         g_lblArrowR = ar;
         float subY = labelPos.y + H * 0.008f + ns;  // Y de la linea 2 (la cancion)
@@ -1660,7 +1667,9 @@ static bool DrawButtonGL(float W, float H) {
         // tijera recorta solo ese hueco (antes era toda la etiqueta).
         // v1.7: la 2a linea (genero/cancion) solo se dibuja si mostrarGenero;
         // la ventana y el nombre quedan aunque el genero este oculto.
-        if (!g_cfg.mostrarGenero) {
+        // v1.8: en la 12 la 2a linea es el nombre de la cancion (no genero):
+        // se dibuja siempre, aunque mostrarGenero este apagado.
+        if (!g_cfg.mostrarGenero && !(g_current == 12 && ut_active)) {
             // Solo el nombre de la emisora.
         } else {
         const char* sub = BtnSubLine();
@@ -1793,18 +1802,21 @@ static bool DrawButtonGL(float W, float H) {
 // en 2408 px. Ahora: se copia el framebuffer a una textura, se reduce a una
 // textura pequena (2x/4x/8x segun la barra) dibujandola en un FBO con el
 // programa del boton, y se amplifica a pantalla completa con filtro lineal:
-// eso SI se ve borroso. La barra 0-100 sigue igual (0 = apagado, 1-33 = 4x
-// suave, 34-66 = 8x medio, 67-100 = 16x fuerte). v1.6: la reduccion es en
-// 2 pasos (escena -> mitad -> pequena) para que no se pixele: bajar en un
-// solo paso dejaba bloques porque el filtro lineal solo promedia 2x2. Si el
-// FBO no esta completo, no hay blur (solo el fondo oscuro). Cuesta una copia
-// + 3 quads por cuadro con la rueda abierta. Las UVs van invertidas en Y
-// (la copia del framebuffer sale al reves). Se dibuja con GL directo (no
-// ImGui) antes de que ImGui pinte el fondo oscuro y la rueda.
+// eso SI se ve borroso. La barra 0-100 sigue igual (0 = apagado, 1-33 = 2x
+// suave, 34-66 = 4x medio, 67-100 = 8x fuerte). v1.8: la reduccion es una
+// PIRAMIDE POR MITADES (cada paso baja solo 2x: escena -> mitad -> cuarto
+// -> pequena), que promedia bien y sale suave como un blur gaussiano, sin
+// los bloques del bajado en un solo salto grande. Si el FBO no esta
+// completo, no hay blur (solo el fondo oscuro). Cuesta una copia + hasta 3
+// quads por cuadro con la rueda abierta. Las UVs van invertidas en Y (la
+// copia del framebuffer sale al reves). Se dibuja con GL directo (no ImGui)
+// antes de que ImGui pinte el fondo oscuro y la rueda.
 static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolveFBO = 0;
 static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (mitad) para bajar en 2 pasos y que no se pixele
+static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (cuarto) para la piramide por mitades (blur gaussiano)
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
 static int g_blurMW = 0, g_blurMH = 0;
+static int g_blurQW = 0, g_blurQH = 0;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
     if (g_cfg.blur <= 33) return 2;   // v1.7: menos pixeliado (el 16x dejaba la textura en 150x67 y se veian los cuadros al 100%)
@@ -1821,13 +1833,17 @@ static void BlurDrawBackground(float W, float H) {
     if (sw < 8) sw = 8; if (sh < 8) sh = 8;
     int mw = w / 2, mh = h / 2;  // v1.6: paso intermedio (mitad) para el blur en 2 pasos
     if (mw < 8) mw = 8; if (mh < 8) mh = 8;
-    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO) {
+    int qw = w / 4, qh = h / 4;  // v1.8: paso intermedio (cuarto) para la piramide por mitades
+    if (qw < 8) qw = 8; if (qh < 8) qh = 8;
+    if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO) {
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
+        if (g_blurQtrFBO) { glDeleteFramebuffers(1, &g_blurQtrFBO); g_blurQtrFBO = 0; }
         if (g_blurCopyTex) { glDeleteTextures(1, &g_blurCopyTex); g_blurCopyTex = 0; }
         if (g_blurSmallTex) { glDeleteTextures(1, &g_blurSmallTex); g_blurSmallTex = 0; }
         if (g_blurMidTex) { glDeleteTextures(1, &g_blurMidTex); g_blurMidTex = 0; }
+        if (g_blurQtrTex) { glDeleteTextures(1, &g_blurQtrTex); g_blurQtrTex = 0; }
         glGenTextures(1, &g_blurCopyTex);
         glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1870,6 +1886,26 @@ static void BlurDrawBackground(float W, float H) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             return;
         }
+        // v1.8: textura intermedia (cuarto de la escena) para la piramide
+        // por mitades (blur gaussiano): cada paso baja solo 2x y promedia
+        // bien, asi el resultado es suave como un gaussiano y no se ven
+        // los bloques del bajado en un solo salto grande.
+        glGenTextures(1, &g_blurQtrTex);
+        glBindTexture(GL_TEXTURE_2D, g_blurQtrTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, qw, qh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenFramebuffers(1, &g_blurQtrFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurQtrFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blurQtrTex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            Log("  !! blur: FBO cuarto incompleto, sin desenfoque");
+            glDeleteFramebuffers(1, &g_blurQtrFBO); g_blurQtrFBO = 0;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
         // v1.4: FBO para resolver el framebuffer del juego (MSAA) a la
         // textura de copia. Sin esto, glCopyTexImage2D falla con 0x502.
         glGenFramebuffers(1, &g_blurResolveFBO);
@@ -1880,7 +1916,7 @@ static void BlurDrawBackground(float W, float H) {
             glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0;
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor; g_blurMW = mw; g_blurMH = mh;
+        g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor; g_blurMW = mw; g_blurMH = mh; g_blurQW = qw; g_blurQH = qh;
         Log("  blur: FBO listo factor=%dx (%dx%d -> %dx%d)%s", factor, w, h, sw, sh, g_pBlitFB ? " (blit MSAA)" : " (copia directa)");
     }
     // guardar estado GL del juego
@@ -1940,19 +1976,36 @@ static void BlurDrawBackground(float W, float H) {
             glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         };
-        float projS[16] = {0}, projF[16] = {0}, projM[16] = {0};
+        float projS[16] = {0}, projF[16] = {0}, projM[16] = {0}, projQ[16] = {0};
         projS[0] = 2.0f / sw; projS[5] = -2.0f / sh; projS[10] = -1.0f; projS[12] = -1.0f; projS[13] = 1.0f; projS[15] = 1.0f;
         projF[0] = 2.0f / w; projF[5] = -2.0f / h; projF[10] = -1.0f; projF[12] = -1.0f; projF[13] = 1.0f; projF[15] = 1.0f;
         projM[0] = 2.0f / mw; projM[5] = -2.0f / mh; projM[10] = -1.0f; projM[12] = -1.0f; projM[13] = 1.0f; projM[15] = 1.0f;
-        // 2. reducir en 2 pasos (v1.6: escena -> mitad -> pequena, mas suave):
-        // primero la copia a la textura intermedia (mitad), luego la
-        // intermedia a la textura pequena.
-        glBindFramebuffer(GL_FRAMEBUFFER, g_blurMidFBO);
-        glViewport(0, 0, mw, mh);
-        drawQuad(g_blurCopyTex, 0, 0, (float)mw, (float)mh, projM);
-        glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
-        glViewport(0, 0, sw, sh);
-        drawQuad(g_blurMidTex, 0, 0, (float)sw, (float)sh, projS);
+        projQ[0] = 2.0f / qw; projQ[5] = -2.0f / qh; projQ[10] = -1.0f; projQ[12] = -1.0f; projQ[13] = 1.0f; projQ[15] = 1.0f;
+        // 2. reducir en piramide por mitades (v1.8, blur gaussiano): cada
+        // paso baja solo 2x y promedia bien, asi el resultado es suave y
+        // no se ven los bloques. 2x = 1 paso, 4x = 2 pasos, 8x = 3 pasos.
+        if (factor <= 2) {
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+            glViewport(0, 0, sw, sh);
+            drawQuad(g_blurCopyTex, 0, 0, (float)sw, (float)sh, projS);
+        } else if (factor <= 4) {
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurMidFBO);
+            glViewport(0, 0, mw, mh);
+            drawQuad(g_blurCopyTex, 0, 0, (float)mw, (float)mh, projM);
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+            glViewport(0, 0, sw, sh);
+            drawQuad(g_blurMidTex, 0, 0, (float)sw, (float)sh, projS);
+        } else {
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurMidFBO);
+            glViewport(0, 0, mw, mh);
+            drawQuad(g_blurCopyTex, 0, 0, (float)mw, (float)mh, projM);
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurQtrFBO);
+            glViewport(0, 0, qw, qh);
+            drawQuad(g_blurMidTex, 0, 0, (float)qw, (float)qh, projQ);
+            glBindFramebuffer(GL_FRAMEBUFFER, g_blurFBO);
+            glViewport(0, 0, sw, sh);
+            drawQuad(g_blurQtrTex, 0, 0, (float)sw, (float)sh, projS);
+        }
         // 3. ampliar: dibujar la textura pequena en el framebuffer por defecto
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, w, h);
@@ -2008,7 +2061,8 @@ static void DrawWheel(float W, float H) {
             // v1.3: en la 12, el nombre de la cancion se desplaza si no cabe en la etiqueta.
             // v1.5: el nombre va ENTRE las flechas (dentro de la etiqueta).
             // v1.7: la 2a linea (genero/cancion) solo si mostrarGenero.
-            if (g_cfg.mostrarGenero) {
+            // v1.8: en la 12 la 2a linea es el nombre de la cancion: siempre.
+            if (g_cfg.mostrarGenero || (g_current == 12 && ut_active)) {
             const char* sub = BtnSubLine();
             float subX = lp.x + H * 0.01f;
             float subY = lp.y + H * 0.008f + ns;

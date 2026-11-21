@@ -194,6 +194,9 @@ static bool ut_random = true;                // aleatorio por defecto, como SAUs
 static bool ut_active = false;               // estacion 12 sonando
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
 static bool ut_pausedByExit = false;         // v1.7: pausado al bajar del auto (se reanuda al subir, sin reiniciar ni cortar)
+static std::chrono::steady_clock::time_point ut_resumeAt{};  // v1.8: momento de la reanudacion (gracia de 2 s contra el Radio Off del juego)
+static bool ut_userStationCmd = false;        // v1.8: el cambio lo pidio el usuario (rueda/boton), no el juego al entrar
+static std::chrono::steady_clock::time_point ut_lastFrameAt{};  // v1.8: ultimo cuadro del juego (si se va a fondo, la musica se pausa)
 static bool ut_decPaused = false;            // hilo decodificador en pausa
 static bool ut_stopThread = false;           // pedir salida al hilo decodificador
 static bool ut_wantStop = false;             // el hilo pide parar (sin pistas decodificables)
@@ -403,7 +406,15 @@ static int UT_CurrentTrackIdx() {
 // ---- callback de OpenSL (hilo interno de OpenSL) ----
 // slBufferQueueCallback: void (SLBufferQueueItf, void*). Mismo uso que el
 // ejemplo native-audio del NDK (SL_IID_BUFFERQUEUE + RegisterCallback).
+// v1.8: si el juego lleva >3 s sin dibujar un cuadro (se fue a la pantalla
+// de inicio / fondo), se pausa el reproductor. Al volver, UT_Frame lo
+// reanuda. Sin esto la musica seguia sonando en la pantalla de inicio.
+static void UT_PauseDevice(bool pause);  // v1.8: declaracion adelantada (se define mas abajo)
 static void UT_BufferCallback(SLBufferQueueItf bq, void* /*ctx*/) {
+    if (ut_active && ut_lastFrameAt.time_since_epoch().count() > 0 &&
+        std::chrono::steady_clock::now() - ut_lastFrameAt > std::chrono::seconds(3)) {
+        UT_PauseDevice(true);
+    }
     pthread_mutex_lock(&ut_cbMutex);
     if (!ut_player || bq != ut_queue) { pthread_mutex_unlock(&ut_cbMutex); return; }
     int16_t* buf = ut_buf[ut_bufIdx];
@@ -827,6 +838,9 @@ static void UT_Stop(const char* reason) {
 
 // Llamado cada frame desde Swap_hook (corre siempre, aunque DrawFrame retorne antes).
 static void UT_Frame() {
+    // v1.8: marca de tiempo del ultimo cuadro (el callback de OpenSL la usa
+    // para pausar si el juego se va a fondo / pantalla de inicio).
+    ut_lastFrameAt = std::chrono::steady_clock::now();
     if (!ut_active) return;
     if (ut_wantStop) { UT_Stop("sin pistas decodificables"); return; }
     // v1.7: al salir del vehiculo se PAUSA (no se para ni se sigue oyendo a
@@ -838,6 +852,7 @@ static void UT_Frame() {
         Log("UT: pausado al salir del vehiculo (se reanuda al subir)");
     } else if (g_inVehicle && ut_pausedByExit) {
         ut_pausedByExit = false;
+        ut_resumeAt = std::chrono::steady_clock::now();  // v1.8: gracia de 2 s (el juego pide Radio Off DESPUES de esto)
         Log("UT: reanudado al subir al vehiculo");
     }
     bool paused = g_paused || (ut_loadingActive && *ut_loadingActive) || ut_pausedByExit;
@@ -867,7 +882,8 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         }
         // v1.7: si ya suena (al volver a subir al auto el juego vuelve a
         // pedir la 12), NO se reinicia: UT_Start es no-op y se reanuda.
-        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; Log("UT: reanudado al subir al vehiculo (hook 12)"); }
+        // v1.8: se marca la reanudacion (gracia de 2 s contra el Radio Off).
+        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook 12)"); }
         UT_Start();
         g_current = 12;
         // v1: la radio nativa NUNCA cambia a la 12 (el diagnostico lo probo:
@@ -882,7 +898,13 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
     // volver a subir (pone Radio Off solo), NO se para el reproductor: se
     // reanuda en la 12. A pie no se puede cambiar de emisora (no hay boton
     // ni rueda), asi que esta llamada solo puede ser del juego al entrar.
-    if (ut_active && ut_pausedByExit) {
+    // v1.8: el juego pide Radio Off DESPUES de que UT_Frame ya reanudo (el
+    // log de la 1.7.0 lo probo: "reanudado" y luego "parado (cambio de
+    // estacion)"), asi que la gracia es de 2 s tras la reanudacion, no solo
+    // mientras ut_pausedByExit. Un cambio del usuario (rueda/boton) SI para
+    // (ut_userStationCmd lo marca en DoStartRadio).
+    if (ut_active && !ut_userStationCmd &&
+        (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
         ut_pausedByExit = false;
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);

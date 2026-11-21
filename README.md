@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.7.0-beta
+# VHud Radio Wheel v1.8.0-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -8,7 +8,7 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 
 - Rueda de radio táctil de 13 segmentos (11 emisoras + User Tracks + Radio Off), como en GTA V.
 - Botón flotante: 1 toque cambia a la siguiente emisora, 2 toques abren la rueda. La rueda también se abre con doble toque al claxon.
-- Reproductor de User Tracks integrado (estación 12): busca la música en la carpeta **GTAVRadioMusic** (se crea sola si no existe) o, si no hay nada ahí, en las carpetas de siempre (music), y la reproduce con más buffer de audio que el mod externo, para que no se trabe en teléfonos con poca CPU. Al salir del auto la música se pausa y al subir se reanuda en la misma emisora y en el mismo punto (sin reiniciar ni cortar). Formatos: **MP3, WAV, OGG Vorbis, FLAC y M4A/AAC** (el M4A usa BASS, que viene con BassMod; si no lo tienes instalado, los M4A se saltan sin romper nada).
+- Reproductor de User Tracks integrado (estación 12): busca la música en la carpeta **GTAVRadioMusic** (se crea sola si no existe) o, si no hay nada ahí, en las carpetas de siempre (music), y la reproduce con más buffer de audio que el mod externo, para que no se trabe en teléfonos con poca CPU. Al salir del auto la música se pausa y al subir se reanuda en la misma emisora y en el mismo punto (sin reiniciar ni cortar; el juego ya no la pone en Radio Off al entrar). También se pausa si el juego se va a la pantalla de inicio. Formatos: **MP3, WAV, OGG Vorbis, FLAC y M4A/AAC** (el M4A usa BASS, que viene con BassMod; si no lo tienes instalado, los M4A se saltan sin romper nada).
 - **Siguiente/anterior canción:** con la rueda abierta en la 12, las flechas a los lados del nombre de la canción cambian de pista (la rueda sigue abierta). En la 12, la ventana del botón flotante lleva las flechas DENTRO (a los lados del nombre de la canción) para cambiar de canción sin abrir la rueda y sin tocar el cambio de emisora. El tamaño del botón (icono + ventana) se ajusta en el panel (Botón flotante > Tamaño del botón) y su posición se puede bloquear ahí mismo.
 - **Nombre de la canción:** aparece en el centro de la rueda (debajo del género) y en la ventana del botón flotante (en lugar del género) cuando suena la 12. Si es largo, se desplaza solo (marquesina) en los dos sitios; las flechas están en posición fija para que no se junten al texto.
 - **Lista de canciones:** en la rueda, con la 12, el botón "Lista de canciones" abre la lista de todas las pistas (como en GTA V: cada canción con su división, título + artista debajo, fila actual resaltada y pastilla amarilla PLAYING); tocar una la pone a sonar. El botón y el menú se traducen según el idioma del panel.
