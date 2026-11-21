@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.10-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.11-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,26 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.11: SILENCIAR LA NATIVA 12 + MENU MIXTAPE SIN CRASH (Alex 1.8.4, informe SAUserTracks-1.8.4-RE2.md)
+// - DOBLE AUDIO: la nativa 12 reproduce SUS PROPIOS User Tracks
+//   (PlayTrack encola la pista, StartTrackPlayback la empieza). Alex lo
+//   silencia en StartTrackPlayback: con mixtape activo y las 3 puertas
+//   despejadas y el playback no deshabilitado, TRAGA la llamada (la pista
+//   nativa nunca suena). Nosotros no lo enganchabamos: ahi estaba el doble
+//   audio. Los bloqueos 0x22 solo quitan la estatica, no la musica.
+// - Las 3 puertas son punteros a estado del juego (doble indireccion):
+//   libGTASA+0x851b00 -> byte bit 0; +0x84c998 -> byte bit 0;
+//   +0x84e6d0 -> WORD (uint32) != 0. Si alguna esta puesta, la nativa pasa.
+//   Si un puntero es NULL, se deja pasar (seguro: no suprimir sin verificar).
+// - PlayTrack: solo pone ut_playbackDisabled = (a2 == -1) y pasa al
+//   original (es una puerta de StartTrackPlayback; sin el, el flag queda
+//   en 0 = permitir suprimir).
+// - MENU MIXTAPE: enganchar el ctor de RadioSelection
+//   (_ZN11AudioScreen14RadioSelectionC2Ev): llamar al original, asignar
+//   radio_TPLAYER en +0x80 con refcount+1 en [tex+0x64] via
+//   TextureDatabaseRuntime::GetTexture, y SOLO DESPUES aplicar los 2
+//   parches del menu (una vez). Sin la textura el parche crashea (1.9.9);
+//   si GetTexture falla, ni se intentan los parches.
 // v1.9.10: PARCHES DEL MENU REVERTIDOS - CRASH AL ENTRAR A OPCIONES DE SONIDO (Daniel, aml_crashlog_2_7wfq.txt)
 // - La 1.9.9 crasheaba al entrar a opciones de sonido: SIGSEGV en
 //   libGTASA+0x355044 (MenuScreen::DrawSprite, textura NULL), llamado desde
@@ -755,9 +775,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.10-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.11-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.10-beta"
+#define VHUDRADIO_VERSION "1.9.11-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

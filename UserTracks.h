@@ -194,6 +194,7 @@ static std::vector<int> ut_order;            // orden de reproduccion (indices e
 static int ut_orderPos = 0;
 static bool ut_random = true;                // aleatorio por defecto, como SAUserTracks
 static bool ut_active = false;               // estacion 12 sonando
+static bool ut_playbackDisabled = false;  // v1.9.11: PlayTrack lo pone si a2 == -1 (puerta de StartTrackPlayback)
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
 static bool ut_pausedByExit = false;         // v1.7: pausado al bajar del auto (se reanuda al subir, sin reiniciar ni cortar)
 static std::chrono::steady_clock::time_point ut_resumeAt{};  // v1.8: momento de la reanudacion (gracia de 2 s contra el Radio Off del juego)
@@ -736,6 +737,7 @@ static void UT_PauseDevice(bool pause) {
 
 static bool UT_Start() {
     if (ut_active) return true;
+    ut_playbackDisabled = false;  // v1.9.11 (Alex): al entrar a Mixtape se limpia (la nativa 12 se puede suprimir)
     SoundInit();
     if (!g_slEngine || !g_slEngineItf || !g_slMix) { Log("UT: sin motor OpenSL: no hay reproductor"); return false; }
     if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en las carpetas (se revisaron las 10)"); return false; }
@@ -1090,6 +1092,65 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
 // (_ZN12CAudioEngine24ReportFrontendAudioEventEiff) y se salta el evento
 // 0x22 mientras suena el reproductor; los demas eventos pasan igual.
 typedef void (*ReportAudioEventFn)(void*, int, float, float);
+// v1.9.11: declaraciones adelantadas (UT_LibBase/UT_Patch32 se definen
+// mas abajo; sin esto el compilador falla por orden de declaracion).
+static uintptr_t UT_LibBase(const char* libName);
+static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, const char* name);
+
+// v1.9.11 (Alex 1.8.4, RE2): silenciar la musica nativa de la 12.
+// CAEAudioHardware::StartTrackPlayback es lo que EMPIEZA la pista nativa
+// (PlayTrack solo la encola). Con User Tracks sonando y las puertas del
+// juego despejadas, tragar la llamada = la nativa nunca suena. Si no es
+// User Tracks o alguna puerta esta puesta, pasar al original.
+typedef void (*StartTrackPlaybackFn)(void*);
+static StartTrackPlaybackFn ut_origStartTrackPlayback = nullptr;
+static bool UT_StartTrackGateClear() {
+    uintptr_t base = UT_LibBase("libGTASA.so");
+    if (!base) return false;  // sin base no se puede verificar: no suprimir
+    uintptr_t pA = *(volatile uintptr_t*)(base + 0x851b00);
+    if (!pA || (*(volatile uint8_t*)pA & 1)) return false;
+    uintptr_t pB = *(volatile uintptr_t*)(base + 0x84c998);
+    if (!pB || (*(volatile uint8_t*)pB & 1)) return false;
+    uintptr_t pC = *(volatile uintptr_t*)(base + 0x84e6d0);
+    if (!pC || (*(volatile uint32_t*)pC != 0)) return false;
+    return true;
+}
+static void UT_StartTrackPlayback_hook(void* self) {
+    if (ut_active && !ut_playbackDisabled && UT_StartTrackGateClear()) return;  // nativa 12 silenciada: no suena debajo de User Tracks
+    if (ut_origStartTrackPlayback) ut_origStartTrackPlayback(self);
+}
+// v1.9.11: PlayTrack solo marca el flag (a2 == -1 = no hay pista) y pasa al original.
+typedef void (*PlayTrackFn)(void*, unsigned int, int, unsigned int, signed char, bool, bool);
+static PlayTrackFn ut_origPlayTrack = nullptr;
+static void UT_PlayTrack_hook(void* self, unsigned int a1, int a2, unsigned int a3, signed char a4, bool a5, bool a6) {
+    ut_playbackDisabled = (a2 == -1);
+    if (ut_origPlayTrack) ut_origPlayTrack(self, a1, a2, a3, a4, a5, a6);
+}
+// v1.9.11 (Alex 1.8.4, RE2): ctor de RadioSelection para el menu Mixtape sin crash.
+// El juego dibuja el icono de la emisora 12 desde RadioSelection+0x80; si
+// es NULL (el juego no tiene emisora 12), Render crashea. Asignar la
+// textura radio_TPLAYER ahi (con refcount+1) y SOLO DESPUES los 2 parches
+// del menu. Si GetTexture falla, ni se intentan los parches.
+typedef void* (*GetTextureFn)(const char*);
+static GetTextureFn ut_getTexture = nullptr;
+typedef void (*RadioSelectionCtorFn)(void*);
+static RadioSelectionCtorFn ut_origRadioSelectionCtor = nullptr;
+static bool ut_menuPatchesDone = false;
+static void UT_RadioSelectionCtor_hook(void* self) {
+    if (ut_origRadioSelectionCtor) ut_origRadioSelectionCtor(self);  // ctor original primero
+    if (!self || !ut_getTexture) return;
+    void* tex = ut_getTexture("radio_TPLAYER");
+    if (!tex) { Log("UT: no se pudo cargar la textura radio_TPLAYER (sin parches del menu)"); return; }
+    *(volatile uint32_t*)((uintptr_t)tex + 0x64) += 1;  // refcount+1
+    *(volatile void**)((uintptr_t)self + 0x80) = tex;   // RadioSelection+0x80
+    Log("UT: radio_TPLAYER asignada en RadioSelection+0x80");
+    if (!ut_menuPatchesDone) {
+        ut_menuPatchesDone = true;
+        UT_Patch32(UT_LibBase("libGTASA.so") + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
+        UT_Patch32(UT_LibBase("libGTASA.so") + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
+    }
+}
+
 static ReportAudioEventFn ut_origReportAudioEvent = nullptr;
 static void UT_ReportAudioEvent_hook(void* engine, int eventId, float a, float b) {
     if (eventId == 0x22 && ut_active) return;  // estatica de sintonia: no suena con User Tracks
@@ -1361,6 +1422,38 @@ static void UT_InstallHooks() {
             Log("UT: hook CAEFrontendAudioEntity::AddAudioEvent %s", ut_origFrontendAddAudio ? "ok (sin estatica 0x22 por la entidad)" : "no se pudo instalar (puede quedar estatica)");
         } else {
             Log("UT: CAEFrontendAudioEntity::AddAudioEvent no resolvio (sin segundo bloqueo 0x22)");
+        }
+        // v1.9.11 (Alex 1.8.4, RE2): silenciar la musica nativa de la 12.
+        // StartTrackPlayback es lo que EMPIEZA la pista nativa; con User
+        // Tracks sonando, tragarla = la nativa nunca suena debajo.
+        uintptr_t stp = aml->GetSym(h, "_ZN16CAEAudioHardware18StartTrackPlaybackEv");
+        if (stp) {
+            aml->Hook((void*)stp, (void*)UT_StartTrackPlayback_hook, (void**)&ut_origStartTrackPlayback);
+            Log("UT: hook CAEAudioHardware::StartTrackPlayback %s", ut_origStartTrackPlayback ? "ok (nativa 12 silenciada con User Tracks)" : "no se pudo instalar (puede quedar doble audio)");
+        } else {
+            Log("UT: CAEAudioHardware::StartTrackPlayback no resolvio (puede quedar doble audio)");
+        }
+        // v1.9.11: PlayTrack solo marca el flag (a2 == -1) y pasa al original.
+        uintptr_t pt = aml->GetSym(h, "_ZN16CAEAudioHardware9PlayTrackEjijcbb");
+        if (pt) {
+            aml->Hook((void*)pt, (void*)UT_PlayTrack_hook, (void**)&ut_origPlayTrack);
+            Log("UT: hook CAEAudioHardware::PlayTrack %s", ut_origPlayTrack ? "ok" : "no se pudo instalar");
+        } else {
+            Log("UT: CAEAudioHardware::PlayTrack no resolvio");
+        }
+        // v1.9.11 (Alex 1.8.4, RE2): menu Mixtape sin crash — el ctor de
+        // RadioSelection asigna radio_TPLAYER y luego los parches del menu.
+        ut_getTexture = (GetTextureFn)aml->GetSym(h, "_ZN22TextureDatabaseRuntime10GetTextureEPKc");
+        if (!ut_getTexture) {
+            Log("UT: TextureDatabaseRuntime::GetTexture no resolvio (sin menu Mixtape, sin crash)");
+        } else {
+            uintptr_t rsc = aml->GetSym(h, "_ZN11AudioScreen14RadioSelectionC2Ev");
+            if (rsc) {
+                aml->Hook((void*)rsc, (void*)UT_RadioSelectionCtor_hook, (void**)&ut_origRadioSelectionCtor);
+                Log("UT: hook AudioScreen::RadioSelection %s", ut_origRadioSelectionCtor ? "ok (menu Mixtape con textura)" : "no se pudo instalar (sin menu Mixtape)");
+            } else {
+                Log("UT: AudioScreen::RadioSelection no resolvio (sin menu Mixtape)");
+            }
         }
         uintptr_t dn = aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");  // GetSym devuelve uintptr_t, no void*
         if (dn) {
