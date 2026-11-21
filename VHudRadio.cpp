@@ -490,6 +490,15 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.24: DIAGNOSTICO DE EMISORA (DANIEL, NO CAMBIA NADA DEL JUEGO)
+// - El log de la 1.9.23 mostro que AudioEngine+0x149 NO es la variable del
+//   menu: tras entrar y salir de opciones de sonido sin tocar nada, la
+//   emisora real paso de CSR (8) a Radio X (7) (el juego reaplica una guardada)
+//   y +0x149 seguia en 8, asi que no habia nada que resincronizar ahi. Esta
+//   version solo VUELCA memoria (dial, TrackManager, AudioEngine,
+//   FrontEndMenuManager) a VHudRadioDump.txt al abrir/cerrar el dial y cuando
+//   la emisora cambia dentro o justo despues del menu, para localizar esa
+//   variable. NO se toco audio, blur, HUD ni la sincronizacion existente.
 // v1.9.23: EMISORA SINCRONIZADA TAMBIEN CON LA RUEDA (DANIEL)
 // - Tu log de la 1.9.22 me mostro el problema: la escritura SI paso
 //   ("EMISORA sincronizada 2 -> 5" y "5 -> 4", y el valor quedo guardado),
@@ -930,9 +939,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.23-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.24-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.23-beta"
+#define VHUDRADIO_VERSION "1.9.24-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

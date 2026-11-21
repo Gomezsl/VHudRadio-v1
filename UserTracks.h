@@ -868,7 +868,88 @@ static void UT_Stop(const char* reason) {
 }
 
 // Llamado cada frame desde Swap_hook (corre siempre, aunque DrawFrame retorne antes).
+// ---- v1.9.24: DIAGNOSTICO DE EMISORA (solo LEE memoria; no cambia nada del juego) ----
+// El log de la 1.9.23 mostro que al entrar y salir de opciones de sonido SIN
+// tocar nada, la emisora real paso de CSR (8) a Radio X (7): el juego vuelve a
+// aplicar una emisora guardada que la rueda no actualiza, y AudioEngine+0x149
+// (lo que se sincronizaba) NO es esa variable. Aqui se vuelcan los objetos del
+// juego a VHudRadioDump.txt (solo las lineas con algun byte distinto de cero) al
+// abrir y cerrar el dial y cada vez que la emisora cambia dentro o justo despues
+// del menu. Con eso se ve que byte guarda la emisora del menu.
+static void* ut_menuManager = nullptr;
+static int ut_diagPipe[2] = {-1, -1};
+static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
+static int ut_diagLastA = -99, ut_diagLastT = -99;
+static int ut_diagDumps = 0;                    // tope: el archivo no crece sin limite
+// Lectura segura (si la direccion no es valida devuelve menos bytes en vez de cerrar el juego).
+static size_t UT_SafeRead(const void* src, unsigned char* dst, size_t n) {
+    if (ut_diagPipe[0] < 0 && pipe(ut_diagPipe) != 0) { ut_diagPipe[0] = ut_diagPipe[1] = -1; return 0; }
+    size_t total = 0, chunk = 2048;
+    while (total < n) {
+        size_t want = n - total; if (want > chunk) want = chunk;
+        ssize_t w = write(ut_diagPipe[1], (const unsigned char*)src + total, want);
+        if (w <= 0) {                       // direccion invalida: reintentar con trozos mas chicos
+            if (chunk <= 1) break;
+            chunk /= 2; continue;
+        }
+        size_t got = 0;
+        while (got < (size_t)w) { ssize_t r = read(ut_diagPipe[0], dst + total + got, (size_t)w - got); if (r <= 0) return total + got; got += (size_t)r; }
+        total += (size_t)w;
+    }
+    return total;
+}
+static void UT_DiagObj(FILE* f, const char* name, const void* obj, size_t n) {
+    if (!obj) { fprintf(f, "  %s: NULL\n", name); return; }
+    static unsigned char buf[0x1000];
+    if (n > sizeof(buf)) n = sizeof(buf);
+    size_t got = UT_SafeRead(obj, buf, n);
+    fprintf(f, "  %s @%p leidos=0x%zx\n", name, obj, got);
+    for (size_t off = 0; off < got; off += 16) {
+        size_t m = (got - off < 16) ? got - off : 16; bool any = false;
+        for (size_t i = 0; i < m; i++) if (buf[off + i]) { any = true; break; }
+        if (!any) continue;
+        fprintf(f, "  %s +%03zx:", name, off);
+        for (size_t i = 0; i < m; i++) fprintf(f, " %02x", buf[off + i]);
+        fprintf(f, "\n");
+    }
+}
+static void UT_DumpAll(const char* tag, const void* radioSel) {
+    if (ut_diagDumps >= 16) return;
+    std::string path = g_gameDataDir + "/VHudRadioDump.txt";
+    FILE* f = fopen(path.c_str(), "a");
+    if (!f) return;
+    ut_diagDumps++;
+    int a = (g_getStationAudio && g_audioEngine) ? (int)g_getStationAudio(g_audioEngine) : -1;
+    int t = (g_getStationTrack && g_trackManager) ? (int)g_getStationTrack(g_trackManager) : -1;
+    int ae = g_audioEngine ? ((const unsigned char*)g_audioEngine)[0x149] : -1;
+    int tm1 = g_trackManager ? ((const unsigned char*)g_trackManager)[0xAD] : -1;
+    int tm2 = g_trackManager ? ((const unsigned char*)g_trackManager)[0xE9] : -1;
+    fprintf(f, "== #%d %s | audio=%d track=%d rueda=%d activo=%d | AE+0x149=%d TM+0xAD=%d TM+0xE9=%d\n",
+            ut_diagDumps, tag, a, t, g_current, ut_active ? 1 : 0, ae, tm1, tm2);
+    if (radioSel) UT_DiagObj(f, "RadioSelection", radioSel, 0x300);
+    UT_DiagObj(f, "TrackManager", g_trackManager, 0x400);
+    UT_DiagObj(f, "AudioEngine", g_audioEngine, 0x800);
+    UT_DiagObj(f, "MenuManager", ut_menuManager, 0x1000);
+    fclose(f);
+    Log("UT: [diag] volcado #%d (%s) -> VHudRadioDump.txt", ut_diagDumps, tag);
+}
+// Cada cuadro: dentro del dial o hasta ~90 cuadros despues de cerrarlo, avisa
+// y vuelca si la emisora que dice el juego cambia (aqui se ve cuando se reaplica la guardada).
+static void UT_DiagTick() {
+    if (ut_diagWatch <= 0 && !ut_inAudioMenu) { ut_diagLastA = ut_diagLastT = -99; return; }
+    int a = (g_getStationAudio && g_audioEngine) ? (int)g_getStationAudio(g_audioEngine) : -1;
+    int t = (g_getStationTrack && g_trackManager) ? (int)g_getStationTrack(g_trackManager) : -1;
+    if (ut_diagLastA != -99 && (a != ut_diagLastA || t != ut_diagLastT)) {
+        Log("UT: [diag] la emisora del juego cambio %d/%d -> %d/%d (dial abierto=%d, cuadros vigilados restantes=%d)",
+            ut_diagLastA, ut_diagLastT, a, t, ut_inAudioMenu ? 1 : 0, ut_diagWatch);
+        UT_DumpAll("cambio_de_emisora", nullptr);
+    }
+    ut_diagLastA = a; ut_diagLastT = t;
+    if (ut_diagWatch > 0) ut_diagWatch--;
+}
+
 static void UT_Frame() {
+    UT_DiagTick();  // v1.9.24
     // v1.8: marca de tiempo del ultimo cuadro (el callback de OpenSL la usa
     // para pausar si el juego se va a fondo / pantalla de inicio).
     ut_lastFrameAt = std::chrono::steady_clock::now();
@@ -1135,7 +1216,6 @@ static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, 
 // RadioSelection, TrackManager, AudioEngine y FrontEndMenuManager al abrir
 // el dial; comparando dos aperturas (p. ej. en 8 y en 7) el byte que se
 // queda en 3 es la del menu y el que cambia es la real.
-static void* ut_menuManager = nullptr;
 // v1.9.22/1.9.23: escribe la emisora real en AudioEngine+0x149 (la
 // variable que muestra EMISORA). Solo registra cuando cambia.
 static void UT_SyncEmisora(int station) {
@@ -1202,6 +1282,7 @@ static bool ut_menuPatchesDone = false;
 static void UT_RadioSelectionCtor_hook(void* self) {
     if (ut_origRadioSelectionCtor) ut_origRadioSelectionCtor(self);  // ctor original primero
     if (!self || !ut_getTexture) return;
+    UT_DumpAll("dial_abierto", self);  // v1.9.24: antes de tocar nada
     void* tex = ut_getTexture("radio_TPLAYER");
     if (!tex) { Log("UT: no se pudo cargar la textura radio_TPLAYER (sin parches del menu)"); return; }
     *(volatile uint32_t*)((uintptr_t)tex + 0x64) += 1;  // refcount+1
@@ -1270,9 +1351,12 @@ static void UT_RadioSelectionCtor_hook(void* self) {
 typedef void (*RadioSelectionDtorFn)(void*);
 static RadioSelectionDtorFn ut_origRadioSelectionDtor = nullptr;
 static void UT_RadioSelectionDtor_hook(void* self) {
+    UT_DumpAll("dial_cierra_antes", self);  // v1.9.24
     ut_inAudioMenu = false;
     ut_menuPreview = false;
     if (ut_origRadioSelectionDtor) ut_origRadioSelectionDtor(self);
+    UT_DumpAll("dial_cierra_despues", nullptr);  // v1.9.24: sin leer el dial (ya destruido)
+    ut_diagWatch = 90;  // v1.9.24: vigilar ~90 cuadros si el juego reaplica otra emisora
 }
 
 // v1.9.12 (Alex 1.8.4, RE3): CKeyGen::GetUppercaseKey — el nombre EMISORA.
