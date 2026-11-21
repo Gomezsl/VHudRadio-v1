@@ -939,9 +939,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.30-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.31-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.30-beta"
+#define VHUDRADIO_VERSION "1.9.31-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1373,12 +1373,17 @@ static bool* g_loadingActive = nullptr;  // v2.48: CLoadingScreen::m_bActive (tr
 static void (*DrawFrontEnd_orig)() = nullptr;
 static void DrawFrontEnd_hook() {
     g_menuDrawn = true;
-    // v1.9.30: EMISORA se lee en vivo en SettingSelection::Render (libGTASA+0x361d38),
+    // v1.9.31: EMISORA se lee en vivo en SettingSelection::Render (libGTASA+0x361d38),
     // dentro de DrawFrontEnd -> DrawBackground -> DrawStandardMenus -> SelectScreen::Render.
     // Escribir MS+0x240/MS+0x244 AQUI, antes del original, deja el valor correcto en el
     // momento exacto del dibujado. La escritura de UT_DiagTick (tras el swap, 1.9.29)
     // llega un cuadro tarde y algo la revierte a la guardada antes del siguiente Render.
-    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+    // v1.9.30 usaba ut_inAudioMenu como condicion, pero ese flag solo es true con el
+    // dial (RadioSelection) abierto; la fila EMISORA esta en la pantalla principal de
+    // Configuracion del sonido (AudioScreen), donde ut_inAudioMenu es false y la
+    // escritura nunca corria (detectado por Gemini, via Daniel, 2026-11-21).
+    // MenuActive() (m_bMenuActive 0x5C) cubre todo el menu frontal: pausa, sonido y dial.
+    if (MenuActive() && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
         int* msCur = (int*)((char*)ut_mobileSettings + 0x240);
         int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
         if (*msCur != g_current) *msCur = g_current;
