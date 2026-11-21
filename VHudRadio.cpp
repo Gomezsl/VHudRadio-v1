@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.4-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.5-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,20 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.5: BOTONES POR DrawAll + RADIO DEL JUEGO POR AudioEngine (Daniel, log 1.9.4 + VHudRadioSyms.txt)
+// - El volcado de simbolos (895) trae la respuesta de los botones:
+//   CTouchInterface::DrawAll(bool) SI existe. Los 5 nombres de la sonda eran
+//   los equivocados. Se engancha y se ocultan TODOS los botones tactiles con
+//   la rueda/panel/lista abiertos. El claxon tambien se oculta mientras la
+//   rueda esta abierta, pero el doble-toque sigue funcionando por POSICION
+//   (g_evs) y el boton flotante queda visible.
+// - Doble audio por la radio del juego: el log 1.9.4 mostro el hook de
+//   RetuneRadio del TrackManager instalado pero NUNCA disparo en un cambio a
+//   la 12. La radio del juego cambia por CAudioEngine::RetuneRadio, otra
+//   funcion. Se engancha tambien con la misma logica (StopRadio + nativa 13).
+//   Devuelve la emisora; si en realidad devuelve void, es inocuo.
+// - Mixtape: sigue sin salir (la nativa queda en 13 = Radio Off). No hay
+//   cambio en esta version: primero el audio limpio y los botones.
 // v1.9.4: RADIO DEL JUEGO + WIDGETS DEL HUD (Daniel, log 1.9.2 + AdvancedSettings)
 // - El log que mando Daniel es de la 1.9.2, no de la 1.9.3: por eso no se
 //   oculto ningun HUD y no salio VHudRadioSyms.txt. La 1.9.3 ya lo trae;
@@ -651,9 +665,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.4-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.5-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.4-beta"
+#define VHUDRADIO_VERSION "1.9.5-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;

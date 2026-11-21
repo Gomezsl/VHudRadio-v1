@@ -944,6 +944,49 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
 // En otra emisora: se para el reproductor y se deja pasar el RetuneRadio
 // original.
 static RetuneFn ut_origRetuneRadio = nullptr;
+
+// v1.9.5 (Daniel): la radio del juego tambien puede cambiar por
+// CAudioEngine::RetuneRadio (no solo por CAERadioTrackManager::RetuneRadio).
+// El log de la 1.9.4 mostro el hook del TrackManager instalado pero nunca
+// disparo en un cambio a la 12: el doble audio por la radio del juego viene
+// por esta otra via. Misma logica que el hook del TrackManager, pero `self`
+// es el AudioEngine: StopRadio/StartRadio se llaman sobre g_trackManager.
+// Devuelve la emisora (signed char); si en realidad devuelve void, devolver
+// la emisora es inocuo (el que llama la ignora o la usa como emisora).
+typedef signed char (*AudioRetuneFn)(void*, signed char);
+static AudioRetuneFn ut_origAudioRetune = nullptr;
+static signed char UT_AudioRetune_hook(void* self, signed char station) {
+    (void)self;
+    if (station == 12) {
+        if (UT_VehicleBlocked()) {
+            g_current = 13;
+            if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+            return 13;
+        }
+        if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook AudioRetune 12)"); }
+        UT_Start();
+        g_current = 12;
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
+        Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 13)");
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        return 12;
+    }
+    if (ut_active && !ut_userStationCmd &&
+        (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
+        ut_pausedByExit = false;
+        g_current = 12;
+        Log("UT: se queda en la 12 al subir al vehiculo (AudioRetune pedia %d)", (int)station);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        return 12;
+    }
+    if (ut_active) UT_Stop("cambio de estacion");
+    g_current = station;
+    if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.4: cortar la nativa al salir de la 12
+    if (ut_origAudioRetune) return ut_origAudioRetune(self, station);
+    return station;
+}
+
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     if (!ut_origRetuneRadio) return 0;
     if (station == 12) {
@@ -1132,6 +1175,19 @@ static void UT_RadarUpdate_hook(void* self) {
     if (ut_origRadarUpdate) ut_origRadarUpdate(self);
 }
 
+// v1.9.5 (VHudRadioSyms.txt de Daniel): CTouchInterface::DrawAll(bool) SI
+// existe en 2.10 (los 5 nombres que probe en la 1.9.1 eran los equivocados).
+// Dibuja TODOS los botones tactiles. Se ocultan con la rueda/panel/lista
+// abiertos. El claxon tambien se oculta mientras la rueda esta abierta, pero
+// el doble-toque para abrir/cerrar sigue funcionando por POSICION (g_evs),
+// no por el dibujo, y el boton flotante queda visible como control principal.
+typedef void (*TouchDrawAllFn)(void*, bool);
+static TouchDrawAllFn ut_origTouchDrawAll = nullptr;
+static void UT_TouchDrawAll_hook(void* self, bool b) {
+    if (g_open || g_settings || g_trackList) return;  // rueda/panel/lista abiertos: sin botones
+    if (ut_origTouchDrawAll) ut_origTouchDrawAll(self, b);
+}
+
 static void UT_InstallHooks() {
     // v1.9.3 (Claude): si libSAUserTrack64.so esta cargado, el reproductor
     // propio NO se activa (dos reproductores + dos hooks de StartRadio =
@@ -1163,6 +1219,26 @@ static void UT_InstallHooks() {
             Log("UT: hook RetuneRadio %s", ut_origRetuneRadio ? "ok" : "no se pudo instalar (la estatica puede quedarse)");
         } else {
             Log("UT: RetuneRadio no resolvio (la estatica puede quedarse)");
+        }
+        // v1.9.5: la radio del juego tambien puede cambiar por
+        // CAudioEngine::RetuneRadio. Se engancha con la misma logica.
+        uintptr_t ar = aml->GetSym(h, "_ZN12CAudioEngine11RetuneRadioEa");
+        if (ar) {
+            aml->Hook((void*)ar, (void*)UT_AudioRetune_hook, (void**)&ut_origAudioRetune);
+            Log("UT: hook CAudioEngine::RetuneRadio %s", ut_origAudioRetune ? "ok" : "no se pudo instalar");
+        } else {
+            Log("UT: CAudioEngine::RetuneRadio no resolvio");
+        }
+        // v1.9.5: CTouchInterface::DrawAll(bool) SI existe (VHudRadioSyms.txt
+        // de Daniel): dibuja TODOS los botones tactiles. Los 5 nombres de la
+        // sonda (1.9.1) eran los equivocados; la sonda se mantiene por si
+        // acaso, pero DrawAll es el que se engancha.
+        uintptr_t da = aml->GetSym(h, "_ZN15CTouchInterface7DrawAllEb");
+        if (da) {
+            aml->Hook((void*)da, (void*)UT_TouchDrawAll_hook, (void**)&ut_origTouchDrawAll);
+            Log("UT: hook CTouchInterface::DrawAll %s", ut_origTouchDrawAll ? "ok (botones ocultos con la rueda)" : "no se pudo instalar");
+        } else {
+            Log("UT: CTouchInterface::DrawAll no resolvio (los botones no se ocultan)");
         }
         // v1.9: ocultar los botones del juego con la rueda abierta.
         // CTouchInterface::Draw no existe en 2.10; se sondean otros nombres

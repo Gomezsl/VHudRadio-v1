@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.9.4-beta
+# VHud Radio Wheel v1.9.5-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -19,8 +19,9 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 - **Blur gaussiano de verdad:** el desenfoque del fondo ahora es un blur gaussiano (shader separable, como el de Void Radio Wheel Expanded): al 100% ya no se ven los cuadros/pixeles, sale suave. Antes era solo bajar la imagen, que al 100% se pixeleaba.
 - **Sin estática al cambiar con la radio original:** el juego cambia de emisora con RetuneRadio (no con StartRadio) cuando se usa su radio original; ahora ese cambio también se engancha (como SAUserTracks de Alex: StopRadio para cortar la anterior y luego StartRadio con 12), así la estática del cambio ya no se queda sonando junto a la música.
 - **Mixtape en el menú de pausa:** la emisora nativa queda en Radio Off (13) para que no suene doble audio; el menú de pausa marca Radio Off cuando suena User Tracks. Que el menú muestre Mixtape en vez de Radio Off sigue pendiente (hay que encontrar el campo que lee el menú).
-- **HUD oculto con la rueda (v1.9.3–v1.9.4):** el radar, la vida y el dinero se ocultan mientras la rueda, el panel o la lista están abiertos (CHud::Draw + CWidgetPlayerInfo::Draw + CWidgetRadar::Update, como hace AdvancedSettings). Los botones táctiles del juego todavía no se ocultan (son widgets en m_pWidgets; el claxon es el 7); esta versión vuelca los símbolos de libGTASA.so a VHudRadioSyms.txt para encontrar el dibujo de los botones.
-- **Doble audio (v1.9.3–v1.9.4):** al cambiar a User Tracks desde otra emisora, la anterior se corta con StopRadio antes de poner la nativa en Radio Off (rueda y radio del juego).
+- **HUD oculto con la rueda (v1.9.3–v1.9.4):** el radar, la vida y el dinero se ocultan mientras la rueda, el panel o la lista están abiertos (CHud::Draw + CWidgetPlayerInfo::Draw + CWidgetRadar::Update, como hace AdvancedSettings).
+- **Botones táctiles ocultos con la rueda (v1.9.5):** CTouchInterface::DrawAll dibuja todos los botones del juego; se ocultan mientras la rueda, el panel o la lista están abiertos. El claxon también se oculta en ese momento, pero el doble-toque para abrir/cerrar la rueda sigue funcionando por la posición, y el botón flotante queda visible.
+- **Doble audio (v1.9.3–v1.9.5):** al cambiar a User Tracks desde otra emisora, la anterior se corta con StopRadio antes de poner la nativa en Radio Off (rueda, radio del juego por RetuneRadio del TrackManager y por RetuneRadio del AudioEngine).
 - **Sin estática (bloqueo 0x22):** la estática de sintonía del juego (evento 0x22) se bloquea mientras suena User Tracks, como hace SAUserTracks de Alex. Es lo que se oía como "doble audio" junto a la música, sobre todo al cambiar con la radio original.
 - **Botones del juego ocultos con la rueda abierta:** mientras la rueda, el panel o la lista de canciones están abiertos, los botones del HUD del juego no se dibujan (como el Void Radio Wheel); al cerrar la rueda vuelven. Si el juego no deja enganchar esa función, simplemente no se ocultan (sin riesgo).
 
