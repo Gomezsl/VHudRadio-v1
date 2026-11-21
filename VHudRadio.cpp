@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.3.0-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.4.0-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -579,9 +579,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.3.0-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.4.0-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.3.0-beta"
+#define VHUDRADIO_VERSION "1.4.0-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -685,6 +685,11 @@ static void PlayClick(bool hi) {
 static const char* kStationName[14] = { "", "Playback FM", "K-Rose", "K-DST", "Bounce FM", "SF-UR",
     "Radio Los Santos", "Radio X", "CSR 103.9", "K-Jah West", "Master Sounds 98.3",
     "WCTR", "User tracks", "Radio Off" };
+// v1.4: programa/locutor de cada emisora (lo que se esta transmitiendo), como
+// en la radio de GTA V. En la 12 el programa es la cancion que suena.
+static const char* kStationProgram[14] = { "", "Forth Right MC", "Mary-Beth Maybell", "The Dusty Show",
+    "The Funktipus", "Hans Oberlander", "Julio G", "Sage", "Phillip \"PM\" Michaels",
+    "Johnny Lawton", "Johnny \"The Love Giant\" Parkinson", "WCTR News", "", "" };
 
 // v2.16: idiomas - toda la interfaz (panel + generos) en 6 idiomas.
 // Los nombres de las estaciones no se traducen (son nombres propios del juego);
@@ -788,6 +793,8 @@ static void DisplayRadioStationName_hook(void* self) {
 }
 static bool g_settings = false;   // v2.2: panel de personalizacion abierto
 static bool g_preview = false;    // v2.2: vista previa de la rueda (solo se ve, no cambia la estacion)
+static bool g_trackList = false;  // v1.4: lista de canciones (User Tracks) abierta
+static float g_trackListRectX = -1.0f, g_trackListRectY = -1.0f, g_trackListRectW = 0.0f, g_trackListRectH = 0.0f;  // v1.4: rect real de la lista (para repartir los toques, como el panel)
 static std::string CfgPath() { return g_gameDataDir + "/configs/VHudRadio.ini"; }  // v2.36: el .ini vuelve a data/configs (v2.3-2.15); la carpeta VHudRadio ya no existe
 static void SaveCfg() {
     mkdir((g_gameDataDir + "/configs").c_str(), 0777);
@@ -948,6 +955,7 @@ static float g_dragSX = 0, g_dragSY = 0;  // v2.16: donde empezo el dedo
 static float g_dragBX = 0, g_dragBY = 0;  // v2.16: posicion del boton al empezar (fraccion de W/H)
 static bool g_wheelTouch = false;   // v1.5: el toque actual empezo/sobre el anillo de la rueda
 static bool g_centerTap = false;    // v2.31: el toque actual empezo en el centro de la rueda (abre el panel al soltar)
+static bool g_listBtnTap = false;   // v1.4: el toque actual empezo en el boton "Lista de canciones" (abre la lista al soltar)
 static bool g_ignoreNextUp = false; // v1.5: el toque que ABRIO la rueda no debe cerrarla al soltar
 static float g_touchX = -1.0f, g_touchY = -1.0f;  // v2.18: ultima posicion de toque (io.MousePos llega con un frame de retraso y el bajar leia una posicion vieja)
 static bool g_panelScrolling = false;  // v2.20: el arrastre actual es un desplazamiento del panel (no un deslizador)
@@ -1247,7 +1255,7 @@ static void ToggleWheel(const char* why) {
     if (now - lastToggle < std::chrono::milliseconds(600)) return;
     lastToggle = now;
     if (!g_open) { g_open = true; g_wheelAnimStart = std::chrono::steady_clock::now(); g_ignoreNextUp = true; RefreshCurrent(); g_selected = g_current; Log("rueda abierta por %s (estacion actual %d %s)", why, g_current, kStationName[g_current]); PlayClick(false); }
-    else { g_open = false; g_centerTap = false; Log("rueda cerrada por %s", why); }
+    else { g_open = false; g_centerTap = false; g_listBtnTap = false; g_trackBtn = 0; Log("rueda cerrada por %s", why); }
 }
 
 
@@ -1273,6 +1281,12 @@ static uintptr_t Touch_hook(int type, int idx, int x, int y) {
             if (g_settings && g_panelRectW > 0.0f) {
                 inPanel = (float)x >= g_panelRectX && (float)x <= g_panelRectX + g_panelRectW &&
                           (float)y >= g_panelRectY && (float)y <= g_panelRectY + g_panelRectH;
+            }
+            // v1.4: la lista de canciones tambien es un panel (los toques
+            // dentro van solo a ImGui, el juego no los ve).
+            if (!inPanel && g_trackList && g_trackListRectW > 0.0f) {
+                inPanel = (float)x >= g_trackListRectX && (float)x <= g_trackListRectX + g_trackListRectW &&
+                          (float)y >= g_trackListRectY && (float)y <= g_trackListRectY + g_trackListRectH;
             }
             g_touchForPanel = inPanel;
             // v2.57: con la rueda abierta (y no el panel), el toque es de la
@@ -1382,6 +1396,9 @@ static ImVec2 g_trkPrevC = ImVec2(0, 0), g_trkNextC = ImVec2(0, 0);
 static float g_trkArrowR = 0;
 static bool g_trkArrows = false;
 static int g_trackBtn = 0;  // -1 anterior, +1 siguiente (toque en curso)
+// v1.4: boton "Lista de canciones" en el centro de la rueda (solo en la 12).
+static bool g_listBtn = false;
+static ImVec4 g_listBtnRect = ImVec4(0, 0, 0, 0);  // x, y, ancho, alto
 static int TrackArrowAt(float x, float y) {
     if (!g_trkArrows) return 0;
     float rr = g_trkArrowR * 1.2f;  // 20% de margen para el dedo
@@ -1415,6 +1432,24 @@ static bool FloatBtnHit(float x, float y, float W, float H) {
     if (x >= ip.x && x <= ip.x + bs && y >= ip.y && y <= ip.y + bs) return true;
     if (x >= lp.x && x <= lp.x + ls.x && y >= lp.y && y <= lp.y + ls.y) return true;
     return false;
+}
+
+// v1.4: flechas anterior/siguiente junto al boton flotante (solo en la 12):
+// cambian de cancion sin abrir la rueda y sin tocar el cambio de emisora.
+// La anterior va a la izquierda del icono y la siguiente a la derecha de
+// la etiqueta (o del icono si la etiqueta esta oculta).
+static ImVec2 g_btnPrevC, g_btnNextC;
+static float g_btnArrowR = 0;
+static bool g_btnArrows = false;
+static void FloatBtnArrows(float W, float H, ImVec2& prevC, ImVec2& nextC, float& ar) {
+    ImVec2 bp, lp, ls; float bs;
+    FloatBtnGeom(W, H, bp, lp, ls, bs);
+    ar = H * 0.02f;
+    float gap = H * 0.012f;
+    float cy = bp.y + bs / 2;
+    prevC = ImVec2(bp.x - gap - ar, cy);
+    float rightX = (g_cfg.mostrarGenero && !g_cfg.ocultarNombre) ? (lp.x + ls.x) : (bp.x + bs);
+    nextC = ImVec2(rightX + gap + ar, cy);
 }
 
 // v2.33: boton flotante con OpenGL directo (sin ImGui) para no hacer un
@@ -1468,6 +1503,7 @@ static bool GLBtnInit() {
     // juego (ES 3.x) y la pantalla se pone en negro al subir a un auto.
     g_pGenVA = (PFNGLGENVA)eglGetProcAddress("glGenVertexArrays");
     g_pBindVA = (PFNGLBINDVA)eglGetProcAddress("glBindVertexArray");
+    g_pBlitFB = (PFNGLBLITFB)eglGetProcAddress("glBlitFramebuffer");  // v1.4: resolver MSAA para el blur
     if (g_pGenVA && g_pBindVA) {
         g_pGenVA(1, &g_glBtnVAO);
         g_pBindVA(g_glBtnVAO);
@@ -1604,6 +1640,22 @@ static bool DrawButtonGL(float W, float H) {
     circleTo(vBg, bp.x + bs / 2, bp.y + bs / 2, bs / 2, 0.0f, 0.0f, 0.0f, opF);
     GLuint it = IconTex(g_current);
     if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
+    // v1.4: flechas anterior/siguiente junto al boton (solo en la 12).
+    g_btnArrows = false;
+    if (g_current == 12 && ut_active) {
+        ImVec2 ap, an; float ar;
+        FloatBtnArrows(W, H, ap, an, ar);
+        g_btnPrevC = ap; g_btnNextC = an; g_btnArrowR = ar; g_btnArrows = true;
+        circleTo(vBg, ap.x, ap.y, ar, 1.0f, 1.0f, 1.0f, 60.0f * opF / 255.0f);
+        circleTo(vBg, an.x, an.y, ar, 1.0f, 1.0f, 1.0f, 60.0f * opF / 255.0f);
+        float tr = ar * 0.55f;
+        vBg.push_back({ap.x - tr*0.4f, ap.y - tr, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+        vBg.push_back({ap.x - tr*0.4f, ap.y + tr, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+        vBg.push_back({ap.x + tr*0.6f, ap.y, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+        vBg.push_back({an.x + tr*0.4f, an.y - tr, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+        vBg.push_back({an.x + tr*0.4f, an.y + tr, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+        vBg.push_back({an.x - tr*0.6f, an.y, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 230.0f * opF / 255.0f});
+    }
     // Guardar estado GL del juego (incluido el VAO y el framebuffer).
     GLint prevProg = 0, prevTex = 0, prevArr = 0, prevElem = 0, prevActive = 0;
     glGetIntegerv(GL_CURRENT_PROGRAM, &prevProg);
@@ -1700,8 +1752,13 @@ static bool DrawButtonGL(float W, float H) {
 // por cuadro con la rueda abierta. Las UVs van invertidas en Y (la copia
 // del framebuffer sale al reves). Se dibuja con GL directo (no ImGui) antes
 // de que ImGui pinte el fondo oscuro y la rueda.
-static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0;
+static GLuint g_blurCopyTex = 0, g_blurSmallTex = 0, g_blurFBO = 0, g_blurResolveFBO = 0;
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
+// v1.4: glBlitFramebuffer (ES 3.0) para resolver el framebuffer del juego
+// (GTA usa MSAA: glCopyTexImage2D falla con GL_INVALID_OPERATION 0x502
+// porque no se puede copiar directo de un buffer multisample).
+typedef void (*PFNGLBLITFB)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+static PFNGLBLITFB g_pBlitFB = nullptr;
 static int BlurFactor() {
     if (g_cfg.blur <= 0) return 0;
     if (g_cfg.blur <= 33) return 8;   // v1.3: mas fuerte (antes 4x, casi no se notaba)
@@ -1718,6 +1775,7 @@ static void BlurDrawBackground(float W, float H) {
     if (sw < 8) sw = 8; if (sh < 8) sh = 8;
     if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO) {
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
+        if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurCopyTex) { glDeleteTextures(1, &g_blurCopyTex); g_blurCopyTex = 0; }
         if (g_blurSmallTex) { glDeleteTextures(1, &g_blurSmallTex); g_blurSmallTex = 0; }
         glGenTextures(1, &g_blurCopyTex);
@@ -1743,9 +1801,18 @@ static void BlurDrawBackground(float W, float H) {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             return;
         }
+        // v1.4: FBO para resolver el framebuffer del juego (MSAA) a la
+        // textura de copia. Sin esto, glCopyTexImage2D falla con 0x502.
+        glGenFramebuffers(1, &g_blurResolveFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_blurResolveFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blurCopyTex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            Log("  !! blur: FBO de resolucion incompleto (se usa copia directa)");
+            glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0;
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         g_blurCW = w; g_blurCH = h; g_blurSW = sw; g_blurSH = sh; g_blurFactor = factor;
-        Log("  blur: FBO listo factor=%dx (%dx%d -> %dx%d)", factor, w, h, sw, sh);
+        Log("  blur: FBO listo factor=%dx (%dx%d -> %dx%d)%s", factor, w, h, sw, sh, g_pBlitFB ? " (blit MSAA)" : " (copia directa)");
     }
     // guardar estado GL del juego
     GLint prevProg = 0, prevTex = 0, prevArr = 0, prevElem = 0, prevActive = 0, prevFB = 0, prevVAO = 0;
@@ -1760,11 +1827,20 @@ static void BlurDrawBackground(float W, float H) {
     GLboolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
     GLboolean prevDepth = glIsEnabled(GL_DEPTH_TEST);
     GLint vp[4]; glGetIntegerv(GL_VIEWPORT, vp);
-    // 1. copiar la escena del juego a g_blurCopyTex (framebuffer por defecto)
+    // 1. copiar la escena del juego a g_blurCopyTex (framebuffer por defecto).
+    // v1.4: con glBlitFramebuffer se resuelve el MSAA del juego (la copia
+    // directa fallaba con GL 0x502). Si no hay blit, se intenta la copia.
     glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
-    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+    if (g_pBlitFB && g_blurResolveFBO) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_blurResolveFBO);
+        g_pBlitFB(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glBindTexture(GL_TEXTURE_2D, g_blurCopyTex);
+        glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
+    }
     { GLenum e = glGetError(); if (e != GL_NO_ERROR) { Log("  !! blur: no se pudo copiar la escena (GL 0x%X): sin desenfoque", (unsigned)e); goto blur_restore; } }
     // preparar el programa del boton (proyeccion ortografica, Y hacia abajo)
     glDisable(GL_DEPTH_TEST);
@@ -1878,6 +1954,18 @@ static void DrawWheel(float W, float H) {
         // queda transparente y sin esto se veria el fondo del boton).
         { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); dl->AddImageRounded((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
         dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
+        // v1.4: flechas anterior/siguiente junto al boton (solo en la 12).
+        g_btnArrows = false;
+        if (g_current == 12 && ut_active) {
+            ImVec2 ap, an; float ar;
+            FloatBtnArrows(W, H, ap, an, ar);
+            g_btnPrevC = ap; g_btnNextC = an; g_btnArrowR = ar; g_btnArrows = true;
+            dl->AddCircleFilled(ap, ar, IM_COL32(255,255,255,(int)(60 * op / 255)), 24);
+            dl->AddCircleFilled(an, ar, IM_COL32(255,255,255,(int)(60 * op / 255)), 24);
+            float tr = ar * 0.55f;
+            dl->AddTriangleFilled(ImVec2(ap.x - tr*0.4f, ap.y - tr), ImVec2(ap.x - tr*0.4f, ap.y + tr), ImVec2(ap.x + tr*0.6f, ap.y), IM_COL32(255,255,255,(int)(230 * op / 255)));
+            dl->AddTriangleFilled(ImVec2(an.x + tr*0.4f, an.y - tr), ImVec2(an.x + tr*0.4f, an.y + tr), ImVec2(an.x - tr*0.6f, an.y), IM_COL32(255,255,255,(int)(230 * op / 255)));
+        }
     }
 
     if (!g_open) return;
@@ -1922,12 +2010,23 @@ static void DrawWheel(float W, float H) {
     // anterior/siguiente en posicion FIJA (antes dependian del ancho del
     // nombre y con nombres largos se juntaban al texto). El nombre se
     // desplaza (marquesina) entre las flechas si no cabe.
+    // v1.4: en las demas emisoras, el programa/locutor que se esta
+    // transmitiendo (como en la radio de GTA V).
     bool showTrack = (g_selected == 12 && ut_active);
+    bool showProg = (g_selected >= 1 && g_selected <= 11 && g_cfg.mostrarGenero);
     float nameDy = 0.0f;
     if (g_cfg.mostrarGenero) nameDy -= H*0.015f;
+    if (showProg) nameDy -= H*0.012f;
     if (showTrack) nameDy -= H*0.015f;
     dl->AddText(font, nameSize, ImVec2(c.x - nsz.x*0.5f, c.y - nsz.y*0.5f + nameDy), txtCol, name);
     if (g_cfg.mostrarGenero) dl->AddText(font, tagSize, ImVec2(c.x - tsz.x*0.5f, c.y + nsz.y*0.5f + H*0.005f), tagCol, tag);
+    if (showProg) {
+        const char* prog = kStationProgram[g_selected];
+        float progSize = H * 0.02f;
+        ImVec2 psz = font->CalcTextSizeA(progSize, FLT_MAX, 0.0f, prog, nullptr);
+        float py = c.y + nsz.y*0.5f + H*0.005f + tsz.y + H*0.004f;
+        dl->AddText(font, progSize, ImVec2(c.x - psz.x*0.5f, py), tagCol, prog);
+    }
     g_trkArrows = false;
     if (showTrack) {
         const char* trk = UT_TrackDisplayName();
@@ -1961,6 +2060,21 @@ static void DrawWheel(float W, float H) {
             dl->AddText(font, trkSize, ImVec2(x0 + ksz.x + 60.0f, ty), tagCol, trk);
         }
         dl->PopClipRect();
+        // v1.4: boton "Lista de canciones" debajo del nombre (abre la lista
+        // como la de GTA V para elegir la pista).
+        {
+            const char* lbl = "Lista de canciones";
+            float lsz = H * 0.02f;
+            ImVec2 ltsz = font->CalcTextSizeA(lsz, FLT_MAX, 0.0f, lbl, nullptr);
+            float bw = ltsz.x + H * 0.03f, bh = ltsz.y + H * 0.012f;
+            float bx = c.x - bw * 0.5f, by = ty + ksz.y + H * 0.012f;
+            g_listBtn = true; g_listBtnRect = ImVec4(bx, by, bw, bh);
+            dl->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(255,255,255,(int)(40 * anim)), H * 0.008f);
+            dl->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), IM_COL32(255,255,255,(int)(150 * anim)), H * 0.008f, 0, 1.5f);
+            dl->AddText(font, lsz, ImVec2(c.x - ltsz.x * 0.5f, by + H * 0.006f), IM_COL32(255,255,255,(int)(230 * anim)), lbl);
+        }
+    } else {
+        g_listBtn = false;
     }
     // v2.2: marca de vista previa
     if (g_preview) {
@@ -2222,6 +2336,50 @@ static bool PanelSwatch(const char* label, ImVec4 col, bool active, float H) {
 }
 
 // v2.2: panel de personalizacion (se abre con doble toque al boton flotante)
+// v1.4: lista de canciones de User Tracks (como la de GTA V): se abre desde
+// la rueda y muestra todas las pistas; la que suena va marcada con SONANDO.
+// Tocar una pista la pone a sonar. La X de arriba a la derecha la cierra.
+static void DrawTrackList(float W, float H) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, H * 0.012f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(H * 0.014f, H * 0.014f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.05f, 0.13f, 0.97f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.10f, 0.45f, 1.0f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.10f, 0.45f, 1.0f, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.10f, 0.45f, 1.0f, 0.75f));
+    if (g_fontUI) ImGui::PushFont(g_fontUI);
+    float pw = W * 0.42f, ph = H * 0.72f;
+    ImGui::SetNextWindowSize(ImVec2(pw, ph), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2((W - pw) * 0.5f, (H - ph) * 0.5f), ImGuiCond_Always);
+    bool opened = ImGui::Begin("##vhudtracklist", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    if (!opened) { ImGui::End(); if (g_fontUI) ImGui::PopFont(); ImGui::PopStyleColor(5); ImGui::PopStyleVar(3); return; }
+    ImVec2 wp = ImGui::GetWindowPos(); ImVec2 ws = ImGui::GetWindowSize();
+    g_trackListRectX = wp.x; g_trackListRectY = wp.y; g_trackListRectW = ws.x; g_trackListRectH = ws.y;
+    ImGui::Text("TRACK LIST");
+    ImGui::SameLine(ImGui::GetWindowWidth() - H * 0.05f);
+    if (ImGui::Button("X", ImVec2(H * 0.04f, H * 0.04f))) { g_trackList = false; Log("lista de canciones cerrada"); }
+    ImGui::Text("User Track Player");
+    ImGui::Separator();
+    ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
+    int cur = UT_CurrentTrackIdx();
+    for (size_t i = 0; i < ut_tracks.size(); i++) {
+        const char* nm = UT_TrackNameFor((int)i);
+        bool isCur = ((int)i == cur);
+        char label[320];
+        if (isCur) snprintf(label, sizeof label, "%d  %s  [SONANDO]", (int)i + 1, nm);
+        else snprintf(label, sizeof label, "%d  %s", (int)i + 1, nm);
+        if (ImGui::Selectable(label, isCur)) {
+            if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+    if (g_fontUI) ImGui::PopFont();
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(3);
+}
+
 static void DrawSettings(float W, float H) {
     // v2.6: panel propio (no la ventana de ImGui por defecto) - azul casi oscuro,
     // sin barra de titulo, con deslizadores, recuadros y botones dibujados a mano
@@ -2746,7 +2904,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     static bool mouseDown = false;
     for (auto& e : evs) {
         if (e.kind == 0) {
-            if (g_open || g_preview || g_settings) io.AddMousePosEvent(e.x, e.y);  // v2.50: con solo el boton, el toque no llega a ImGui
+            if (g_open || g_preview || g_settings || g_trackList) io.AddMousePosEvent(e.x, e.y);  // v2.50: con solo el boton, el toque no llega a ImGui
             g_touchX = e.x; g_touchY = e.y;  // v2.18: posicion propia del toque
             if (g_open && !g_settings && !g_paused) {
                 int seg = SegmentAt(e.x, e.y, (float)w, (float)h);
@@ -2766,7 +2924,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_cfg.btnX = nx; g_cfg.btnY = ny;
                 }
             }
-        } else if (e.kind == 1) { if (g_open || g_preview || g_settings) io.AddMouseButtonEvent(0, true); mouseDown = true;  // v2.50: con solo el boton, el toque no llega a ImGui
+        } else if (e.kind == 1) { if (g_open || g_preview || g_settings || g_trackList) io.AddMouseButtonEvent(0, true); mouseDown = true;  // v2.50: con solo el boton, el toque no llega a ImGui
             // v2.3: en el menu de pausa los toques son del juego; con el panel abierto, del panel (ImGui)
             if (g_paused) {
                 // nada: el menu de pausa procesa el toque
@@ -2784,11 +2942,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 int ta = 0;
                 if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_centerTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
                 else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; g_centerTap = false; }  // v1.2: flechas anterior/siguiente de la cancion
+                else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; g_centerTap = false; }  // v1.4: boton "Lista de canciones"
                 else if (InWheelCenter(g_touchX, g_touchY, (float)w, (float)h)) { g_centerTap = true; g_wheelTouch = false; }  // v2.31: centro de la rueda -> panel al soltar
                 else { g_wheelTouch = false; g_centerTap = false; }  // toque fuera del anillo: al soltar se cierra sin cambiar
             }
             // v1.2: doble toque al boton de claxon (zona derecha) abre/cierra la rueda
-            if (g_inVehicle && !g_settings && !g_paused) {
+            if (g_inVehicle && !g_settings && !g_trackList && !g_paused) {
                 if (InHornRegion(g_touchX, g_touchY, (float)w, (float)h)) {
                     static auto lastHornTap = std::chrono::steady_clock::now() - std::chrono::seconds(5);
                     auto now = std::chrono::steady_clock::now();
@@ -2803,7 +2962,29 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             // v2.2: boton flotante - un toque = siguiente estacion; dos toques = panel de personalizacion
             // v2.16: sin radio no hay boton ni panel; el toque se resuelve al SOLTAR
             // (si el dedo se movio, fue un arrastre para mover el boton, no un toque)
-            if (!g_open && !g_preview && !g_settings && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+            // v1.4: las flechas de cancion junto al boton se resuelven AL TOCAR
+            // (cambian de cancion sin abrir la rueda ni tocar la emisora).
+            bool arrowTap = false;
+            if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible && g_current == 12 && ut_active) {
+                ImVec2 ap, an; float ar;
+                FloatBtnArrows((float)w, (float)h, ap, an, ar);
+                float dx = g_touchX - ap.x, dy = g_touchY - ap.y;
+                if (dx*dx + dy*dy <= ar*ar*1.44f) {
+                    UT_PrevTrack();
+                    PlayClick(true);
+                    Log("boton flotante: anterior cancion (flecha)");
+                    arrowTap = true;
+                } else {
+                    dx = g_touchX - an.x; dy = g_touchY - an.y;
+                    if (dx*dx + dy*dy <= ar*ar*1.44f) {
+                        UT_NextTrack();
+                        PlayClick(true);
+                        Log("boton flotante: siguiente cancion (flecha)");
+                        arrowTap = true;
+                    }
+                }
+            }
+            if (!arrowTap && !g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
                 if (FloatBtnHit(g_touchX, g_touchY, (float)w, (float)h)) {
                     g_btnDrag = true; g_btnMoved = false;
                     g_dragSX = g_touchX; g_dragSY = g_touchY;
@@ -2813,12 +2994,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_dragBY = (g_cfg.btnY >= 0.0f ? g_cfg.btnY : ip.y / (float)h);
                 }
             }
-        } else if (e.kind == 2) { if (g_open || g_preview || g_settings) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); }  // v2.50: con solo el boton, el toque no llega a ImGui
+        } else if (e.kind == 2) { if (g_open || g_preview || g_settings || g_trackList) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); }  // v2.50: con solo el boton, el toque no llega a ImGui
             // v2.16: el toque al boton flotante se resuelve al soltar
             if (g_btnDrag) {
                 g_btnDrag = false;
                 if (g_btnMoved) { SaveCfg(); Log("boton flotante movido a (%.2f, %.2f)", g_cfg.btnX, g_cfg.btnY); }
-                else if (!g_open && !g_preview && !g_settings && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+                else if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
                     // v1.3: tocar la ETIQUETA (el nombre de la cancion) en la 12
                     // cambia de cancion sin abrir la rueda. El icono sigue
                     // cambiando de emisora como siempre.
@@ -2853,6 +3034,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     Log("rueda: %s cancion", g_trackBtn < 0 ? "anterior" : "siguiente");
                     g_trackBtn = 0;
                 }
+                else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
                 else if (g_centerTap) { g_centerTap = false; g_open = false; g_settings = true; PlayClick(false); Log("panel de personalizacion abierto (centro de la rueda)"); }  // v2.31: asi se abre el panel con el boton flotante oculto
                 else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda cerrada -> %d (%s)", g_selected, kStationName[g_selected]); g_open = false; }
                 else { Log("rueda cerrada sin cambiar"); g_open = false; }
@@ -2861,7 +3043,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     }
     // v2.1: un solo toque al boton flotante = siguiente estacion (si no llega un segundo toque en 600 ms)
     if (g_btnPending) {
-        if (g_open || g_settings || g_paused || !g_hasRadio || !g_cfg.botonVisible) g_btnPending = false;  // rueda, panel, pausa, sin radio o boton oculto: no cambiar de estacion
+        if (g_open || g_settings || g_trackList || g_paused || !g_hasRadio || !g_cfg.botonVisible) g_btnPending = false;  // rueda, panel, pausa, sin radio o boton oculto: no cambiar de estacion
         else if (std::chrono::steady_clock::now() - g_btnPendingAt > std::chrono::milliseconds(600)) {
             g_btnPending = false;
             int next = g_current % 13 + 1;
@@ -2917,7 +3099,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     static bool prevSettings = false;
     if (g_settings && !prevSettings) g_panelJustOpened = true;
     prevSettings = g_settings;
-    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && g_hasRadio && g_cfg.botonVisible;
+    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && !g_trackList && g_hasRadio && g_cfg.botonVisible;
     if (onlyButton && g_inited) {
         // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
         if (!DrawButtonGL((float)w, (float)h)) {
@@ -2929,7 +3111,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         }
         return;
     }
-    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || (g_settings && !g_paused);
+    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || ((g_settings || g_trackList) && !g_paused);
     if (needDraw) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         // v2.49: en el primer cuadro del panel el raton va limpio (sin el clic
@@ -2938,6 +3120,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         ImGui_ImplOpenGL3_NewFrame(); ImGui::NewFrame();
         if (g_inVehicle && !g_paused) DrawWheel((float)w, (float)h);
         if (g_settings && !g_paused) DrawSettings((float)w, (float)h);
+        if (g_trackList && !g_paused) DrawTrackList((float)w, (float)h);
         ImGui::Render(); ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
     g_panelJustOpened = false;  // v2.48: el reseteo de apertura solo vale para el primer cuadro

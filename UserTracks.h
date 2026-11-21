@@ -72,14 +72,34 @@ static const int UT_BUF_SAMPLES = UT_BUF_FRAMES * UT_OUT_CH;  // 1764 muestras
 static const size_t UT_BUF_BYTES = UT_BUF_SAMPLES * 2;         // 3528 bytes
 static const int UT_NUM_BUFS = 4;                // 4 buffers x 20 ms = 80 ms en cola
 
-// ---- carpetas de musica (las 5 de SAUserTracks, en orden; gana la primera con audio) ----
-static const char* UT_MUSIC_DIRS[5] = {
+// ---- carpetas de musica (GTAVRadioMusic primero, luego las 5 de SAUserTracks; gana la primera con audio) ----
+// v1.4: la carpeta GTAVRadioMusic es la propia del mod (se crea sola); la
+// carpeta "music" vieja sigue funcionando como respaldo.
+static const char* UT_MUSIC_DIRS[10] = {
+    "/sdcard/Android_unprotected/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
+    "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
+    "/sdcard/Android/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
+    "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files/GTAVRadioMusic",
+    "/storage/emulated/0/GTAVRadioMusic",
     "/sdcard/Android_unprotected/data/com.rockstargames.gtasa/files/music",
     "/storage/emulated/0/Android_unprotected/data/com.rockstargames.gtasa/files/music",
     "/sdcard/Android/data/com.rockstargames.gtasa/files/music",
     "/storage/emulated/0/Android/data/com.rockstargames.gtasa/files/music",
     "/storage/emulated/0/GTASA",
 };
+// Crea la carpeta GTAVRadioMusic (la primera que se pueda) para que el
+// usuario tenga donde poner la musica sin crearla a mano. Solo lo intenta
+// una vez por sesion; si ya existe alguna, no hace nada.
+static void UT_EnsureRadioMusicFolder() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    for (int i = 0; i < 5; i++) {
+        struct stat st;
+        if (stat(UT_MUSIC_DIRS[i], &st) == 0 && S_ISDIR(st.st_mode)) return;  // ya existe una
+        if (mkdir(UT_MUSIC_DIRS[i], 0755) == 0) { Log("UT: carpeta GTAVRadioMusic creada: %s", UT_MUSIC_DIRS[i]); return; }
+    }
+}
 
 // ---- blocklist de vehiculos sin radio (41 modelos, veh+0x32; misma que SAUserTracks) ----
 static const int UT_BLOCKED_MODELS[41] = {
@@ -241,15 +261,16 @@ static UTAudioFmt UT_AudioExt(const char* name) {
 }
 static bool UT_HasAudioExt(const char* name) { return UT_AudioExt(name) != UT_FMT_UNKNOWN; }
 
-// Escanea las 5 carpetas en orden; la primera con al menos un archivo de
+// Escanea las 10 carpetas en orden; la primera con al menos un archivo de
 // audio gana. Rellena ut_tracks (alfabetico por basename) y el orden de
 // reproduccion. Devuelve true si hay al menos una pista.
 static bool UT_ScanMusic() {
+    UT_EnsureRadioMusicFolder();  // v1.4: crear GTAVRadioMusic si no existe
     ut_tracks.clear();
     ut_order.clear();
     ut_orderPos = 0;
     char dirUsed[512] = "";
-    for (int d = 0; d < 5; d++) {
+    for (int d = 0; d < 10; d++) {
         DIR* dir = opendir(UT_MUSIC_DIRS[d]);
         if (!dir) continue;
         std::vector<std::string> found;
@@ -337,6 +358,20 @@ static const char* UT_TrackDisplayName() {
     ut_dispName[n] = '\0';
     return ut_dispName;
 }
+// Nombre de una pista de la lista (indice en ut_tracks, alfabetico), sin
+// extension. Para la lista de canciones (v1.4).
+static char ut_nameFor[256];
+static const char* UT_TrackNameFor(int idx) {
+    if (idx < 0 || idx >= (int)ut_tracks.size()) return "";
+    const char* base = UT_Basename(ut_tracks[idx].c_str());
+    size_t n = strlen(base);
+    const char* dot = strrchr(base, '.');
+    if (dot) n = (size_t)(dot - base);
+    if (n >= sizeof ut_nameFor) n = sizeof ut_nameFor - 1;
+    memcpy(ut_nameFor, base, n);
+    ut_nameFor[n] = '\0';
+    return ut_nameFor;
+}
 
 // Siguiente/anterior (la rueda los llama con las flechas del centro cuando
 // suena la 12). Contador: +1 por cada "siguiente", -1 por cada "anterior";
@@ -344,6 +379,25 @@ static const char* UT_TrackDisplayName() {
 static volatile int ut_skipReq = 0;
 static void UT_NextTrack() { if (ut_active) ut_skipReq++; }
 static void UT_PrevTrack() { if (ut_active) ut_skipReq--; }
+// Saltar a una pista concreta (indice en ut_tracks, alfabetico). La pone
+// como la siguiente en sonar. Devuelve false si no se pudo.
+static bool UT_JumpToTrack(int trackIdx) {
+    if (!ut_active || trackIdx < 0 || trackIdx >= (int)ut_tracks.size() || ut_order.empty()) return false;
+    int p = -1;
+    for (size_t i = 0; i < ut_order.size(); i++) if (ut_order[i] == trackIdx) { p = (int)i; break; }
+    if (p < 0) return false;
+    ut_orderPos = p;  // UT_NextPath toma esta en el siguiente ciclo
+    ut_skipReq++;
+    return true;
+}
+// Indice (en ut_tracks) de la pista que suena ahora, o -1.
+static int UT_CurrentTrackIdx() {
+    if (ut_order.empty()) return -1;
+    int p = ut_orderPos - 1;
+    if (p < 0) p += (int)ut_order.size();
+    if (p < 0 || p >= (int)ut_order.size()) return -1;
+    return ut_order[p];
+}
 
 // ---- callback de OpenSL (hilo interno de OpenSL) ----
 // slBufferQueueCallback: void (SLBufferQueueItf, void*). Mismo uso que el
@@ -669,7 +723,7 @@ static bool UT_Start() {
     if (ut_active) return true;
     SoundInit();
     if (!g_slEngine || !g_slEngineItf || !g_slMix) { Log("UT: sin motor OpenSL: no hay reproductor"); return false; }
-    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en las carpetas (se revisaron las 5)"); return false; }
+    if (!UT_ScanMusic()) { Log("UT: sin musica (mp3/wav/ogg/flac/m4a) en las carpetas (se revisaron las 10)"); return false; }
     if (ut_random) UT_ShuffleOrder(-1);
     ut_orderPos = 0;
     ut_underruns = 0;
