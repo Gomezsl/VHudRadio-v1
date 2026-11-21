@@ -1293,8 +1293,11 @@ static void UT_SyncEmisora(int station) {
     //     en el dial escribe ESTA, no +0x35. Escribir solo una no basta: hay que escribir
     //     las dos. AudioEngine+0x149 NO era nada (valor aleatorio 0..3 de inicializacion).
     if (station < 1 || station > 13) return;
-    if (ut_menuManager) {
-        unsigned char* mm = (unsigned char*)ut_menuManager;
+    // v1.9.32: preferir g_menuManager (ya resuelto con ResolveMenuManager en
+    // VHudRadio.cpp); ut_menuManager queda como respaldo.
+    void* mmObj = g_menuManager ? g_menuManager : ut_menuManager;
+    if (mmObj) {
+        unsigned char* mm = (unsigned char*)mmObj;
         unsigned char old = mm[0x35];
         if (old != (unsigned char)station) {
             mm[0x35] = (unsigned char)station;
@@ -1372,7 +1375,22 @@ static GetTextureFn ut_getTexture = nullptr;
 typedef void (*RadioSelectionCtorFn)(void*);
 static RadioSelectionCtorFn ut_origRadioSelectionCtor = nullptr;
 static bool ut_menuPatchesDone = false;
+// v1.9.32: constructor de AudioScreen — la pantalla de opciones de sonido
+// construye los SettingSelection (incl. la fila EMISORA) copiando el valor
+// de MS+0x240/mm[0x35]; sincronizar ANTES del ctor original para que la
+// fila nazca ya con la emisora de la rueda (la 1.9.31 escribia MS+0x240
+// cada cuadro en DrawFrontEnd, pero la fila ya tenia la copia vieja).
+typedef void (*AudioScreenCtorFn)(void*);
+static AudioScreenCtorFn ut_origAudioScreenCtor = nullptr;
+static void UT_AudioScreenCtor_hook(void* self) {
+    if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
+    if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
+}
+
 static void UT_RadioSelectionCtor_hook(void* self) {
+    // v1.9.32: sincronizar ANTES del ctor original: el dial lee MS+0x240 al
+    // construirse; si se escribe despues, nace con la emisora vieja.
+    if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     if (ut_origRadioSelectionCtor) ut_origRadioSelectionCtor(self);  // ctor original primero
     if (!self || !ut_getTexture) return;
     ut_diagRedirects = 0;  // v1.9.25: nuevo dial, contador de redirecciones a cero
@@ -1814,6 +1832,16 @@ static void UT_InstallHooks() {
                 Log("UT: hook AudioScreen::RadioSelectionDtor %s", ut_origRadioSelectionDtor ? "ok" : "no se pudo instalar");
             } else {
                 Log("UT: AudioScreen::RadioSelectionDtor no resolvio");
+            }
+            // v1.9.32: constructor de AudioScreen — sincronizar EMISORA ANTES
+            // de que C2Ev construya los SettingSelection (la fila EMISORA
+            // copia el valor al construirse; escribir despues llega tarde).
+            uintptr_t asc = aml->GetSym(h, "_ZN11AudioScreenC2Ev");
+            if (asc) {
+                aml->Hook((void*)asc, (void*)UT_AudioScreenCtor_hook, (void**)&ut_origAudioScreenCtor);
+                Log("UT: hook AudioScreen::AudioScreen %s", ut_origAudioScreenCtor ? "ok (EMISORA nace sincronizada)" : "no se pudo instalar");
+            } else {
+                Log("UT: AudioScreen::AudioScreen no resolvio (EMISORA puede nacer vieja)");
             }
             // v1.9.12 (Alex 1.8.4, RE3): nombre EMISORA — FEA_NON -> FEA_MP3 con Mixtape sonando.
             uintptr_t kg = aml->GetSym(h, "_ZN7CKeyGen15GetUppercaseKeyEPKc");

@@ -939,9 +939,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.31-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.32-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.31-beta"
+#define VHUDRADIO_VERSION "1.9.32-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1373,7 +1373,7 @@ static bool* g_loadingActive = nullptr;  // v2.48: CLoadingScreen::m_bActive (tr
 static void (*DrawFrontEnd_orig)() = nullptr;
 static void DrawFrontEnd_hook() {
     g_menuDrawn = true;
-    // v1.9.31: EMISORA se lee en vivo en SettingSelection::Render (libGTASA+0x361d38),
+    // v1.9.32: EMISORA se lee en vivo en SettingSelection::Render (libGTASA+0x361d38),
     // dentro de DrawFrontEnd -> DrawBackground -> DrawStandardMenus -> SelectScreen::Render.
     // Escribir MS+0x240/MS+0x244 AQUI, antes del original, deja el valor correcto en el
     // momento exacto del dibujado. La escritura de UT_DiagTick (tras el swap, 1.9.29)
@@ -1383,11 +1383,30 @@ static void DrawFrontEnd_hook() {
     // Configuracion del sonido (AudioScreen), donde ut_inAudioMenu es false y la
     // escritura nunca corria (detectado por Gemini, via Daniel, 2026-11-21).
     // MenuActive() (m_bMenuActive 0x5C) cubre todo el menu frontal: pausa, sonido y dial.
-    if (MenuActive() && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        int* msCur = (int*)((char*)ut_mobileSettings + 0x240);
-        int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
-        if (*msCur != g_current) *msCur = g_current;
-        if (*msDef != g_current) *msDef = g_current;
+    // v1.9.32: tambien se escribe FrontEndMenuManager+0x35 (la fila EMISORA lo lee al
+    // construir AudioScreen; el hook de AudioScreen::C2Ev lo sincroniza antes, esto
+    // lo mantiene). Log de diagnostico cuando cambia un valor (confirma que corre).
+    if (MenuActive() && g_current >= 1 && g_current <= 13) {
+        static bool s_dfeLogged = false;
+        if (!s_dfeLogged) { s_dfeLogged = true; Log("UT: DrawFrontEnd: escritura EMISORA activa (menu)"); }
+        if (g_menuManager) {
+            unsigned char* mm = (unsigned char*)g_menuManager;
+            if (mm[0x35] != (unsigned char)g_current) {
+                unsigned char old = mm[0x35];
+                mm[0x35] = (unsigned char)g_current;
+                Log("UT: DrawFrontEnd EMISORA %d -> %d (FrontEndMenuManager+0x35)", (int)old, g_current);
+            }
+        }
+        if (ut_mobileSettings) {
+            int* msCur = (int*)((char*)ut_mobileSettings + 0x240);
+            int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
+            if (*msCur != g_current) {
+                int old = *msCur;
+                *msCur = g_current;
+                Log("UT: DrawFrontEnd EMISORA %d -> %d (MobileSettings+0x240)", old, g_current);
+            }
+            if (*msDef != g_current) *msDef = g_current;
+        }
     }
     if (DrawFrontEnd_orig) DrawFrontEnd_orig();
 }
