@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.18-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.19-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,19 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.19: DIAL LEE EL TRACKMANAGER (DANIEL, SIN TOCAR LO DEMAS)
+// - Solo falta el dial (Daniel, 1.9.18): estando en Radio X (7), opciones
+//   de sonido muestra EMISORA: PLAYBACK FM (1, la elegida antes en el menu).
+//   El log de la 1.9.18 probo la causa: el getter del AudioEngine va
+//   ATRASADO. Tras cambiar a 7 por la rueda, la lectura decia 1; el dial
+//   abria con juego=7 pero luego juego=6 y juego=1, y la rueda volvia a
+//   "estacion actual 1 Playback FM": RefreshCurrent pisaba g_current=7 con
+//   el valor viejo del AudioEngine. El TrackManager es el que actualizan
+//   nuestros hooks (StartRadio), asi que ahora RefreshCurrent Y el ctor del
+//   dial leen PRIMERO el getter del TrackManager; el del AudioEngine solo
+//   es respaldo. El ctor del dial registra ambos (audio=%d track=%d) para
+//   confirmar si difieren. NO se toco audio, blur ni HUD (la captura de la
+//   1.9.18 muestra el blur suave y el HUD oculto: eso queda igual).
 // v1.9.18: DIAL PREVIEW + BLUR SIN PIXELIADO AL 100% (DANIEL / REHAN)
 // - Dial (Daniel, 1.9.17): seguia mostrando la emisora ANTERIOR elegida en
 //   el menu. El log de la 1.9.17 probo que la emisora del juego y la de la
@@ -873,9 +886,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.18-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.19-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.18-beta"
+#define VHUDRADIO_VERSION "1.9.19-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1541,8 +1554,13 @@ static void RefreshCurrent() {
     // con esa lectura vieja durante 2 s tras el cambio: la rueda y el boton
     // se quedaban en la estacion anterior aunque el cambio ya se habia hecho.
     if (std::chrono::steady_clock::now() - g_lastStationCmd < std::chrono::seconds(2)) return;
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); if (v >= 1 && v <= 13) g_current = v; return; }
-    if (g_getStationTrack && g_trackManager) { int v = (int)g_getStationTrack(g_trackManager); if (v >= 1 && v <= 13) g_current = v; }
+    // v1.9.19 (Daniel): el getter del AudioEngine va ATRASADO (devuelve la
+    // emisora anterior, p. ej. 1 Playback FM cuando se esta en 7 Radio X) y
+    // RefreshCurrent pisaba g_current con ese valor viejo: la rueda saltaba
+    // a la emisora anterior tras abrir el dial. El TrackManager es el que
+    // actualizan nuestros hooks (StartRadio), asi que se lee PRIMERO.
+    if (g_getStationTrack && g_trackManager) { int v = (int)g_getStationTrack(g_trackManager); if (v >= 1 && v <= 13) g_current = v; return; }
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); if (v >= 1 && v <= 13) g_current = v; }
 }
 
 // Abrir/cerrar la rueda con periodo refractario: el doble toque al claxon llega

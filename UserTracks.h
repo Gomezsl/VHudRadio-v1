@@ -1186,10 +1186,14 @@ static void UT_RadioSelectionCtor_hook(void* self) {
     // esta activo y la emisora real no es la 12 pero el juego cree que es
     // la 12, se resincroniza con StartRadio a la emisora real.
     {
-        int cur = -1;
-        if (g_getStationAudio && g_audioEngine) cur = (int)g_getStationAudio(g_audioEngine);
-        else if (g_getStationTrack && g_trackManager) cur = (int)g_getStationTrack(g_trackManager);
-        Log("UT: dial abierto (juego=%d rueda=%d activo=%d)", cur, g_current, ut_active ? 1 : 0);
+        // v1.9.19: el getter del AudioEngine va atrasado (devuelve la emisora
+        // anterior); se lee PRIMERO el del TrackManager, que es el que
+        // actualizan los hooks. Se registran ambos para confirmar si difieren.
+        int cur = -1, curAudio = -1, curTrack = -1;
+        if (g_getStationAudio && g_audioEngine) curAudio = (int)g_getStationAudio(g_audioEngine);
+        if (g_getStationTrack && g_trackManager) curTrack = (int)g_getStationTrack(g_trackManager);
+        cur = (curTrack >= 1 && curTrack <= 13) ? curTrack : curAudio;
+        Log("UT: dial abierto (juego=%d audio=%d track=%d rueda=%d activo=%d)", cur, curAudio, curTrack, g_current, ut_active ? 1 : 0);
         if (!ut_active && g_current >= 1 && g_current <= 13 && g_current != 12 && cur == 12 &&
             ut_origStartRadio && g_trackManager) {
             Log("UT: dial resincronizado a %d (el juego creia que era 12)", g_current);
