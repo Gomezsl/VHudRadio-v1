@@ -1385,12 +1385,20 @@ struct UT_CVector2D { float x, y; };
 typedef void (*SettingRenderFn)(void*, void*, UT_CVector2D, UT_CVector2D, float);
 static SettingRenderFn ut_origSettingRender = nullptr;
 static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_CVector2D b, float c) {
-    if (self && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        int idx = *(int*)((char*)self + 0x10);
-        if (idx == 14) {
-            *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
-            *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
-        }
+    // v1.9.36: escritura INCONDICIONAL — la 1.9.35 solo escribia si
+    // this+0x10 == 14, pero el texto seguia mal; o el indice no es 14, o el
+    // hook no ve la fila EMISORA. MS+0x240 siempre debe ser g_current, asi
+    // que escribirlo en cada fila es correcto y quita esa dependencia.
+    // (Una sola linea de confirmacion la primera vez que corre, no un volcado.)
+    static bool s_srLogged = false;
+    if (!s_srLogged) {
+        s_srLogged = true;
+        int idx = self ? *(int*)((char*)self + 0x10) : -1;
+        Log("UT: SettingSelection::Render activo (primera fila idx=%d, rueda=%d)", idx, g_current);
+    }
+    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
+        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
     }
     if (ut_origSettingRender) ut_origSettingRender(self, screen, a, b, c);
 }
