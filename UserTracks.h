@@ -51,6 +51,8 @@
 #include <time.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>  // v1.9.3 (Claude): SYS_gettid para la prioridad del hilo decodificador
+#include <sys/resource.h>  // v1.9.3 (Claude): setpriority
 #include <unistd.h>
 #include <cmath>
 #include <cstdint>
@@ -681,6 +683,7 @@ static int UT_DecodeTrack(const char* path) {
 
 // ---- hilo decodificador ----
 static void* UT_DecoderThread(void* /*arg*/) {
+    setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), -16);  // v1.9.3 (Claude): prioridad de hilo de audio (si el sistema la niega, se ignora)
     int consecutiveFails = 0;
     while (!ut_stopThread) {
         if (ut_decPaused) { struct timespec ts = {0, 20 * 1000 * 1000}; nanosleep(&ts, nullptr); continue; }
@@ -871,6 +874,11 @@ static void UT_Frame() {
 }
 
 // ---- hook de StartRadio ----
+// v1.9.3 (Claude): StopRadio (se declara aqui para usarlo tambien en el hook de StartRadio)
+// StopRadio: _ZN20CAERadioTrackManager9StopRadioEP21tVehicleAudioSettingsh
+// (this, tVehicleAudioSettings*, unsigned char); SAUserTracks lo llama (0, 0).
+typedef void (*StopRadioTrackFn)(void*, void*, unsigned char);
+static StopRadioTrackFn ut_stopRadio = nullptr;
 static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char a2, float a3, unsigned char a4) {
     if (!ut_origStartRadio) return;
     if (station == 12) {
@@ -884,8 +892,17 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         // pedir la 12), NO se reinicia: UT_Start es no-op y se reanuda.
         // v1.8: se marca la reanudacion (gracia de 2 s contra el Radio Off).
         if (ut_active && ut_pausedByExit) { ut_pausedByExit = false; ut_resumeAt = std::chrono::steady_clock::now(); Log("UT: reanudado al subir al vehiculo (hook 12)"); }
+        bool utWasActive = ut_active;
         UT_Start();
         g_current = 12;
+        // v1.9.3 (Claude): si se viene de otra emisora (K-Rose, etc.), cortarla con
+        // StopRadio ANTES de poner la nativa en 13, igual que ya hace el hook
+        // de RetuneRadio. El log de la 1.9.2 mostro que por la rueda se pasaba
+        // de la 2 a la 13 sin StopRadio (la anterior podia seguir por debajo).
+        if (!utWasActive && ut_active && ut_stopRadio) {
+            ut_stopRadio(trackMgr, nullptr, 0);
+            Log("UT: StopRadio antes de la nativa 13 (venia de otra emisora)");
+        }
         // v1.9.2: REVERTIDO a 13. La 1.9.0/1.9.1 probo que la nativa en 12 SI
         // suena: la emisora anterior por debajo (doble audio) + estatica,
         // aunque el diagnostico diga "nativa 12". La 12 no es silencio para
@@ -923,13 +940,9 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
 // usa la radio original (sus propios controles, el menu de pausa). Sin este
 // hook, la estatica del cambio se quedaba sonando junto a la musica. En la
 // 12: StopRadio original (corta la emisora anterior, sin estatica) y luego
-// StartRadio original con 12 (la nativa queda en 12, silenciosa, y el menu
-// de pausa muestra Mixtape, no Radio Off). En otra emisora: se para el
-// reproductor y se deja pasar el RetuneRadio original.
-// StopRadio: _ZN20CAERadioTrackManager9StopRadioEP21tVehicleAudioSettingsh
-// (this, tVehicleAudioSettings*, unsigned char); SAUserTracks lo llama (0, 0).
-typedef void (*StopRadioTrackFn)(void*, void*, unsigned char);
-static StopRadioTrackFn ut_stopRadio = nullptr;
+// StartRadio original con 13 (Radio Off, silencio; la 12 SI suena, v1.9.2).
+// En otra emisora: se para el reproductor y se deja pasar el RetuneRadio
+// original.
 static RetuneFn ut_origRetuneRadio = nullptr;
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     if (!ut_origRetuneRadio) return 0;
@@ -1029,7 +1042,81 @@ static void UT_ApplyStation12Patches() {
 
 // Instala el hook de StartRadio (se llama en Init, con los simbolos ya resueltos).
 // Tambien intenta resolver CLoadingScreen::m_bActive para pausar en la carga.
+// ---- v1.9.3 (Claude): sonda de simbolos + ocultar CHud::Draw ----
+#include <elf.h>
+
+struct SymDumpCtx { const char* lib; uintptr_t base; const ElfW(Phdr)* ph; int phnum; };
+static int SymDumpCb(struct dl_phdr_info* i, size_t, void* d) {
+    SymDumpCtx* x = (SymDumpCtx*)d;
+    if (i->dlpi_name && strstr(i->dlpi_name, x->lib)) { x->base = i->dlpi_addr; x->ph = i->dlpi_phdr; x->phnum = i->dlpi_phnum; return 1; }
+    return 0;
+}
+// Escribe en outPath los simbolos de .dynsym que contengan alguna palabra de
+// needles. Devuelve cuantos escribio (<0 = error). Es solo lectura: no hookea
+// nada. Con la lista se engancha el dibujo de los botones y se deja visible
+// solo el claxon.
+static int DumpSymbols(const char* lib, const char* const* needles, int nNeedles, const char* outPath) {
+    SymDumpCtx c = {lib, 0, nullptr, 0};
+    dl_iterate_phdr(SymDumpCb, &c);
+    if (!c.ph) return -1;
+    const ElfW(Dyn)* dyn = nullptr;
+    for (int k = 0; k < c.phnum; k++) if (c.ph[k].p_type == PT_DYNAMIC) { dyn = (const ElfW(Dyn)*)(c.base + c.ph[k].p_vaddr); break; }
+    if (!dyn) return -2;
+    auto fix = [&](uintptr_t v) -> uintptr_t { return v < c.base ? c.base + v : v; };  // bionic: desplazamientos; glibc: ya reubicadas
+    const ElfW(Sym)* symtab = nullptr; const char* strtab = nullptr;
+    const uint32_t* gnuHash = nullptr; const uint32_t* sysvHash = nullptr;
+    for (const ElfW(Dyn)* p = dyn; p->d_tag != DT_NULL; p++) {
+        switch (p->d_tag) {
+            case DT_SYMTAB: symtab = (const ElfW(Sym)*)fix(p->d_un.d_ptr); break;
+            case DT_STRTAB: strtab = (const char*)fix(p->d_un.d_ptr); break;
+            case DT_GNU_HASH: gnuHash = (const uint32_t*)fix(p->d_un.d_ptr); break;
+            case DT_HASH: sysvHash = (const uint32_t*)fix(p->d_un.d_ptr); break;
+        }
+    }
+    if (!symtab || !strtab) return -3;
+    uint32_t count = 0;
+    if (sysvHash) count = sysvHash[1];
+    else if (gnuHash) {
+        uint32_t nb = gnuHash[0], symoff = gnuHash[1], bloom = gnuHash[2];
+        const uint64_t* bl = (const uint64_t*)(gnuHash + 4);
+        const uint32_t* buckets = (const uint32_t*)(bl + bloom);
+        const uint32_t* chain = buckets + nb;
+        uint32_t mx = 0;
+        for (uint32_t b = 0; b < nb; b++) if (buckets[b] > mx) mx = buckets[b];
+        if (mx < symoff) count = symoff;
+        else { while (!(chain[mx - symoff] & 1)) mx++; count = mx + 1; }
+    } else return -4;
+    FILE* f = fopen(outPath, "w");
+    if (!f) return -5;
+    int hits = 0;
+    for (uint32_t s = 0; s < count; s++) {
+        const ElfW(Sym)& sy = symtab[s];
+        if (sy.st_shndx == SHN_UNDEF || sy.st_name == 0) continue;
+        const char* nm = strtab + sy.st_name;
+        for (int n = 0; n < nNeedles; n++) if (strstr(nm, needles[n])) { fprintf(f, "%s\n", nm); hits++; break; }
+    }
+    fclose(f);
+    return hits;
+}
+
+// CHud::Draw (radar, vida, dinero, etc.): se oculta con la rueda/panel/lista
+// abiertos. El hook recibe `self` y lo pasa tal cual al original, asi vale
+// tanto si Draw es estatico como si es de instancia (igual que el de botones).
+typedef void (*HudDrawFn)(void*);
+static HudDrawFn ut_origHudDraw = nullptr;
+static void UT_HudDraw_hook(void* self) {
+    if (g_open || g_settings || g_trackList) return;  // rueda/panel/lista abiertos: sin HUD
+    if (ut_origHudDraw) ut_origHudDraw(self);
+}
+
 static void UT_InstallHooks() {
+    // v1.9.3 (Claude): si libSAUserTrack64.so esta cargado, el reproductor
+    // propio NO se activa (dos reproductores + dos hooks de StartRadio =
+    // doble audio y estatica). Quita ese .so de la carpeta mods.
+    if (UT_LibBase("libSAUserTrack") != 0) {
+        Log("UT: !! libSAUserTrack64.so esta cargado: el reproductor propio NO se activa (sonaria doble y con estatica). Quita ese .so de la carpeta mods.");
+        return;
+    }
     UT_ApplyStation12Patches();  // v1: que la 12 sea estacion normal en el juego
     if (!g_startTrack) { Log("UT: sin StartRadio: no hay reproductor de User Tracks"); return; }
     aml->Hook((void*)g_startTrack, (void*)UT_StartRadio_hook, (void**)&ut_origStartRadio);
@@ -1086,6 +1173,22 @@ static void UT_InstallHooks() {
             Log("UT: hook DisplayRadioStationName %s", ut_origDisplayName ? "ok" : "no se pudo instalar (se vera Radio Off en la 12)");
         } else {
             Log("UT: DisplayRadioStationName no resolvio (se vera Radio Off en la 12)");
+        }
+        // v1.9.3 (Claude): ocultar el HUD (CHud::Draw) con la rueda abierta.
+        uintptr_t hd = aml->GetSym(h, "_ZN4CHud4DrawEv");
+        if (hd) {
+            aml->Hook((void*)hd, (void*)UT_HudDraw_hook, (void**)&ut_origHudDraw);
+            Log("UT: hook CHud::Draw %s", ut_origHudDraw ? "ok (HUD oculto con la rueda)" : "no se pudo instalar");
+        } else {
+            Log("UT: CHud::Draw no resolvio (el HUD no se oculta)");
+        }
+        // v1.9.3 (Claude): volcado de simbolos para enganchar el dibujo de los
+        // botones y dejar visible solo el claxon.
+        {
+            static const char* nd[] = {"Widget", "Touch", "Hud", "Radar"};
+            std::string out = g_gameDataDir + "/VHudRadioSyms.txt";
+            int n = DumpSymbols("libGTASA.so", nd, 4, out.c_str());
+            Log("UT: volcado de simbolos: %d -> %s", n, out.c_str());
         }
     }
 }

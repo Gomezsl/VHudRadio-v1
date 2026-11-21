@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.2-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.3-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,26 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.3: PARCHE DE CLAUDE VERIFICADO (Daniel lo trajo, 2026-11-21 03:10)
+// - StopRadio ANTES de la nativa 13 en el hook de StartRadio (el que usa la
+//   rueda): el log de la 1.9.2 mostro que se pasaba de K-Rose (2) a la 13 sin
+//   StopRadio, y la anterior podia seguir sonando por debajo (doble audio).
+//   Solo se llama cuando se empieza a sonar (no al reanudar). El hook de
+//   RetuneRadio ya lo hacia; el de StartRadio no. Es el cambio principal.
+// - Prioridad de hilo de audio para el decodificador (setpriority -16; si el
+//   sistema la niega, se ignora). underruns=0 en los logs, es precaucion.
+// - Guard: si libSAUserTrack64.so esta cargado, el reproductor propio NO se
+//   activa (dos reproductores = doble audio). Daniel ya lo quito, es por si
+//   vuelve.
+// - CHud::Draw se oculta con la rueda/panel/lista abiertos, SI el simbolo
+//   existe (radar, vida, dinero). Los botones tactiles NO son CHud: siguen
+//   pendientes, pero esta version vuelca los simbolos de libGTASA.so con
+//   "Widget"/"Touch"/"Hud"/"Radar" a VHudRadioSyms.txt para encontrar el
+//   dibujo de los botones. El hook pasa `self` al original (vale estatico o
+//   instancia); el de Claude no llevaba argumento y eso podia fallar.
+// - La estatica como problema de decodificador (WAV/FLAC/OGG) sigue siendo
+//   hipotesis de Claude: probar con solo los 4 MP3. Y ojo: un archivo
+//   "(MP3_160K).wav" puede ser un MP3 renombrado, no un WAV de verdad.
 // v1.9.2: NATIVA DE VUELTA A 13 (Daniel, log 1.9.1: "no solucionaste nada")
 // - La 1.9.0 y la 1.9.1 probaron que la nativa en 12 SI suena: doble audio
 //   (la emisora anterior por debajo) + estatica, aunque el diagnostico diga
@@ -615,9 +635,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.2-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.3-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.2-beta"
+#define VHUDRADIO_VERSION "1.9.3-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
