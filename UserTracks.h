@@ -913,6 +913,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         // audio, se revierte a 13 (build #9 probo que 13 silencia de verdad).
         Log("UT: 12 -> nativa 12 (Mixtape; la musica la pone el reproductor)");
         ut_origStartRadio(trackMgr, 12, a2, a3, a4);
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return;
     }
     // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
@@ -930,10 +931,13 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
         ut_origStartRadio(trackMgr, 12, a2, a3, a4);  // v1.9.7: nativa a 12 (Mixtape) con StopRadio
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return;
     }
+    bool wasUT = ut_active;  // v1.9.8: si se sale de la 12 por la rueda, cortar la nativa 12 antes de la nueva
     if (ut_active) UT_Stop("cambio de estacion");
     g_current = station;
+    if (wasUT && ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
     ut_origStartRadio(trackMgr, station, a2, a3, a4);
 }
 
@@ -978,6 +982,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return 12;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -987,6 +992,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         Log("UT: se queda en la 12 al subir al vehiculo (AudioRetune pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1028,6 +1034,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         }
         Log("UT: 12 por AudioEngine::StartRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -1037,6 +1044,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         Log("UT: se queda en la 12 al subir al vehiculo (AudioStart pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
+        if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);  // v1.9.8: silenciar la nativa 12
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1057,6 +1065,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
         Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
         if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return 12;
     }
     // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
@@ -1067,6 +1076,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         Log("UT: se queda en la 12 al subir al vehiculo (RetuneRadio pedia %d)", (int)station);
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
         if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
+        if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // v1.9.8: silenciar la nativa 12 (el juego puede poner su propio audio)
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");

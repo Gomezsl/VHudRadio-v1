@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.7-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.8-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,22 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.8: LISTA SIN TRASPASAR + STOPRADIO DESPUES DE LA NATIVA 12 (Daniel, log 1.9.7 + captura)
+// - Lista: la primera fila traspasaba el encabezado (se veia "Darkside" encima
+//   de "LISTA DE CANCIONES"). Causa: las filas se dibujaban con la draw list
+//   de la VENTANA, que no recorta; al desplazar, la fila que quedaba por
+//   encima del borde superior se seguia dibujando. Ahora las filas usan la
+//   draw list del HIJO (dlc), que si recorta al rectangulo de la lista.
+// - Doble audio: la 1.9.7 probo que la nativa en 12 (Mixtape) NO lo quita, y
+//   el log mostro que AudioEngine::RetuneRadio SI disparo dos veces (la radio
+//   del juego si pasa por ahi al cambiar a la 12). Queda una sospecha: la
+//   nativa en 12 pone su propio audio (el juego tiene su propio User Tracks)
+//   y suena junto al reproductor. Ahora StopRadio se llama DESPUES de
+//   orig(12) en las 4 vias (rueda, RetuneRadio, AudioRetune, AudioStart)
+//   para silenciar la nativa 12, y tambien al SALIR de la 12 por la rueda
+//   (el hook de StartRadio no lo hacia; los de RetuneRadio si desde la 1.9.4).
+//   Si el menu de pausa vuelve a marcar Radio Off, es que StopRadio resetea
+//   la emisora y habra que quitar el de despues.
 // v1.9.7: NATIVA 12 (MIXTAPE) + PRIMER TOQUE DE LA LISTA NO CAMBIA LA CANCION (Daniel, log 1.9.6 + OnlineRadio)
 // - Doble audio: en el log de la 1.9.6 NINGUN hook de la radio del juego
 //   disparo (ni RetuneRadio del TrackManager, ni RetuneRadio del AudioEngine,
@@ -708,9 +724,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.7-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.8-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.7-beta"
+#define VHUDRADIO_VERSION "1.9.8-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2756,6 +2772,7 @@ static void DrawTrackList(float W, float H) {
     if (ImGui::Button("X", ImVec2(H * 0.04f, H * 0.04f))) { g_trackList = false; Log("lista de canciones cerrada"); }
     ImGui::Separator();
     ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
+    ImDrawList* dlc = ImGui::GetWindowDrawList();  // v1.9.8: la del HIJO, con recorte; la de fuera (dl) no recorta y las filas traspasaban el encabezado
     // v1.9.6 (Daniel): la lista se desliza con el dedo si hay muchas canciones.
     // El scroll propio de ImGui no responde al toque (como pasaba en el panel),
     // asi que es manual, igual que el del panel: arrastre vertical para
@@ -2801,26 +2818,26 @@ static void DrawTrackList(float W, float H) {
         ImGui::InvisibleButton(id, ImVec2(ImGui::GetContentRegionAvail().x, rowH));
         bool clicked = ImGui::IsItemClicked();
         ImVec2 rMin = ImGui::GetItemRectMin(), rMax = ImGui::GetItemRectMax();
-        if (isCur) dl->AddRectFilled(rMin, rMax, IM_COL32(10, 60, 140, 255));
-        else if (ImGui::IsItemHovered()) dl->AddRectFilled(rMin, rMax, IM_COL32(255, 255, 255, 18));
+        if (isCur) dlc->AddRectFilled(rMin, rMax, IM_COL32(10, 60, 140, 255));
+        else if (ImGui::IsItemHovered()) dlc->AddRectFilled(rMin, rMax, IM_COL32(255, 255, 255, 18));
         char num[8];
         snprintf(num, sizeof num, "%d", (int)i + 1);
         float tx = rMin.x + H * 0.012f;
         float ty = rMin.y + H * 0.010f;
-        dl->AddText(ImVec2(tx, ty), isCur ? IM_COL32(255, 200, 40, 255) : IM_COL32(150, 150, 150, 255), num);
-        dl->AddText(ImVec2(tx + numW, ty), IM_COL32(255, 255, 255, 255), title);
-        if (artist[0]) dl->AddText(ImVec2(tx + numW, ty + H * 0.030f), IM_COL32(165, 165, 165, 255), artist);
+        dlc->AddText(ImVec2(tx, ty), isCur ? IM_COL32(255, 200, 40, 255) : IM_COL32(150, 150, 150, 255), num);
+        dlc->AddText(ImVec2(tx + numW, ty), IM_COL32(255, 255, 255, 255), title);
+        if (artist[0]) dlc->AddText(ImVec2(tx + numW, ty + H * 0.030f), IM_COL32(165, 165, 165, 255), artist);
         if (isCur) {
             // Pastilla amarilla PLAYING a la derecha de la fila (como en GTA V).
             const char* pill = S(STR_TL_PLAYING);  // v1.6: traducido segun el idioma
             ImVec2 psz = ImGui::CalcTextSize(pill);
             float pw2 = psz.x + H * 0.02f, ph2 = psz.y + H * 0.008f;
             ImVec2 p0(rMax.x - pw2 - H * 0.008f, rMin.y + (rMax.y - rMin.y - ph2) * 0.5f);
-            dl->AddRectFilled(p0, ImVec2(p0.x + pw2, p0.y + ph2), IM_COL32(255, 200, 40, 255), ph2 * 0.5f);
-            dl->AddText(ImVec2(p0.x + H * 0.01f, p0.y + H * 0.004f), IM_COL32(20, 20, 20, 255), pill);
+            dlc->AddRectFilled(p0, ImVec2(p0.x + pw2, p0.y + ph2), IM_COL32(255, 200, 40, 255), ph2 * 0.5f);
+            dlc->AddText(ImVec2(p0.x + H * 0.01f, p0.y + H * 0.004f), IM_COL32(20, 20, 20, 255), pill);
         }
         // Division entre canciones (linea fina, como en la imagen).
-        dl->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
+        dlc->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
         if (clicked && !listScrolled && std::chrono::steady_clock::now() - g_listOpenedAt > std::chrono::milliseconds(300)) {  // v1.9.7: el primer toque (el que abre la lista) no cambia la cancion
             if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
         }
