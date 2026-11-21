@@ -1235,16 +1235,21 @@ static void UT_RadioSelectionCtor_hook(void* self) {
                 m[0xE9] = (unsigned char)cur;
             }
         }
-        // v1.9.20: volcado para encontrar la variable de EMISORA (la del
-        // menu, que se quedo en 3 mientras la real es 8). Solo diagnostico.
-        // v1.9.21: la 1.9.20 NO encontro el 3 en RadioSelection, TrackManager
-        // (0x100) ni AudioEngine (0x80, casi todo ceros: su emisora esta mas
-        // alla) y FrontEndMenuManager salio NULL por el bug de arriba. Ahora
-        // se vuelca mas ancho y con el menu corregido.
-        UT_DumpHex("RadioSelection", self, 0xA0);
-        UT_DumpHex("TrackManager", g_trackManager, 0x200);
-        UT_DumpHex("AudioEngine", g_audioEngine, 0x200);
-        UT_DumpHex("FrontEndMenuManager", ut_menuManager, 0x200);
+        // v1.9.22 (Daniel): EMISORA SINCRONIZADA. El volcado de la 1.9.21
+        // con 3 aperturas (8, 7, 8) probo que AudioEngine+0x149 es la
+        // variable del menu: es el UNICO byte constante = 3 (K-DST, la que
+        // mostraba EMISORA) en los 4 objetos volcados, mientras la real
+        // cambiaba 8->7->8. No esta en RadioSelection, TrackManager ni
+        // FrontEndMenuManager. Al abrir el dial se escribe la emisora real
+        // (cur, del TrackManager) ahi, para que EMISORA muestre la que
+        // suena y no la ultima elegida en el menu. Se quita el volcado
+        // (era solo diagnostico) y se registra la escritura.
+        if (g_audioEngine && cur >= 1 && cur <= 13) {
+            unsigned char* ae = (unsigned char*)g_audioEngine;
+            unsigned char old = ae[0x149];
+            ae[0x149] = (unsigned char)cur;
+            Log("UT: EMISORA sincronizada %d -> %d (AudioEngine+0x149)", (int)old, cur);
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.21-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.22-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,17 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.22: EMISORA SINCRONIZADA (DANIEL, SIN TOCAR LO DEMAS)
+// - Tu log de la 1.9.21 SI registro todo, y ya encontre el valor. Con 3
+//   aperturas del dial (CSR 8, Radio X 7, CSR 8) compare los 4 objetos:
+//   AudioEngine+0x149 es el UNICO byte constante = 3 (K-DST, la que
+//   mostraba EMISORA) en todos los volcados, mientras la emisora real
+//   cambiaba 8->7->8. No esta en RadioSelection, TrackManager ni
+//   FrontEndMenuManager: vive en el AudioEngine (que maneja los ajustes
+//   de audio) y solo se actualiza al elegir en el menu. Ahora, al abrir
+//   el dial, se escribe ahi la emisora real (la del TrackManager), asi
+//   EMISORA muestra la que suena. Se quito el volcado (era diagnostico).
+//   NO se toco audio, blur ni HUD.
 // v1.9.21: DIAGNOSTICO EMISORA CORREGIDO (DANIEL, SIN TOCAR LO DEMAS)
 // - Tu log de la 1.9.20 SI registro bien los volcados, y me dejo dos cosas:
 //   (1) FrontEndMenuManager salio NULL por MI culpa: desreferencie la
@@ -909,9 +920,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.21-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.22-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.21-beta"
+#define VHUDRADIO_VERSION "1.9.22-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
