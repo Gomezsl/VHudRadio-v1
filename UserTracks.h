@@ -203,6 +203,7 @@ static bool ut_active = false;               // estacion 12 sonando
 static bool ut_playbackDisabled = false;  // v1.9.11: PlayTrack lo pone si a2 == -1 (puerta de StartTrackPlayback)
 static bool ut_inAudioMenu = false;  // v1.9.12: la pantalla de seleccion de radio (opciones de sonido) esta construida
 static bool ut_menuPreview = false;  // v1.9.12: preview de Mixtape en el menu (suena aunque el juego este en pausa)
+static bool ut_renderingEmisora = false;  // v1.9.41: SettingSelection::Render esta dibujando la fila EMISORA (idx 14) en este instante
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
 static bool ut_pausedByExit = false;         // v1.7: pausado al bajar del auto (se reanuda al subir, sin reiniciar ni cortar)
 static std::chrono::steady_clock::time_point ut_resumeAt{};  // v1.8: momento de la reanudacion (gracia de 2 s contra el Radio Off del juego)
@@ -1400,7 +1401,17 @@ static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_C
         *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
         *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
     }
+    // v1.9.41: la 1.9.40 tampoco disparo porque la condicion !ut_inAudioMenu
+    // es falsa todo el tiempo que existe la pantalla de sonido (el ctor de
+    // RadioSelection corre al construirse, no solo al abrir el dial). Ahora
+    // el redirect se decide AQUI: solo mientras se dibuja la fila EMISORA
+    // (idx 14) CText::Get redirige a la clave de la rueda; el dial y el HUD
+    // quedan intactos porque no pasan por este Render.
+    int idx = self ? *(int*)((char*)self + 0x10) : -1;
+    bool isEmisora = (idx == 14);
+    if (isEmisora) ut_renderingEmisora = true;
     if (ut_origSettingRender) ut_origSettingRender(self, screen, a, b, c);
+    if (isEmisora) ut_renderingEmisora = false;
 }
 
 // v1.9.32: constructor de AudioScreen — la pantalla de opciones de sonido
@@ -1618,9 +1629,13 @@ static uint32_t UT_GetUppercaseKey_hook(const char* key) {
 typedef char* (*CTextGetFn)(void*, const char*);
 static CTextGetFn ut_origCTextGet = nullptr;
 static char* UT_CTextGet_hook(void* self, const char* key) {
-    if (key && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
-        bool pausedLive = (g_userPause && *g_userPause) || (g_codePause && *g_codePause);
-        if (pausedLive && !ut_inAudioMenu) {
+    // v1.9.41: el redirect solo mientras SettingSelection::Render dibuja la
+    // fila EMISORA (ut_renderingEmisora). Asi no depende de ut_inAudioMenu
+    // (falso todo el tiempo que existe la pantalla de sonido) ni de la
+    // pausa, y el dial/HUD no se tocan. Si la clave NO es de emisora, se
+    // registra una vez para saber que pide realmente la fila.
+    if (key && ut_renderingEmisora && g_current >= 1 && g_current <= 13) {
+        if (UT_IsStationKey(key)) {
             const char* target = UT_FEAKeyForStation(g_current);
             if (target && strcmp(key, target) != 0 && ut_origCTextGet) {
                 static int redirLogs = 0;
@@ -1629,6 +1644,12 @@ static char* UT_CTextGet_hook(void* self, const char* key) {
                     Log("UT: [texto] EMISORA \"%s\" -> \"%s\" (rueda=%d)", key, target, g_current);
                 }
                 return ut_origCTextGet(self, target);
+            }
+        } else {
+            static int keyLogs = 0;
+            if (keyLogs < 3) {
+                keyLogs++;
+                Log("UT: [texto] EMISORA pide clave NO estacion: \"%s\" (rueda=%d)", key, g_current);
             }
         }
     }
