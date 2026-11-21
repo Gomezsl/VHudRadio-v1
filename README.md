@@ -1,4 +1,4 @@
-# VHud Radio Wheel v1.9.6-beta
+# VHud Radio Wheel v1.9.7-beta
 
 Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), **con reproductor de User Tracks integrado**.
 
@@ -21,8 +21,9 @@ Esta es la línea v1: el reproductor propio dentro, para no depender del mod SAU
 - **Mixtape en el menú de pausa:** la emisora nativa queda en Radio Off (13) para que no suene doble audio; el menú de pausa marca Radio Off cuando suena User Tracks. Que el menú muestre Mixtape en vez de Radio Off sigue pendiente (hay que encontrar el campo que lee el menú).
 - **HUD oculto con la rueda (v1.9.3–v1.9.4):** el radar, la vida y el dinero se ocultan mientras la rueda, el panel o la lista están abiertos (CHud::Draw + CWidgetPlayerInfo::Draw + CWidgetRadar::Update, como hace AdvancedSettings).
 - **Botones táctiles ocultos con la rueda (v1.9.5):** CTouchInterface::DrawAll dibuja todos los botones del juego; se ocultan mientras la rueda, el panel o la lista están abiertos. El claxon también se oculta en ese momento, pero el doble-toque para abrir/cerrar la rueda sigue funcionando por la posición, y el botón flotante queda visible.
-- **Lista de canciones deslizable (v1.9.6):** la lista se desplaza con el dedo (arrastre vertical con inercia, como el panel de ajustes) cuando hay más canciones de las que caben. Un toque salta a la canción; un arrastre solo desplaza.
-- **Doble audio (v1.9.3–v1.9.6):** al cambiar a User Tracks desde otra emisora, la anterior se corta con StopRadio antes de poner la nativa en Radio Off (rueda, radio del juego por RetuneRadio del TrackManager, por RetuneRadio del AudioEngine y por StartRadio del AudioEngine).
+- **Mixtape (v1.9.7):** la emisora nativa vuelve a la 12 para que el menú de pausa muestre Mixtape/User Tracks en lugar de Radio Off. Desde la v1.9.3, StopRadio corta la emisora anterior antes de poner la nativa en 12 en todos los hooks (rueda y radio del juego), así que es una prueba nueva frente a la v1.9.0/1.9.1, donde el hook de la rueda no llamaba a StopRadio.
+- **Lista de canciones deslizable (v1.9.6):** la lista se desplaza con el dedo (arrastre vertical con inercia, como el panel de ajustes) cuando hay más canciones de las que caben. Un toque salta a la canción; un arrastre solo desplaza. **El primer toque tras abrir la lista no cambia la canción (v1.9.7):** el toque que abre la lista ya no se cuela como un clic en una fila.
+- **Doble audio (v1.9.3–v1.9.7):** al cambiar a User Tracks desde otra emisora, la anterior se corta con StopRadio antes de poner la nativa en 12 (Mixtape) — rueda, radio del juego por RetuneRadio del TrackManager, por RetuneRadio del AudioEngine y por StartRadio del AudioEngine.
 - **Sin estática (bloqueo 0x22):** la estática de sintonía del juego (evento 0x22) se bloquea mientras suena User Tracks, como hace SAUserTracks de Alex. Es lo que se oía como "doble audio" junto a la música, sobre todo al cambiar con la radio original.
 - **Botones del juego ocultos con la rueda abierta:** mientras la rueda, el panel o la lista de canciones están abiertos, los botones del HUD del juego no se dibujan (como el Void Radio Wheel); al cerrar la rueda vuelven. Si el juego no deja enganchar esa función, simplemente no se ocultan (sin riesgo).
 

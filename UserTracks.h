@@ -901,16 +901,18 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         // de la 2 a la 13 sin StopRadio (la anterior podia seguir por debajo).
         if (!utWasActive && ut_active && ut_stopRadio) {
             ut_stopRadio(trackMgr, nullptr, 0);
-            Log("UT: StopRadio antes de la nativa 13 (venia de otra emisora)");
+            Log("UT: StopRadio antes de la nativa 12 (venia de otra emisora)");
         }
-        // v1.9.2: REVERTIDO a 13. La 1.9.0/1.9.1 probo que la nativa en 12 SI
-        // suena: la emisora anterior por debajo (doble audio) + estatica,
-        // aunque el diagnostico diga "nativa 12". La 12 no es silencio para
-        // el juego (no existe para el). Solo Radio Off (13) la silencia de
-        // verdad (build #9). El menu de pausa marcara Radio Off: es el precio
-        // de que no suene doble. La estatica 0x22 se sigue bloqueando aparte.
-        Log("UT: 12 -> nativa 13 (Radio Off; la musica la pone el reproductor)");
-        ut_origStartRadio(trackMgr, 13, a2, a3, a4);
+        // v1.9.7 (Daniel): VUELTA a la nativa 12 (Mixtape). La 1.9.2 la revirtio
+        // a 13 porque la 1.9.0/1.9.1 sonaba doble, pero entonces el hook de
+        // StartRadio NO llamaba a StopRadio antes de orig(12): la anterior
+        // quedaba sonando por debajo. Desde la 1.9.3 StopRadio SI se llama
+        // antes en todos los hooks, asi que la nativa 12 + StopRadio es una
+        // prueba nueva. Daniel sospecha que sin Mixtape el juego falla y por
+        // eso sigue el doble audio por la radio del juego. Si vuelve el doble
+        // audio, se revierte a 13 (build #9 probo que 13 silencia de verdad).
+        Log("UT: 12 -> nativa 12 (Mixtape; la musica la pone el reproductor)");
+        ut_origStartRadio(trackMgr, 12, a2, a3, a4);
         return;
     }
     // v1.7: si se pauso al bajar del auto y el juego pide otra emisora al
@@ -927,7 +929,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
         ut_pausedByExit = false;
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (el juego pedia %d)", (int)station);
-        ut_origStartRadio(trackMgr, 13, a2, a3, a4);  // v1.9.2: nativa a 13 (silencio), no a 12
+        ut_origStartRadio(trackMgr, 12, a2, a3, a4);  // v1.9.7: nativa a 12 (Mixtape) con StopRadio
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -974,8 +976,8 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         UT_Start();
         g_current = 12;
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
-        Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 13)");
-        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        Log("UT: 12 por AudioEngine::RetuneRadio (StopRadio + StartRadio 12)");
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return 12;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -984,7 +986,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (AudioRetune pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
-        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1022,10 +1024,10 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         g_current = 12;
         if (!utWasActive && ut_active && ut_stopRadio && g_trackManager) {
             ut_stopRadio(g_trackManager, nullptr, 0);
-            Log("UT: StopRadio antes de la nativa 13 (venia de otra emisora)");
+            Log("UT: StopRadio antes de la nativa 12 (venia de otra emisora)");
         }
-        Log("UT: 12 por AudioEngine::StartRadio (StopRadio + StartRadio 13)");
-        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        Log("UT: 12 por AudioEngine::StartRadio (StopRadio + StartRadio 12)");
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return;
     }
     if (ut_active && !ut_userStationCmd &&
@@ -1034,7 +1036,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (AudioStart pedia %d)", (int)station);
         if (ut_stopRadio && g_trackManager) ut_stopRadio(g_trackManager, nullptr, 0);
-        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 13, 0, 1.0f, 0);
+        if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return;
     }
     if (ut_active) UT_Stop("cambio de estacion");
@@ -1053,8 +1055,8 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         UT_Start();
         g_current = 12;
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);  // corta la anterior (sin estatica)
-        Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 13)");
-        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 13, 0, 1.0f, 0);  // v1.9.2: nativa a 13 (silencio)
+        Log("UT: 12 por RetuneRadio (StopRadio + StartRadio 12)");
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
         return 12;
     }
     // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
@@ -1064,7 +1066,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         g_current = 12;
         Log("UT: se queda en la 12 al subir al vehiculo (RetuneRadio pedia %d)", (int)station);
         if (ut_stopRadio) ut_stopRadio(trackMgr, nullptr, 0);
-        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 13, 0, 1.0f, 0);  // v1.9.2: nativa a 13 (silencio)
+        if (ut_origStartRadio) ut_origStartRadio(trackMgr, 12, 0, 1.0f, 0);  // v1.9.7: nativa a 12 (Mixtape)
         return 12;
     }
     if (ut_active) UT_Stop("cambio de estacion");

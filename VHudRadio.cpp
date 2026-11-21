@@ -1,4 +1,4 @@
-// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.6-beta.
+// VHudRadio.cpp - Rueda de radio estilo GTA V para GTA SA Android 2.10 (AML .so), v1 1.9.7-beta.
 // v1 1.2.0-beta: reproductor de User Tracks propio (minimp3 + OpenSL) con
 // TODAS las funciones de la 2.59, mas: siguiente/anterior cancion, nombre de
 // la cancion en la rueda y en el boton, mas formatos (wav/ogg/flac), y el
@@ -490,6 +490,30 @@
 // respaldo). La rueda ahora es estilo GTA V: logos grandes flotando en circulo
 // sin disco, la seleccionada con anillo cian y las demas atenuadas, y en el
 // centro el nombre de la estacion + su genero.
+// v1.9.7: NATIVA 12 (MIXTAPE) + PRIMER TOQUE DE LA LISTA NO CAMBIA LA CANCION (Daniel, log 1.9.6 + OnlineRadio)
+// - Doble audio: en el log de la 1.9.6 NINGUN hook de la radio del juego
+//   disparo (ni RetuneRadio del TrackManager, ni RetuneRadio del AudioEngine,
+//   ni StartRadio del AudioEngine). La radio del juego cambia por una via que
+//   aun no esta enganchada. Prueba de la hipotesis de Daniel: la nativa
+//   vuelve a la 12 (Mixtape) con StopRadio antes en TODOS los hooks (desde la
+//   1.9.3 StopRadio si se llama, cosa que en la 1.9.0/1.9.1 no pasaba en el
+//   hook de StartRadio). Si con la 12 el juego ya no falla, se acabo el doble
+//   audio y el menu de pausa mostrara Mixtape. Si vuelve el doble audio, se
+//   revierte a 13 y la siguiente via es enganchar CheckForStationRetune y el
+//   StartRadio en 0x83F5C0 (el que usa OnlineRadio, ver abajo).
+// - OnlineRadio (AndroidModLoader/GTASA_OnlineRadio, lo que Alex uso en parte
+//   para SAUserTracks): NO activa Mixtape. No engancha el cambio de emisora
+//   para mostrar una estacion: cuando CUALQUIER radio arranca, pone su propio
+//   stream (BASS) y dibuja su propio texto en el HUD; ademas QUITA la radio
+//   de los ajustes de audio del menu de pausa (PlaceB en 0x3638A4). Lo util
+//   que deja: engancha un StartRadio por PLT en pGTASA+0x83F5C0 (firma
+//   void(self, vehicleInfo)), una funcion sin simbolo que si dispara cuando
+//   la radio arranca. Esa es la siguiente via a probar si la 12 no lo arregla.
+// - Lista: el primer toque no cambia la cancion. El toque que abre la lista
+//   se colaba como un clic en la fila que quedaba bajo el dedo (el boton de
+//   la rueda desaparece y la fila ocupa su sitio). Ahora los toques de los
+//   primeros 300 ms tras abrir la lista se ignoran; despues, un toque salta
+//   a la cancion y un arrastre solo desplaza.
 // v1.9.6: LISTA DESLIZABLE + RADIO DEL JUEGO POR AudioStart + GUARD DE CARGA (Daniel, log 1.9.5)
 // - Cierre al reanudar (1.9.5, primera vez): al cargar la partida el juego
 //   puede llamar a StartRadio/RetuneRadio antes de estar listo. Los hooks de
@@ -684,9 +708,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.6-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.7-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.6-beta"
+#define VHUDRADIO_VERSION "1.9.7-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -899,6 +923,7 @@ static void DisplayRadioStationName_hook(void* self) {
 static bool g_settings = false;   // v2.2: panel de personalizacion abierto
 static bool g_preview = false;    // v2.2: vista previa de la rueda (solo se ve, no cambia la estacion)
 static bool g_trackList = false;  // v1.4: lista de canciones (User Tracks) abierta
+static std::chrono::steady_clock::time_point g_listOpenedAt;  // v1.9.7: cuando se abrio la lista (el primer toque no cambia la cancion)
 static float g_trackListRectX = -1.0f, g_trackListRectY = -1.0f, g_trackListRectW = 0.0f, g_trackListRectH = 0.0f;  // v1.4: rect real de la lista (para repartir los toques, como el panel)
 static std::string CfgPath() { return g_gameDataDir + "/configs/VHudRadio.ini"; }  // v2.36: el .ini vuelve a data/configs (v2.3-2.15); la carpeta VHudRadio ya no existe
 static void SaveCfg() {
@@ -1307,7 +1332,7 @@ static void DoStartRadio(int id) {
     // la lectura esperada es 13. (En modoCambio=2 la llamada va por
     // CAudioEngine::StartRadio; si esa via no pasa por el hook del
     // reproductor, la 12 no sonara: usar modo 0 o 1.)
-    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = (id == 12) ? 13 : id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }
+    if (g_getStationAudio && g_audioEngine) { int v = (int)g_getStationAudio(g_audioEngine); int expect = id; Log("  estacion leida tras cambio: %d (%s)%s", v, (v >= 1 && v <= 13) ? kStationName[v] : "?", v == expect ? "" : "  <-- NO COINCIDE"); }  // v1.9.7: nativa a 12 (Mixtape), no a 13
 }
 static void ApplyStation(int id) {
     if (id < 1 || id > 13) return;
@@ -2796,7 +2821,7 @@ static void DrawTrackList(float W, float H) {
         }
         // Division entre canciones (linea fina, como en la imagen).
         dl->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
-        if (clicked && !listScrolled) {  // v1.9.6: un arrastre solo desplaza, no salta a la cancion
+        if (clicked && !listScrolled && std::chrono::steady_clock::now() - g_listOpenedAt > std::chrono::milliseconds(300)) {  // v1.9.7: el primer toque (el que abre la lista) no cambia la cancion
             if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
         }
     }
@@ -3462,7 +3487,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     Log("rueda: %s cancion", g_trackBtn < 0 ? "anterior" : "siguiente");
                     g_trackBtn = 0;
                 }
-                else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
+                else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; g_listOpenedAt = std::chrono::steady_clock::now(); PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
                 else if (g_centerTap) { g_centerTap = false; g_open = false; g_settings = true; PlayClick(false); Log("panel de personalizacion abierto (centro de la rueda)"); }  // v2.31: asi se abre el panel con el boton flotante oculto
                 else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda cerrada -> %d (%s)", g_selected, kStationName[g_selected]); g_open = false; }
                 else { Log("rueda cerrada sin cambiar"); g_open = false; }
