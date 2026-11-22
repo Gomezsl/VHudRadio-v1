@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.50-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.51-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.50-beta"
+#define VHUDRADIO_VERSION "1.9.51-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1647,6 +1647,22 @@ static void ApplyStation(int id) {
     g_current = id;
 }
 static void RefreshCurrent() {
+    // v1.9.51 (Daniel): con el dial abierto NO se toca g_current. El dial
+    // (AudioScreen) actualiza g_current via los hooks RetuneRadio en cada
+    // tap, pero RefreshCurrent corre cada 30 cuadros en DrawFrame (con
+    // !g_open y en vehiculo, que es justo el estado con el dial abierto) y
+    // lee el getter nativo, que va UNA emisora por detras tras cambiar.
+    // Su guarda de 2 s usa g_lastStationCmd, que solo pone DoStartRadio
+    // (la rueda), NO los taps del dial, asi que con el dial abierto la
+    // guarda no protege: RefreshCurrent pisaba g_current con la emisora
+    // anterior y UT_DiagTick escribia MS+0x240 con ese valor viejo, y la
+    // EMISORA se veia retroceder a la anterior (sobre todo al pasar
+    // rapido, cuando el getter siempre va por detras). El [diag] no lo
+    // mostraba porque el getter si avanzaba limpio; el revertido era solo
+    // en g_current/MS+0x240 (el display). Con el dial cerrado la rueda se
+    // sincroniza al abrirse (ToggleWheel llama RefreshCurrent), asi que
+    // esto no afecta a la rueda.
+    if (ut_inAudioMenu) return;
     // v1: en la 12 manda el reproductor, no la radio nativa. La nativa NUNCA
     // cambia a la 12 (queda en la anterior), asi que sin esta guarda la rueda
     // mostraba el anillo en otra estacion aunque User Tracks siguiera sonando.
