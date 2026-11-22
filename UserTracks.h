@@ -879,6 +879,20 @@ static void UT_Stop(const char* reason) {
 // del menu. Con eso se ve que byte guarda la emisora del menu.
 static void* ut_menuManager = nullptr;
 static void* ut_mobileSettings = nullptr;  // v1.9.27: MobileSettings::settings (su +0x240 es lo que reaplica el dial)
+static void* ut_mobileSettingsReal = nullptr;  // v1.9.46: el settings que el juego lee via GOT 0x851498 (puede diferir de GetSym)
+// v1.9.46: escribir MS+0x240/MS+0x244 en AMBOS objetos settings (GetSym y GOT),
+// por si el juego lee uno distinto al que resuelve GetSym.
+static void UT_WriteMS240(int station) {
+    if (station < 1 || station > 13) return;
+    if (ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettings + 0x240) = station;
+        *(int*)((char*)ut_mobileSettings + 0x244) = station;
+    }
+    if (ut_mobileSettingsReal && ut_mobileSettingsReal != ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettingsReal + 0x240) = station;
+        *(int*)((char*)ut_mobileSettingsReal + 0x244) = station;
+    }
+}
 static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
 static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
@@ -951,11 +965,8 @@ static void UT_DiagTick() {
     // Escribirlo cada cuadro lo mantiene en la emisora de la rueda; un tap en
     // el dial actualiza g_current via el hook, asi que el siguiente cuadro
     // sigue al tap.
-    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        int* msCur = (int*)((char*)ut_mobileSettings + 0x240);
-        int* msDef = (int*)((char*)ut_mobileSettings + 0x244);
-        if (*msCur != g_current) *msCur = g_current;
-        if (*msDef != g_current) *msDef = g_current;
+    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13) {
+        UT_WriteMS240(g_current);
     }
     int a = (g_getStationAudio && g_audioEngine) ? (int)g_getStationAudio(g_audioEngine) : -1;
     int t = (g_getStationTrack && g_trackManager) ? (int)g_getStationTrack(g_trackManager) : -1;
@@ -1363,6 +1374,11 @@ static void UT_SyncEmisora(int station) {
             Log("UT: EMISORA por defecto %d -> %d (MobileSettings+0x244)", oldDef, station);
         }
     }
+    // v1.9.46: escribir tambien en el settings REAL (GOT) si difiere.
+    if (ut_mobileSettingsReal && ut_mobileSettingsReal != ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettingsReal + 0x240) = station;
+        *(int*)((char*)ut_mobileSettingsReal + 0x244) = station;
+    }
     // v1.9.45: actualizar tambien la emisora GUARDADA en gta_sa.set.
     UT_UpdateSavedStation(station);
 }
@@ -1447,10 +1463,7 @@ static RadioSelRenderFn ut_origRadioSelRender = nullptr;
 typedef void (*SelectRenderFn)(void*, int);
 static SelectRenderFn ut_origSelectRender = nullptr;
 static void UT_SelectRender_hook(void* self, int mode) {
-    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
-        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
-    }
+    UT_WriteMS240(g_current);
     if (ut_origSelectRender) ut_origSelectRender(self, mode);
 }
 
@@ -1462,10 +1475,7 @@ static void UT_RadioSelRender_hook(void* self, void* screen, UT_CVector2D a, UT_
         int ms = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
         Log("UT: RadioSelection::Render corre (rueda=%d MS+0x240=%d)", g_current, ms);
     }
-    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
-        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
-    }
+    UT_WriteMS240(g_current);
     if (ut_origRadioSelRender) ut_origRadioSelRender(self, screen, a, b, c);
 }
 
@@ -1481,10 +1491,7 @@ static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_C
         int idx = self ? *(int*)((char*)self + 0x10) : -1;
         Log("UT: SettingSelection::Render activo (primera fila idx=%d, rueda=%d)", idx, g_current);
     }
-    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
-        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
-        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
-    }
+    UT_WriteMS240(g_current);
     // v1.9.41: la 1.9.40 tampoco disparo porque la condicion !ut_inAudioMenu
     // es falsa todo el tiempo que existe la pantalla de sonido (el ctor de
     // RadioSelection corre al construirse, no solo al abrir el dial). Ahora
@@ -2064,6 +2071,20 @@ static void UT_InstallHooks() {
             uintptr_t mst = aml->GetSym(h, "_ZN14MobileSettings8settingsE");
             if (mst) { ut_mobileSettings = (void*)mst; Log("UT: MobileSettings::settings ok (%p)", ut_mobileSettings); }
             else Log("UT: MobileSettings::settings no resolvio (sin sincronia de EMISORA)");
+            // v1.9.46: el juego lee settings via GOT 0x851498 (RadioSelection::Render,
+            // SettingSelection::Render, C2Ev). Leer ese slot para obtener el objeto
+            // REAL que el juego usa; si difiere de GetSym, ahi esta el desajuste.
+            {
+                uintptr_t base = UT_LibBase("libGTASA.so");
+                if (base) {
+                    void** gotSlot = (void**)(base + 0x851498);
+                    void* real = *gotSlot;
+                    ut_mobileSettingsReal = real;
+                    int msGet = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
+                    int msReal = real ? *(int*)((char*)real + 0x240) : -1;
+                    Log("UT: settings GOT=%p (MS+0x240=%d) GetSym=%p (MS+0x240=%d) %s", real, msReal, ut_mobileSettings, msGet, (real == ut_mobileSettings) ? "iguales" : "DIFERENTES");
+                }
+            }
         }
         ut_getTexture = (GetTextureFn)aml->GetSym(h, "_ZN22TextureDatabaseRuntime10GetTextureEPKc");
         if (!ut_getTexture) {
