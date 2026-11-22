@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.58-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.59-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.58-beta"
+#define VHUDRADIO_VERSION "1.9.59-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2697,7 +2697,13 @@ static bool DrawButtonGL(float W, float H) {
     {
         ImVec2 wp; float ws;
         WheelBtnGeom(W, H, wp, ws);
-        circleTo(vBg, wp.x + ws / 2, wp.y + ws / 2, ws / 2, 0.0f, 0.0f, 0.0f, opF);
+        // v1.9.59: el disco del boton de la rueda es TRANSLUCIDO (55% de la
+        // opacidad del usuario), como los botones del juego y el de la
+        // Definitive Edition; antes era negro opaco (opF) y Daniel lo veia
+        // como un circulo negro solido. El icono blanco sigue a opF (bien
+        // visible) y el contorno blanco no cambia. Solo el disco de la rueda
+        // cambia; el del flotante queda igual.
+        circleTo(vBg, wp.x + ws / 2, wp.y + ws / 2, ws / 2, 0.0f, 0.0f, 0.0f, opF * 0.55f);
         GLuint wt = g_texWheel ? g_texWheel : it;
         if (wt) quadTo(vWheel, wp.x, wp.y, wp.x + ws, wp.y + ws, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
     }
