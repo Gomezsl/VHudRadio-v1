@@ -1385,6 +1385,23 @@ static bool ut_menuPatchesDone = false;
 struct UT_CVector2D { float x, y; };
 typedef void (*SettingRenderFn)(void*, void*, UT_CVector2D, UT_CVector2D, float);
 static SettingRenderFn ut_origSettingRender = nullptr;
+// v1.9.42: RadioSelection::Render — el ICONO del dial se resalta leyendo
+// MS+0x240 en vivo (0x363ea4: w20 = MS+0x240 - 1, se compara con el indice
+// del icono en el bucle). El texto ya se arreglo en 1.9.41, pero el icono
+// se dibuja ANTES que la fila EMISORA en el mismo cuadro, asi que si el
+// reapply del menu dejo MS+0x240 en la emisora vieja, el icono sale mal
+// aunque el texto salga bien. Escribir MS+0x240/MS+0x244 = g_current antes
+// de cada RadioSelection::Render lo deja correcto para el icono tambien.
+typedef void (*RadioSelRenderFn)(void*, void*, UT_CVector2D, UT_CVector2D, float);
+static RadioSelRenderFn ut_origRadioSelRender = nullptr;
+static void UT_RadioSelRender_hook(void* self, void* screen, UT_CVector2D a, UT_CVector2D b, float c) {
+    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
+        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
+    }
+    if (ut_origRadioSelRender) ut_origRadioSelRender(self, screen, a, b, c);
+}
+
 static void UT_SettingRender_hook(void* self, void* screen, UT_CVector2D a, UT_CVector2D b, float c) {
     // v1.9.36: escritura INCONDICIONAL — la 1.9.35 solo escribia si
     // this+0x10 == 14, pero el texto seguia mal; o el indice no es 14, o el
@@ -2045,6 +2062,17 @@ static void UT_InstallHooks() {
                 Log("UT: hook SettingSelection::Render %s", ut_origSettingRender ? "ok (EMISORA leida en vivo)" : "no se pudo instalar");
             } else {
                 Log("UT: SettingSelection::Render sin base libGTASA (sin fix de EMISORA)");
+            }
+        }
+        // v1.9.42: RadioSelection::Render — el icono del dial se resalta
+        // leyendo MS+0x240 en vivo (0x363ea4). El simbolo SI esta en .dynsym.
+        {
+            uintptr_t rr = aml->GetSym(h, "_ZN11AudioScreen14RadioSelection6RenderEP12SelectScreen9CVector2DS3_f");
+            if (rr) {
+                aml->Hook((void*)rr, (void*)UT_RadioSelRender_hook, (void**)&ut_origRadioSelRender);
+                Log("UT: hook RadioSelection::Render %s", ut_origRadioSelRender ? "ok (icono del dial sincronizado)" : "no se pudo instalar");
+            } else {
+                Log("UT: RadioSelection::Render no resolvio (icono del dial puede salir viejo)");
             }
         }
         // v1.9.3 (Claude): ocultar el HUD (CHud::Draw) con la rueda abierta.
