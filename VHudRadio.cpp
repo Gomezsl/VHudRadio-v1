@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.60-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.61-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.60-beta"
+#define VHUDRADIO_VERSION "1.9.61-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -4231,13 +4231,23 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             slowOn = false;
             if (g_slowActive) *g_slowActive = savedSlowActive;
             if (g_slowScale) *g_slowScale = savedSlowScale;
-            if (g_timeScale) *g_timeScale = savedTimeScale;
+            // v1.9.61: ms_fTimeScale solo se restaura si se escribio (respaldo
+            // cuando el slow-motion propio no resolvio).
+            if (!g_slowScale && !g_slowActive && g_timeScale) *g_timeScale = savedTimeScale;
             Log("ralentizacion: desactivada (restaurada escala=%.2f)", savedTimeScale);
         }
         if (slowOn) {
             if (g_slowActive) *g_slowActive = true;
             if (g_slowScale) *g_slowScale = 0.3f;
-            if (g_timeScale) *g_timeScale = 0.3f;
+            // v1.9.61: NO escribir ms_fTimeScale cuando el slow-motion propio
+            // del juego resolvio: a 0.3 deja sin sonido la radio del juego
+            // (las emisoras 1-11 no se escuchan con la rueda abierta, Daniel
+            // 2026-11-22); User Tracks si se escucha porque es un reproductor
+            // OpenSL propio, ajeno a la escala de tiempo del juego. La
+            // ralentizacion visual la da el slow-motion propio
+            // (bSlowMotionActive / ms_fSlowMotionScale); ms_fTimeScale solo
+            // es el respaldo si esos dos no resolvieron.
+            if (!g_slowScale && !g_slowActive && g_timeScale) *g_timeScale = 0.3f;
         }
     }
     if (!g_inited) {
