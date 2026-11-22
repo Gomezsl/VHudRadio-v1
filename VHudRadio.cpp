@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.46-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.47-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.46-beta"
+#define VHUDRADIO_VERSION "1.9.47-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1349,7 +1349,9 @@ static int SegmentAt(float x, float y, float W, float H) {
     float dx = x - W*0.5f, dy = y - H*0.5f;
     float dist = sqrtf(dx*dx + dy*dy);
     float Ri = WheelRi(H), s = WheelIconS(H);
-    if (dist < Ri - s*1.3f || dist > Ri + s*1.3f) return 0;  // centro o fuera de la rueda
+    // v1.9.47: banda exterior mas generosa (1.6x en vez de 1.3x): a veces el
+    // toque cae justo fuera del anillo y la rueda no lo detectaba.
+    if (dist < Ri - s*1.3f || dist > Ri + s*1.6f) return 0;  // centro o fuera de la rueda
     float ang = atan2f(dy, dx) + 3.14159265f/2; if (ang < 0) ang += 2*3.14159265f;
     int seg = (int)(ang / (2*3.14159265f/13.0f)) + 1; if (seg > 13) seg = 13;
     return seg;

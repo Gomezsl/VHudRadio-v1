@@ -889,14 +889,21 @@ static void UT_WriteMS240(int station) {
         *(int*)((char*)ut_mobileSettings + 0x244) = station;
     }
     if (ut_mobileSettingsReal && ut_mobileSettingsReal != ut_mobileSettings) {
-        *(int*)((char*)ut_mobileSettingsReal + 0x240) = station;
-        *(int*)((char*)ut_mobileSettingsReal + 0x244) = station;
+        // v1.9.47: validar que el objeto Real parezca un settings (su +0x240
+        // debe ser una emisora plausible 0..13) antes de escribir; si no lo
+        // es, no tocarlo (evita un cierre por escribir en memoria ajena).
+        int curReal = *(int*)((char*)ut_mobileSettingsReal + 0x240);
+        if (curReal >= 0 && curReal <= 13) {
+            *(int*)((char*)ut_mobileSettingsReal + 0x240) = station;
+            *(int*)((char*)ut_mobileSettingsReal + 0x244) = station;
+        }
     }
 }
 static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
 static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
 static std::chrono::steady_clock::time_point ut_dialOpenedAt = std::chrono::steady_clock::time_point();  // v1.9.26: cuando se abrio el dial (la reaplicacion es inmediata)
+static int ut_redirectsThisDial = 0;  // v1.9.47: redirecciones en esta apertura (la reaplicacion son 2: StartRadio+RetuneRadio; los taps del usuario despues no se redirigen)
 static int ut_diagRedirects = 0;             // v1.9.25: redirecciones hechas en este dial (tope 3)
 static int ut_diagLastA = -99, ut_diagLastT = -99;
 static int ut_diagDumps = 0;                    // tope: el archivo no crece sin limite
@@ -1092,7 +1099,7 @@ static void UT_StartRadio_hook(void* trackMgr, signed char station, signed char 
     // estacion)"), asi que la gracia es de 2 s tras la reanudacion, no solo
     // mientras ut_pausedByExit. Un cambio del usuario (rueda/boton) SI para
     // (ut_userStationCmd lo marca en DoStartRadio).
-    if (ut_active && !ut_userStationCmd &&
+    if (ut_active && !ut_userStationCmd && !ut_inAudioMenu &&
         (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
         ut_pausedByExit = false;
         g_current = 12;
@@ -1133,7 +1140,8 @@ static AudioRetuneFn ut_origAudioRetune = nullptr;
 static signed char UT_RedirectReapply(signed char station) {
     if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && station != g_current) {
         auto now = std::chrono::steady_clock::now();
-        if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000)) {
+        if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000) && ut_redirectsThisDial < 2) {
+            ut_redirectsThisDial++;
             Log("UT: reaplicacion del menu (%d): redirigiendo a %d (rueda)", (int)station, g_current);
             return (signed char)g_current;
         }
@@ -1167,7 +1175,7 @@ static signed char UT_AudioRetune_hook(void* self, signed char station) {
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return 12;
     }
-    if (ut_active && !ut_userStationCmd &&
+    if (ut_active && !ut_userStationCmd && !ut_inAudioMenu &&
         (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
         ut_pausedByExit = false;
         g_current = 12;
@@ -1219,7 +1227,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
         if (ut_origStartRadio && g_trackManager) ut_origStartRadio(g_trackManager, 12, 0, 1.0f, 0);
         return;
     }
-    if (ut_active && !ut_userStationCmd &&
+    if (ut_active && !ut_userStationCmd && !ut_inAudioMenu &&
         (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
         ut_pausedByExit = false;
         g_current = 12;
@@ -1252,7 +1260,7 @@ static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
         return 12;
     }
     // v1.8: gracia de 2 s tras subir al auto (el juego pide Radio Off solo).
-    if (ut_active && !ut_userStationCmd &&
+    if (ut_active && !ut_userStationCmd && !ut_inAudioMenu &&
         (ut_pausedByExit || std::chrono::steady_clock::now() - ut_resumeAt < std::chrono::seconds(2))) {
         ut_pausedByExit = false;
         g_current = 12;
@@ -1564,6 +1572,7 @@ static void UT_RadioSelectionCtor_hook(void* self) {
     if (!self || !ut_getTexture) return;
     ut_diagRedirects = 0;  // v1.9.25: nuevo dial, contador de redirecciones a cero
     ut_dialOpenedAt = std::chrono::steady_clock::now();  // v1.9.26: marca de apertura del dial
+    ut_redirectsThisDial = 0;  // v1.9.47: la reaplicacion de esta apertura aun no ha ocurrido
     UT_DumpAll("dial_abierto", self);  // v1.9.24: antes de tocar nada
     void* tex = ut_getTexture("radio_TPLAYER");
     if (!tex) { Log("UT: no se pudo cargar la textura radio_TPLAYER (sin parches del menu)"); return; }
