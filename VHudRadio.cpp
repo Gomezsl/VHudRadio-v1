@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.52-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.53-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.52-beta"
+#define VHUDRADIO_VERSION "1.9.53-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1436,6 +1436,7 @@ static void* ResolveMenuManager(void* sym) {
 // ---- texturas ImGui de los iconos (se crean en el primer frame, con contexto GL) ----
 static GLuint g_tex[14] = {0};  // 1..13 + radio_current en [0] como marco
 static GLuint g_texColor[14] = {0};  // v2.28: a color (radio_color/), 1..13 + radio_current en [0]
+static GLuint g_btnTexCustom = 0;  // v1.9.53: icono propio del boton flotante (VHudRadio/boton.png); 0 = icono de la emisora
 static bool g_texTried = false;
 // v2.29: decodifica base64 (los PNG incrustados vienen en base64)
 static int B64Val(char c) {
@@ -1547,6 +1548,32 @@ static void LoadIconSet(GLuint* tex, const char* etiqueta, int set) {
     Log("  %s %s radio_current.png (%s)", etiqueta, tex[0] ? "ok    " : "FALTA ", src0);
     Log("iconos %s cargados: %d/13 (+marco %s)", etiqueta, ok, tex[0] ? "si" : "no");
 }
+// v1.9.53: icono propio del boton flotante, SOLO desde archivo (no va en
+// el .so): si existe VHudRadio/boton.png (o button.png) en files del juego,
+// el boton usa esa imagen en vez del icono de la emisora. Si no hay
+// archivo, el boton sigue como siempre (icono de la emisora incrustado).
+// Es UN solo archivo (no los 13 iconos), asi que no trae de vuelta los
+// problemas de los iconos personalizados de carpeta (v2.55).
+static void LoadCustomButtonTexture() {
+    g_btnTexCustom = 0;
+    const char* names[2] = {"boton.png", "button.png"};
+    for (int k = 0; k < 2 && !g_btnTexCustom; k++) {
+        std::string path = g_gameFilesDir + "/VHudRadio/" + names[k];
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        long len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (len <= 0 || len > 8 * 1024 * 1024) { fclose(f); continue; }
+        std::vector<unsigned char> buf((size_t)len);
+        size_t rd = fread(buf.data(), 1, buf.size(), f);
+        fclose(f);
+        if (rd != buf.size()) continue;
+        g_btnTexCustom = LoadPngFromMemory(buf.data(), buf.size(), true);
+        if (g_btnTexCustom) Log("  boton propio: %s (%ld bytes)", path.c_str(), len);
+    }
+    if (!g_btnTexCustom) Log("  boton propio: sin archivo (usa el icono de la emisora)");
+}
 static void LoadRadioTextures() {
     if (g_texTried) return; g_texTried = true;
     // v2.16: iconos normales en files del juego (Android/data/.../files/VHudRadio/radio/);
@@ -1558,6 +1585,7 @@ static void LoadRadioTextures() {
     for (int i = 0; i <= 13; i++) if (!g_texColor[i]) g_texColor[i] = g_tex[i];
     int ok = 0; for (int i = 1; i <= 13; i++) if (g_tex[i]) ok++;
     if (ok == 0) Log("  !! sin iconos incrustados en el .so (no deberia pasar)");
+    LoadCustomButtonTexture();  // v1.9.53: boton propio (boton.png/button.png)
 }
 // v2.55: recargar iconos (al cambiar el interruptor de fondo de color):
 // borra las texturas GL y marca para recargar en el siguiente cuadro, con el
@@ -2172,7 +2200,7 @@ static bool DrawButtonGL(float W, float H) {
     // siempre tuvo el boton; el icono puede ser transparente con el fondo de
     // color encendido). v2.56: DISCO negro (no cuadro: se notaba el cuadrado).
     circleTo(vBg, bp.x + bs / 2, bp.y + bs / 2, bs / 2, 0.0f, 0.0f, 0.0f, opF);
-    GLuint it = IconTex(g_current);
+    GLuint it = g_btnTexCustom ? g_btnTexCustom : IconTex(g_current);  // v1.9.53: boton propio (boton.png) o icono de la emisora
     if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
     // v1.5: flechas anterior/siguiente DENTRO de la etiqueta (solo en la 12),
     // a los lados del nombre de la cancion.
