@@ -1286,6 +1286,46 @@ static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, 
 // queda en 3 es la del menu y el que cambia es la real.
 // v1.9.22/1.9.23: escribe la emisora real en AudioEngine+0x149 (la
 // variable que muestra EMISORA). Solo registra cuando cambia.
+// v1.9.45: la emisora GUARDADA (gta_sa.set). Las capturas de la 1.9.44
+// muestran el cuadro del icono congelado en K-DST (3) aunque MS+0x240 sea
+// 11 en RAM al dibujar: el resaltado se fija desde la emisora guardada en
+// el archivo, no desde el valor en vivo. El archivo es "gta_sa.set"
+// (cadena en libGTASA+0x73b394): 4 bytes de conteo (37) + 37 ints; el
+// elemento 14 (EMISORA) es el int 14, en el offset 4+14*4 = 60.
+// Escribir g_current ahi hace que lo guardado coincida con la rueda.
+// Solo se escribe si el archivo tiene el formato esperado (152 bytes y
+// conteo 37) y el valor cambio; si no, no se toca nada.
+static void UT_UpdateSavedStation(int station) {
+    if (station < 1 || station > 13) return;
+    static int s_lastSaved = -1;
+    if (s_lastSaved == station) return;
+    const char* dirs[2] = { nullptr, nullptr };
+    std::string d0 = g_gameDataDir + "/gta_sa.set";
+    std::string d1 = g_gameFilesDir + "/gta_sa.set";
+    dirs[0] = d0.c_str(); dirs[1] = d1.c_str();
+    for (int i = 0; i < 2; i++) {
+        FILE* f = fopen(dirs[i], "r+b");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        if (sz != 152) { fclose(f); continue; }
+        int count = 0;
+        fseek(f, 0, SEEK_SET);
+        if (fread(&count, 4, 1, f) != 1 || count != 37) { fclose(f); continue; }
+        int cur = 0;
+        fseek(f, 60, SEEK_SET);
+        if (fread(&cur, 4, 1, f) != 1) { fclose(f); continue; }
+        if (cur != station) {
+            fseek(f, 60, SEEK_SET);
+            fwrite(&station, 4, 1, f);
+            Log("UT: emisora guardada %d -> %d (gta_sa.set, %s)", cur, station, dirs[i]);
+        }
+        fclose(f);
+        s_lastSaved = station;
+        return;
+    }
+}
+
 static void UT_SyncEmisora(int station) {
     // v1.9.27: RE de libGTASA.so (FrontEndMenuManager-0x35-RE.md). Hay DOS variables:
     // (1) FrontEndMenuManager+0x35 (byte, m_nRadioStation): lista del dial, fila EMISORA,
@@ -1323,6 +1363,8 @@ static void UT_SyncEmisora(int station) {
             Log("UT: EMISORA por defecto %d -> %d (MobileSettings+0x244)", oldDef, station);
         }
     }
+    // v1.9.45: actualizar tambien la emisora GUARDADA en gta_sa.set.
+    UT_UpdateSavedStation(station);
 }
 
 static void UT_DumpHex(const char* tag, const void* ptr, size_t n) {
