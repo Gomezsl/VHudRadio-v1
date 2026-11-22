@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.51-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.52-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.51-beta"
+#define VHUDRADIO_VERSION "1.9.52-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -3667,15 +3667,20 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         ImGui::StyleColorsDark();
         // v2.1: letra mas parecida a GTA V - Roboto Condensed negrita del sistema
+        // v1.9.52: rango de glifos ampliado (latin-1 + latin extendido-A +
+        // cirilico): sin esto ImGui solo dibuja U+0020-U+00FF y los nombres
+        // con ş/ı (turco, "Işık") o cirilico salen en blanco. La fuente del
+        // sistema SI tiene esos glifos; solo habia que pedirlos.
+        static const ImWchar kGlyphRanges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x0400, 0x04FF, 0 };
         io.Fonts->AddFontDefault();
         const char* titlePath = nullptr;
         for (const char* fp : {"/system/fonts/RobotoCondensed-Bold.ttf", "/system/fonts/Roboto-Bold.ttf", "/system/fonts/DroidSans-Bold.ttf"}) {
-            g_fontTitle = io.Fonts->AddFontFromFileTTF(fp, 64.0f);
+            g_fontTitle = io.Fonts->AddFontFromFileTTF(fp, 64.0f, nullptr, kGlyphRanges);
             if (g_fontTitle) { titlePath = fp; Log("fuente del titulo: %s", fp); break; }
         }
         if (!g_fontTitle) Log("  !! sin fuente del sistema: el titulo usa la letra de ImGui");
         // v2.3: segunda talla de la misma fuente para el panel (letra legible al tacto)
-        if (titlePath) g_fontUI = io.Fonts->AddFontFromFileTTF(titlePath, 32.0f);
+        if (titlePath) g_fontUI = io.Fonts->AddFontFromFileTTF(titlePath, 32.0f, nullptr, kGlyphRanges);
         if (!ImGui_ImplOpenGL3_Init(nullptr)) { Log("ImGui_ImplOpenGL3_Init fallo"); g_failed = true; return; }
         g_inited = true; LoadRadioTextures(); RefreshCurrent();
         Log("ImGui listo (%.0fx%.0f), estacion actual: %d (%s)", (float)w, (float)h, g_current, kStationName[g_current]);

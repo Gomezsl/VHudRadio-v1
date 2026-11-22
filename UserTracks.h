@@ -1034,10 +1034,17 @@ static void UT_Frame() {
     // pie): la musica se queda en silencio y se reanuda al subir, en la
     // misma emisora (12) y en el mismo punto, sin reiniciar ni cortar.
     // (La 1.6 la dejaba sonando a pie y al volver el juego ponia Radio Off.)
-    if (!g_inVehicle && !ut_pausedByExit) {
+    // v1.9.52: un vehiculo sin radio (bici, etc.) es como estar a pie: la
+    // musica se pausa y se reanuda al volver a un vehiculo con radio.
+    // Antes solo se comprobaba la lista al llamar StartRadio, y al cambiar
+    // de vehiculo con el Cheat Menu no hay llamada: la musica seguia
+    // sonando en la bici. g_hasRadio ya lo calcula DrawFrame una vez por
+    // vehiculo (VehicleHasRadio: 481/509/510 y demas sin radio).
+    bool ut_noRadio = g_inVehicle && !g_hasRadio;
+    if ((!g_inVehicle || ut_noRadio) && !ut_pausedByExit) {
         ut_pausedByExit = true;
-        Log("UT: pausado al salir del vehiculo (se reanuda al subir)");
-    } else if (g_inVehicle && ut_pausedByExit) {
+        Log("UT: pausado al %s (se reanuda al subir)", ut_noRadio ? "subir a un vehiculo sin radio" : "salir del vehiculo");
+    } else if (g_inVehicle && !ut_noRadio && ut_pausedByExit) {
         ut_pausedByExit = false;
         ut_resumeAt = std::chrono::steady_clock::now();  // v1.8: gracia de 2 s (el juego pide Radio Off DESPUES de esto)
         Log("UT: reanudado al subir al vehiculo");
