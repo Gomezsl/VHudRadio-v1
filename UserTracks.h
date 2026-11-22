@@ -202,6 +202,7 @@ static bool ut_random = true;                // aleatorio por defecto, como SAUs
 static bool ut_active = false;               // estacion 12 sonando
 static bool ut_playbackDisabled = false;  // v1.9.11: PlayTrack lo pone si a2 == -1 (puerta de StartTrackPlayback)
 static bool ut_inAudioMenu = false;  // v1.9.12: la pantalla de seleccion de radio (opciones de sonido) esta construida
+static bool ut_inAudioScreenCtor = false;  // v1.9.49: dentro del ctor de AudioScreen (ahi corre el reapply C2Ev; fuera de el, un RetuneRadio es un toque del usuario)
 static bool ut_menuPreview = false;  // v1.9.12: preview de Mixtape en el menu (suena aunque el juego este en pausa)
 static bool ut_renderingEmisora = false;  // v1.9.41: SettingSelection::Render esta dibujando la fila EMISORA (idx 14) en este instante
 static bool ut_pausedDev = false;            // dispositivo OpenSL en pausa
@@ -903,7 +904,6 @@ static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
 static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
 static std::chrono::steady_clock::time_point ut_dialOpenedAt = std::chrono::steady_clock::time_point();  // v1.9.26: cuando se abrio el dial (la reaplicacion es inmediata)
-static int ut_redirectsThisDial = 0;  // v1.9.47: redirecciones en esta apertura (la reaplicacion son 2: StartRadio+RetuneRadio; los taps del usuario despues no se redirigen)
 static int ut_diagRedirects = 0;             // v1.9.25: redirecciones hechas en este dial (tope 3)
 static int ut_diagLastA = -99, ut_diagLastT = -99;
 static int ut_diagDumps = 0;                    // tope: el archivo no crece sin limite
@@ -1138,13 +1138,20 @@ static AudioRetuneFn ut_origAudioRetune = nullptr;
 // el dial. Un tap humano en el dial tarda mas de 1 s, asi que la ventana de
 // 1 s desde que se abrio el dial distingue la reaplicacion del tap.
 static signed char UT_RedirectReapply(signed char station) {
-    if (ut_inAudioMenu && g_current >= 1 && g_current <= 13 && station != g_current) {
-        auto now = std::chrono::steady_clock::now();
-        if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000) && ut_redirectsThisDial < 2) {
-            ut_redirectsThisDial++;
-            Log("UT: reaplicacion del menu (%d): redirigiendo a %d (rueda)", (int)station, g_current);
-            return (signed char)g_current;
-        }
+    // v1.9.49 (tester, Daniel): el reapply del menu se comia los toques del
+    // usuario. Antes se usaba una ventana de 1000 ms + tope de 2: cuando el
+    // dial abria ya sincronizado (MS+0x240 == g_current), el reapply C2Ev
+    // era no-op y el contador quedaba en 0, asi que las primeras 1-2 flechas
+    // del usuario se redirigian a g_current (la emisora anterior) y
+    // UT_DiagTick reescribia MS+0x240 a g_current cada cuadro: el dial
+    // volvia a mostrar la anterior, habia que pulsar dos veces desde Radio
+    // Off, y el Radio Off no paraba la musica. Ahora solo se redirige el
+    // reapply de verdad: el que corre DENTRO del ctor de AudioScreen
+    // (C2Ev lee MS+0x240 y llama a RetuneRadio/StartRadio al construirse).
+    // Un RetuneRadio fuera del ctor es un toque del usuario y pasa siempre.
+    if (ut_inAudioMenu && ut_inAudioScreenCtor && g_current >= 1 && g_current <= 13 && station != g_current) {
+        Log("UT: reaplicacion del menu (%d): redirigiendo a %d (rueda)", (int)station, g_current);
+        return (signed char)g_current;
     }
     return station;
 }
@@ -1531,7 +1538,9 @@ static bool UT_IsReadablePtr(uintptr_t p) {
 
 static void UT_AudioScreenCtor_hook(void* self) {
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
+    ut_inAudioScreenCtor = true;  // v1.9.49: el reapply C2Ev corre dentro del ctor
     if (ut_origAudioScreenCtor) ut_origAudioScreenCtor(self);
+    ut_inAudioScreenCtor = false;
     // Post-ctor: por si C2Ev reseteo los valores durante la construccion.
     if (g_current >= 1 && g_current <= 13) UT_SyncEmisora(g_current);
     // Diagnostico + auto-fix (Gemini, via Daniel): la fila EMISORA guarda su
@@ -1608,7 +1617,6 @@ static void UT_RadioSelectionCtor_hook(void* self) {
     if (!self || !ut_getTexture) return;
     ut_diagRedirects = 0;  // v1.9.25: nuevo dial, contador de redirecciones a cero
     ut_dialOpenedAt = std::chrono::steady_clock::now();  // v1.9.26: marca de apertura del dial
-    ut_redirectsThisDial = 0;  // v1.9.47: la reaplicacion de esta apertura aun no ha ocurrido
     UT_DumpAll("dial_abierto", self);  // v1.9.24: antes de tocar nada
     void* tex = ut_getTexture("radio_TPLAYER");
     if (!tex) { Log("UT: no se pudo cargar la textura radio_TPLAYER (sin parches del menu)"); return; }
@@ -1738,9 +1746,11 @@ static uint32_t UT_GetUppercaseKey_hook(const char* key) {
         if (pausedLive && !ut_inAudioMenu && g_current >= 1 && g_current <= 13 && UT_IsStationKey(key)) {
             const char* target = UT_FEAKeyForStation(g_current);
             if (target && strcmp(key, target) != 0 && ut_origGetUppercaseKey) {
-                static int redirLogs = 0;
-                if (redirLogs < 20) {
-                    redirLogs++;
+                // v1.9.49: un log por emisora (max 13 lineas): antes el tope
+                // de 20 se gastaba con la 12 y la 13 ya no salia en el log.
+                static bool loggedFor[14] = {false};
+                if (g_current >= 1 && g_current <= 13 && !loggedFor[g_current]) {
+                    loggedFor[g_current] = true;
                     Log("UT: [texto] EMISORA \"%s\" -> \"%s\" (rueda=%d)", key, target, g_current);
                 }
                 return ut_origGetUppercaseKey(target);
@@ -1775,9 +1785,11 @@ static char* UT_CTextGet_hook(void* self, const char* key) {
         if (UT_IsStationKey(key)) {
             const char* target = UT_FEAKeyForStation(g_current);
             if (target && strcmp(key, target) != 0 && ut_origCTextGet) {
-                static int redirLogs = 0;
-                if (redirLogs < 20) {
-                    redirLogs++;
+                // v1.9.49: un log por emisora (max 13 lineas): antes el tope
+                // de 20 se gastaba con la 12 y la 13 ya no salia en el log.
+                static bool loggedFor[14] = {false};
+                if (g_current >= 1 && g_current <= 13 && !loggedFor[g_current]) {
+                    loggedFor[g_current] = true;
                     Log("UT: [texto] EMISORA \"%s\" -> \"%s\" (rueda=%d)", key, target, g_current);
                 }
                 return ut_origCTextGet(self, target);
