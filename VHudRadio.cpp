@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.49-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.50-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.49-beta"
+#define VHUDRADIO_VERSION "1.9.50-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2280,8 +2280,6 @@ static GLuint g_blurMidTex = 0, g_blurMidFBO = 0;  // v1.6: textura intermedia (
 static GLuint g_blurQtrTex = 0, g_blurQtrFBO = 0;  // v1.8: textura intermedia (cuarto) para la piramide por mitades (blur gaussiano)
 static GLuint g_blurTmpTex = 0, g_blurTmpFBO = 0;  // v1.9: textura temporal para el pase gaussiano (ping-pong con la pequena)
 static int g_blurCW = 0, g_blurCH = 0, g_blurSW = 0, g_blurSH = 0, g_blurFactor = 0;
-static bool g_blurFrozen = false;  // v1.9.14: fondo congelado al abrir la rueda (manejando se ve igual que parado)
-static int g_blurFrames = 0;  // v1.9.16: cuadros desde que se abrio la rueda (la captura se estabiliza antes de congelar)
 static int g_blurMW = 0, g_blurMH = 0;
 static int g_blurQW = 0, g_blurQH = 0;
 static int BlurFactor() {
@@ -2313,9 +2311,7 @@ static void BlurDrawBackground(float W, float H) {
     if (mw < 8) mw = 8; if (mh < 8) mh = 8;
     int qw = w / 4, qh = h / 4;  // v1.8: paso intermedio (cuarto) para la piramide por mitades
     if (qw < 8) qw = 8; if (qh < 8) qh = 8;
-    bool blurRecreated = false;  // v1.9.14: si se recrea el FBO hay que volver a copiar la escena
     if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO || !g_blurTmpTex || !g_blurTmpFBO) {
-        blurRecreated = true;
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
@@ -2435,15 +2431,15 @@ static void BlurDrawBackground(float W, float H) {
     // 1. copiar la escena del juego a g_blurCopyTex (framebuffer por defecto).
     // v1.4: con glBlitFramebuffer se resuelve el MSAA del juego (la copia
     // directa fallaba con GL 0x502). Si no hay blit, se intenta la copia.
-    // v1.9.14 (Rehan): la escena se copia UNA VEZ al abrir la rueda y se
-    // congela: manejando, la escena cambia cada cuadro y el blur se veia
-    // peor que parado (donde la escena es estatica). Congelada, manejar se
-    // ve igual que parado. Si se recreo el FBO, se vuelve a copiar.
-    // v1.9.16 (Daniel): los primeros 15 cuadros se copia siempre: el
-    // primer cuadro al abrir la rueda puede ser una transicion (camara /
-    // camara lenta) y congelarlo dejaba el blur pixeliado; a los 15 cuadros
-    // la escena ya esta estable y ahi se congela.
-    if (!g_blurFrozen || blurRecreated || g_blurFrames < 15) {
+    // v1.9.50 (Daniel): fondo EN VIVO: la escena se copia CADA cuadro
+    // mientras la rueda esta abierta, asi el fondo se mueve en camara lenta
+    // con el juego (la rueda ya pone 0.3x). Antes (v1.9.14, Rehan) se
+    // congelaba a los 15 cuadros porque manejando el blur en vivo se veia
+    // peor que parado; Daniel lo quiere en vivo ahora. El gaussiano y la
+    // piramide ya corrian cada cuadro, solo la copia estaba congelada, asi
+    // que el unico cambio es copiar siempre. Si la copia falla, se registra
+    // el error y se sigue sin desenfoque (como antes).
+    {
         glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
         if (g_pBlitFB && g_blurResolveFBO) {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -2456,8 +2452,6 @@ static void BlurDrawBackground(float W, float H) {
             glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 0, 0, w, h, 0);
         }
         { GLenum e = glGetError(); if (e != GL_NO_ERROR) { Log("  !! blur: no se pudo copiar la escena (GL 0x%X): sin desenfoque", (unsigned)e); goto blur_restore; } }
-        g_blurFrames++;
-        if (g_blurFrames >= 15) g_blurFrozen = true;
     }
     // preparar el programa del boton (proyeccion ortografica, Y hacia abajo)
     glDisable(GL_DEPTH_TEST);
@@ -3566,7 +3560,6 @@ static bool VehicleHasRadio(void* veh) {
 }
 // v2.51: HexDump eliminado (solo lo usaban el volcado del vehiculo y el escaneo ptrCand).
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
-    if (!g_open) { g_blurFrozen = false; g_blurFrames = 0; }  // v1.9.14/1.9.16: al cerrar la rueda se descongela y se reinicia el contador
     if (g_failed) return;
     EGLContext ctx = eglGetCurrentContext();
     if (ctx == EGL_NO_CONTEXT) return;

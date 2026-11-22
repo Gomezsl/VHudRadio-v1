@@ -903,6 +903,7 @@ static void UT_WriteMS240(int station) {
 static int ut_diagPipe[2] = {-1, -1};
 static int ut_diagWatch = 0;                    // cuadros que se vigila la emisora tras cerrar el dial
 static std::chrono::steady_clock::time_point ut_lastRetuneAt = std::chrono::steady_clock::time_point();  // v1.9.25: ultimo RetuneRadio (tap en el dial)
+static std::chrono::steady_clock::time_point ut_lastUserPressAt = std::chrono::steady_clock::time_point();  // v1.9.50: ultimo RetuneRadio por TAP del usuario (no por el reapply del ctor: el getter va con retraso tras un tap y el redirect del diag lo tomaba por reaplicacion y forzaba la emisora, lo que se veia como revertir/trabarse al pasar rapido)
 static std::chrono::steady_clock::time_point ut_dialOpenedAt = std::chrono::steady_clock::time_point();  // v1.9.26: cuando se abrio el dial (la reaplicacion es inmediata)
 static int ut_diagRedirects = 0;             // v1.9.25: redirecciones hechas en este dial (tope 3)
 static int ut_diagLastA = -99, ut_diagLastT = -99;
@@ -991,10 +992,19 @@ static void UT_DiagTick() {
         // RetuneRadio y el guarda de 500 ms bloqueo la redireccion).
         // Si la nueva emisora no es la de la rueda, devolverla a la de la rueda
         // (max 3 por dial).
+        // v1.9.50: el getter va con RETRASO tras un tap (la emisora leida es la
+        // anterior), asi que al pasar rapido el diag veia a != g_current y lo
+        // tomaba por reaplicacion: forzaba ut_origStartRadio(g_current) y el
+        // dial se veia revertir/trabarse. Por eso el redirect ahora exige
+        // ademas NO haber tap del usuario en los ultimos 500 ms
+        // (ut_lastUserPressAt, que el reapply del ctor NO pone porque va con
+        // ut_inAudioScreenCtor=true). Si el usuario acaba de tocar, la
+        // diferencia es solo el retraso del getter y no se toca nada.
         if (ut_inAudioMenu && a >= 1 && a <= 13 && g_current >= 1 && g_current <= 13 &&
             a != g_current && ut_diagRedirects < 3) {
             auto now = std::chrono::steady_clock::now();
-            if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000)) {
+            if (now - ut_dialOpenedAt < std::chrono::milliseconds(1000) &&
+                now - ut_lastUserPressAt > std::chrono::milliseconds(500)) {
                 ut_diagRedirects++;
                 Log("UT: [diag] reaplicacion del menu (%d -> %d): devolviendo a %d (rueda)", ut_diagLastA, a, g_current);
                 if (g_current == 12) {
@@ -1159,6 +1169,7 @@ static signed char UT_RedirectReapply(signed char station) {
 static signed char UT_AudioRetune_hook(void* self, signed char station) {
     (void)self;
     ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del AudioEngine)
+    if (!ut_inAudioScreenCtor) ut_lastUserPressAt = std::chrono::steady_clock::now();  // v1.9.50: solo tap del usuario, no el reapply del ctor (ese pone ut_inAudioScreenCtor=true)
     // v1.9.6: al reanudar/cargar la partida el juego puede llamar a RetuneRadio
     // antes de estar listo; en ese momento no se toca el reproductor, solo se
     // deja pasar la llamada original (evita el cierre al reanudar de la 1.9.5).
@@ -1250,6 +1261,7 @@ static void UT_AudioStart_hook(void* self, signed char station, signed char a2) 
 
 static signed char UT_RetuneRadio_hook(void* trackMgr, signed char station) {
     ut_lastRetuneAt = std::chrono::steady_clock::now();  // v1.9.25: tap en el dial (RetuneRadio del TrackManager)
+    if (!ut_inAudioScreenCtor) ut_lastUserPressAt = std::chrono::steady_clock::now();  // v1.9.50: solo tap del usuario, no el reapply del ctor
     if (!ut_origRetuneRadio) return 0;
     station = UT_RedirectReapply(station);  // v1.9.28: reaplicacion del menu -> rueda
     if (station == 12) {
