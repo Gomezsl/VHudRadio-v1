@@ -1394,7 +1394,32 @@ static SettingRenderFn ut_origSettingRender = nullptr;
 // de cada RadioSelection::Render lo deja correcto para el icono tambien.
 typedef void (*RadioSelRenderFn)(void*, void*, UT_CVector2D, UT_CVector2D, float);
 static RadioSelRenderFn ut_origRadioSelRender = nullptr;
+// v1.9.44: SelectScreen::Render — el menu (AudioScreen) se dibuja via
+// SelectScreen::Render (0x35bf40), que llama a SettingSelection::Render
+// (filas) y a RadioSelection::Render (tira de iconos). CMenuManager::
+// DrawFrontEnd NO esta en ese camino (su hook nunca corre: 0 lineas en
+// 1.9.43). La tira se dibuja ANTES que la fila EMISORA, asi que el hook de
+// SettingSelection escribe MS+0x240 demasiado tarde para el icono. Escribir
+// aqui, al inicio de SelectScreen::Render, deja el valor correcto para TODOS
+// los widgets del menu en el mismo cuadro.
+typedef void (*SelectRenderFn)(void*, int);
+static SelectRenderFn ut_origSelectRender = nullptr;
+static void UT_SelectRender_hook(void* self, int mode) {
+    if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
+        *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
+        *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
+    }
+    if (ut_origSelectRender) ut_origSelectRender(self, mode);
+}
+
 static void UT_RadioSelRender_hook(void* self, void* screen, UT_CVector2D a, UT_CVector2D b, float c) {
+    // v1.9.44: una sola linea para confirmar si este hook corre y que lee.
+    static bool s_rsrLogged = false;
+    if (!s_rsrLogged) {
+        s_rsrLogged = true;
+        int ms = ut_mobileSettings ? *(int*)((char*)ut_mobileSettings + 0x240) : -1;
+        Log("UT: RadioSelection::Render corre (rueda=%d MS+0x240=%d)", g_current, ms);
+    }
     if (g_current >= 1 && g_current <= 13 && ut_mobileSettings) {
         *(int*)((char*)ut_mobileSettings + 0x240) = g_current;
         *(int*)((char*)ut_mobileSettings + 0x244) = g_current;
@@ -2073,6 +2098,18 @@ static void UT_InstallHooks() {
                 Log("UT: hook RadioSelection::Render %s", ut_origRadioSelRender ? "ok (icono del dial sincronizado)" : "no se pudo instalar");
             } else {
                 Log("UT: RadioSelection::Render no resolvio (icono del dial puede salir viejo)");
+            }
+        }
+        // v1.9.44: SelectScreen::Render — el padre que dibuja todo el menu
+        // (filas + tira de iconos). Escribir MS+0x240 aqui cubre la tira,
+        // que se dibuja antes que la fila EMISORA.
+        {
+            uintptr_t sr2 = aml->GetSym(h, "_ZN12SelectScreen6RenderEi");
+            if (sr2) {
+                aml->Hook((void*)sr2, (void*)UT_SelectRender_hook, (void**)&ut_origSelectRender);
+                Log("UT: hook SelectScreen::Render %s", ut_origSelectRender ? "ok (menu dibujado con EMISORA de la rueda)" : "no se pudo instalar");
+            } else {
+                Log("UT: SelectScreen::Render no resolvio");
             }
         }
         // v1.9.3 (Claude): ocultar el HUD (CHud::Draw) con la rueda abierta.
