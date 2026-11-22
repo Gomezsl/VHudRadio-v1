@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.54-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.55-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.54-beta"
+#define VHUDRADIO_VERSION "1.9.55-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1146,7 +1146,7 @@ static void LoadHornPos() {
 //   (posicion del panel, fraccion de W/H; -1 = centrado) panelAncho=0.44
 //   (ancho del panel, fraccion de W, 0.36..0.70) (v2.17)
 // iconosColor=0 (0 = iconos normales de radio/, 1 = iconos a color de radio_color/) (v2.28)
-struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
+struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; float btnRuedaX = -1.0f; float btnRuedaY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
 static WheelCfg g_cfg;
 static const char* S(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 0 || id >= STR_COUNT) return ""; return kUI[l][id]; }  // v2.16: texto del panel en el idioma elegido
 static const char* Genre(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 1 || id > 13) return ""; return kGenre[l][id]; }  // v2.16: genero en el idioma elegido
@@ -1178,6 +1178,8 @@ static void SaveCfg() {
     fprintf(f, "idioma=%s\n", kLangCodes[(g_cfg.idioma >= 0 && g_cfg.idioma < L_COUNT) ? g_cfg.idioma : 0]);
     fprintf(f, "botonX=%.3f\n", g_cfg.btnX);
     fprintf(f, "botonY=%.3f\n", g_cfg.btnY);
+    fprintf(f, "botonRuedaX=%.3f\n", g_cfg.btnRuedaX);  // v1.9.55: posicion propia del boton de la rueda (-1 = encima del flotante)
+    fprintf(f, "botonRuedaY=%.3f\n", g_cfg.btnRuedaY);
     fprintf(f, "botonTam=%d\n", g_cfg.btnTam);
     fprintf(f, "botonOpac=%d\n", g_cfg.btnOpac);
     fprintf(f, "botonBloq=%d\n", g_cfg.btnBloq);
@@ -1200,7 +1202,7 @@ static void SaveCfg() {
     fclose(f);
 }
 static void LoadCfg() {
-    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
+    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
     bool fromOld = false;
     FILE* f = fopen(CfgPath().c_str(), "r");
     if (!f) {
@@ -1242,6 +1244,8 @@ static void LoadCfg() {
         }
         else if (strcmp(k, "botonX") == 0) g_cfg.btnX = (float)atof(v);
         else if (strcmp(k, "botonY") == 0) g_cfg.btnY = (float)atof(v);
+        else if (strcmp(k, "botonRuedaX") == 0) g_cfg.btnRuedaX = (float)atof(v);  // v1.9.55: posicion propia del boton de la rueda
+        else if (strcmp(k, "botonRuedaY") == 0) g_cfg.btnRuedaY = (float)atof(v);
         else if (strcmp(k, "botonTam") == 0) g_cfg.btnTam = atoi(v);
         else if (strcmp(k, "botonOpac") == 0) g_cfg.btnOpac = atoi(v);
         else if (strcmp(k, "botonBloq") == 0) g_cfg.btnBloq = atoi(v);
@@ -1280,6 +1284,8 @@ static void LoadCfg() {
     if (g_cfg.idioma < 0) g_cfg.idioma = 0; if (g_cfg.idioma >= L_COUNT) g_cfg.idioma = 0;
     if (g_cfg.btnX < -1.0f) g_cfg.btnX = -1.0f; if (g_cfg.btnX > 1.0f) g_cfg.btnX = 1.0f;
     if (g_cfg.btnY < -1.0f) g_cfg.btnY = -1.0f; if (g_cfg.btnY > 1.0f) g_cfg.btnY = 1.0f;
+    if (g_cfg.btnRuedaX < -1.0f) g_cfg.btnRuedaX = -1.0f; if (g_cfg.btnRuedaX > 1.0f) g_cfg.btnRuedaX = 1.0f;  // v1.9.55
+    if (g_cfg.btnRuedaY < -1.0f) g_cfg.btnRuedaY = -1.0f; if (g_cfg.btnRuedaY > 1.0f) g_cfg.btnRuedaY = 1.0f;
     if (g_cfg.btnTam < 50) g_cfg.btnTam = 50; if (g_cfg.btnTam > 150) g_cfg.btnTam = 150;
     if (g_cfg.btnOpac < 30) g_cfg.btnOpac = 30; if (g_cfg.btnOpac > 100) g_cfg.btnOpac = 100;
     if (g_cfg.btnBloq != 0 && g_cfg.btnBloq != 1) g_cfg.btnBloq = 0;
@@ -1317,12 +1323,16 @@ static std::chrono::steady_clock::time_point g_lastStationCmd;  // v1.2: ultimo 
 static int g_selected = 1;      // segmento bajo el dedo mientras la rueda esta abierta
 static bool g_open = false;
 static std::chrono::steady_clock::time_point g_wheelAnimStart = std::chrono::steady_clock::now();  // v2.54: cuando se abrio la rueda (para la animacion)
+static bool g_wheelClosing = false;  // v1.9.55: la rueda se esta cerrando con animacion (encoge y se funde)
+static std::chrono::steady_clock::time_point g_wheelCloseStart = std::chrono::steady_clock::now();  // v1.9.55: cuando empezo a cerrarse
 static bool g_btnPending = false;  // v2.1: un toque al boton flotante esperando (siguiente estacion si no hay segundo toque)
 static std::chrono::steady_clock::time_point g_btnPendingAt;
 static bool g_btnDrag = false;   // v2.16: el toque actual empezo en el boton flotante (puede ser arrastre)
 static bool g_btnMoved = false;  // v2.16: el arrastre supero el umbral (ya no es un toque)
 static bool g_wheelBtnDown = false;  // v1.9.54: el toque actual empezo en el boton propio de la rueda
 static float g_wheelBtnSX = 0.0f, g_wheelBtnSY = 0.0f;  // v1.9.54: posicion inicial del toque en el boton de la rueda
+static bool g_wheelBtnMoved = false;  // v1.9.55: el arrastre del boton de la rueda supero el umbral (ya no es un toque)
+static float g_wheelDragBX = 0.0f, g_wheelDragBY = 0.0f;  // v1.9.55: posicion base (fraccion) del boton de la rueda al empezar el arrastre
 static float g_dragSX = 0, g_dragSY = 0;  // v2.16: donde empezo el dedo
 static float g_dragBX = 0, g_dragBY = 0;  // v2.16: posicion del boton al empezar (fraccion de W/H)
 static bool g_wheelTouch = false;   // v1.5: el toque actual empezo/sobre el anillo de la rueda
@@ -1847,6 +1857,55 @@ static void LoadIconSet(GLuint* tex, const char* etiqueta, int set) {
     Log("  %s %s radio_current.png (%s)", etiqueta, tex[0] ? "ok    " : "FALTA ", src0);
     Log("iconos %s cargados: %d/13 (+marco %s)", etiqueta, ok, tex[0] ? "si" : "no");
 }
+// v1.9.55: icono propio del boton de la rueda desde carpeta (personalizable):
+// si hay un PNG en GTAVRadioMusic/boton/ (en cualquiera de las carpetas de
+// musica), ese PNG REEMPLAZA al icono incrustado del .so; si no hay ninguno,
+// se usa el incrustado. Busca "boton.png" primero y si no, el primer *.png
+// en orden alfabetico. El PNG debe tener fondo transparente.
+static GLuint LoadCustomWheelIcon() {
+    for (int d = 0; d < UT_NUM_MUSIC_DIRS; d++) {
+        std::string dir = std::string(UT_MUSIC_DIRS[d]) + "/boton";
+        std::string cand;
+        // 1) boton.png exacto
+        {
+            std::string p = dir + "/boton.png";
+            FILE* f = fopen(p.c_str(), "rb");
+            if (f) { fclose(f); cand = p; }
+        }
+        // 2) si no, el primer *.png alfabetico de la carpeta
+        if (cand.empty()) {
+            DIR* dp = opendir(dir.c_str());
+            if (dp) {
+                std::string best;
+                struct dirent* ent;
+                while ((ent = readdir(dp)) != nullptr) {
+                    std::string n = ent->d_name;
+                    if (n.size() > 4 && n.substr(n.size() - 4) == ".png") {
+                        if (best.empty() || n < best) best = n;
+                    }
+                }
+                closedir(dp);
+                if (!best.empty()) cand = dir + "/" + best;
+            }
+        }
+        if (cand.empty()) continue;
+        FILE* f = fopen(cand.c_str(), "rb");
+        if (!f) continue;
+        fseek(f, 0, SEEK_END);
+        long len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (len <= 0 || len > 8 * 1024 * 1024) { fclose(f); continue; }
+        std::vector<unsigned char> buf((size_t)len);
+        size_t rd = fread(buf.data(), 1, buf.size(), f);
+        fclose(f);
+        if (rd != buf.size()) continue;
+        GLuint t = LoadPngFromMemory(buf.data(), buf.size(), false);
+        if (t) { Log("  boton rueda: icono propio %s (%ld bytes)", cand.c_str(), len); return t; }
+        Log("  boton rueda: no se pudo decodificar %s (se usa el incrustado)", cand.c_str());
+        return 0;
+    }
+    return 0;
+}
 static void LoadRadioTextures() {
     if (g_texTried) return; g_texTried = true;
     // v2.16: iconos normales en files del juego (Android/data/.../files/VHudRadio/radio/);
@@ -1859,10 +1918,16 @@ static void LoadRadioTextures() {
     int ok = 0; for (int i = 1; i <= 13; i++) if (g_tex[i]) ok++;
     if (ok == 0) Log("  !! sin iconos incrustados en el .so (no deberia pasar)");
     // v1.9.54: icono del boton de la rueda (incrustado, no de archivo).
+    // v1.9.55: si hay un PNG en GTAVRadioMusic/boton/, ESE reemplaza al
+    // incrustado; si no, se usa el incrustado (regla de Daniel).
     {
-        std::vector<unsigned char> raw = B64Decode(kWheelIconB64);
-        if (!raw.empty()) g_texWheel = LoadPngFromMemory(raw.data(), raw.size(), false);
-        Log("  boton rueda: %s", g_texWheel ? "ok (icono incrustado)" : "FALTA (usa el icono de la emisora)");
+        GLuint custom = LoadCustomWheelIcon();
+        if (custom) { g_texWheel = custom; }
+        else {
+            std::vector<unsigned char> raw = B64Decode(kWheelIconB64);
+            if (!raw.empty()) g_texWheel = LoadPngFromMemory(raw.data(), raw.size(), false);
+            Log("  boton rueda: %s", g_texWheel ? "ok (icono incrustado)" : "FALTA (usa el icono de la emisora)");
+        }
     }
 }
 // v2.55: recargar iconos (al cambiar el interruptor de fondo de color):
@@ -2220,14 +2285,20 @@ static bool FloatBtnHit(float x, float y, float W, float H) {
     return false;
 }
 // v1.9.54: boton propio de la rueda (abre/cierra la rueda sin usar el
-// claxon). Va pegado ENCIMA del boton flotante (se mueve con el) y mide lo
-// mismo que su icono; se sujeta a la pantalla si el boton esta muy arriba.
+// claxon). v1.9.55: SEPARADO del flotante: tiene su propia posicion
+// (botonRuedaX/botonRuedaY en el .ini); si es -1 (sin mover), va encima del
+// flotante como antes. Se sujeta a la pantalla si queda fuera.
 static void WheelBtnGeom(float W, float H, ImVec2& wp, float& ws) {
     ImVec2 ip, lp, ls; float bs;
     FloatBtnGeom(W, H, ip, lp, ls, bs);
     ws = bs;
-    float gap = H * 0.012f;
-    float wx = ip.x, wy = ip.y - ws - gap;
+    float wx, wy;
+    if (g_cfg.btnRuedaX >= 0.0f && g_cfg.btnRuedaY >= 0.0f) {
+        wx = g_cfg.btnRuedaX * W; wy = g_cfg.btnRuedaY * H;
+    } else {
+        float gap = H * 0.012f;
+        wx = ip.x; wy = ip.y - ws - gap;
+    }
     if (wy < 0.0f) wy = 0.0f;
     if (wy + ws > H) wy = H - ws;
     if (wx < 0.0f) wx = 0.0f;
@@ -2949,11 +3020,18 @@ static void DrawWheel(float W, float H) {
     // (DrawFrame usa DrawButtonGL y sale antes), asi que el static de antes
     // nunca se reseteaba al cerrar y la animacion solo se veia "entre veces".
     // Dura 250 ms y crece desde 0.75 para que siempre se note.
+    // v1.9.55: animacion de CIERRE: al cerrar, la rueda encoge de 1.0 a 0.75
+    // y se funde en 250 ms (anim va de 1 a 0); si esta apagada, anim = 1.
     float anim = 1.0f;
     if (g_cfg.animacion && g_open) {
         float t = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - g_wheelAnimStart).count() / 250.0f;
         if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
         anim = 1.0f - (1.0f - t) * (1.0f - t);  // ease-out
+    } else if (g_cfg.animacion && g_wheelClosing) {
+        float t = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - g_wheelCloseStart).count() / 250.0f;
+        if (t < 0.0f) t = 0.0f;
+        if (t >= 1.0f) { g_wheelClosing = false; anim = 0.0f; }
+        else anim = (1.0f - t) * (1.0f - t);  // ease-in: de 1 a 0 (encoge y se funde)
     }
     // v2.2: boton flotante + etiqueta con estacion y genero; v2.16: sin radio
     // el boton no se ve (y el panel tampoco se puede abrir); con opacidad ajustable
@@ -3012,7 +3090,7 @@ static void DrawWheel(float W, float H) {
         }
     }
 
-    if (!g_open) return;
+    if (!g_open && !g_wheelClosing) return;  // v1.9.55: durante el cierre con animacion la rueda se sigue dibujando
     // v2.2: rueda estilo GTA V - 12 logos en circulo + apagar la radio en el centro
     ImVec2 c(W * 0.5f, H * 0.5f);
     float R = WheelR(H);
@@ -3797,7 +3875,7 @@ static void DrawSettings(float W, float H) {
     // v2.23: botones en rejilla de 2 columnas con icono (como la imagen)
     {
         float bw = (ImGui::GetContentRegionAvail().x - H*0.010f) * 0.5f;
-        if (PanelButtonIcon(S(STR_BTN_RESET_POS), H, bw, IC_RESET)) { g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("posicion del boton restablecida"); }
+        if (PanelButtonIcon(S(STR_BTN_RESET_POS), H, bw, IC_RESET)) { g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("posicion del boton restablecida"); }
         ImGui::SameLine(0, H*0.010f);
         if (PanelButtonIcon(S(STR_PREVIEW), H, bw, IC_EYE)) {
             g_preview = true; g_open = true; g_wheelAnimStart = std::chrono::steady_clock::now(); g_selected = g_current; g_settings = false;
@@ -3985,13 +4063,13 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         static bool slowOn = false;
         static float savedTimeScale = 1.0f, savedSlowScale = 0.3f;
         static bool savedSlowActive = false;
-        if (g_open && !slowOn && g_cfg.camaraLenta) {
+        if ((g_open || g_wheelClosing) && !slowOn && g_cfg.camaraLenta) {
             slowOn = true;
             if (g_timeScale) savedTimeScale = *g_timeScale;
             if (g_slowScale) savedSlowScale = *g_slowScale;
             if (g_slowActive) savedSlowActive = *g_slowActive;
             Log("ralentizacion: activada (guardada escala=%.2f)", savedTimeScale);
-        } else if (!g_open && slowOn) {
+        } else if (!g_open && !g_wheelClosing && slowOn) {
             slowOn = false;
             if (g_slowActive) *g_slowActive = savedSlowActive;
             if (g_slowScale) *g_slowScale = savedSlowScale;
@@ -4065,6 +4143,21 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_cfg.btnX = nx; g_cfg.btnY = ny;
                 }
             }
+            // v1.9.55: arrastrar el boton propio de la rueda (separado del
+            // flotante; mismo bloqueo de posicion que el flotante).
+            if (g_wheelBtnDown && !g_cfg.btnBloq) {
+                float dx = e.x - g_wheelBtnSX, dy = e.y - g_wheelBtnSY;
+                float thr = (float)h * 0.02f;
+                if (!g_wheelBtnMoved && dx*dx + dy*dy > thr*thr) g_wheelBtnMoved = true;
+                if (g_wheelBtnMoved) {
+                    float bs = BtnSize((float)h);
+                    float nx = g_wheelDragBX + dx / (float)w;
+                    float ny = g_wheelDragBY + dy / (float)h;
+                    if (nx < 0.0f) nx = 0.0f; if (nx > 1.0f - bs / (float)w) nx = 1.0f - bs / (float)w;
+                    if (ny < 0.0f) ny = 0.0f; if (ny > 1.0f - bs / (float)h) ny = 1.0f - bs / (float)h;
+                    g_cfg.btnRuedaX = nx; g_cfg.btnRuedaY = ny;
+                }
+            }
         } else if (e.kind == 1) { if (g_open || g_preview || g_settings || g_trackList) io.AddMouseButtonEvent(0, true); mouseDown = true;  // v2.50: con solo el boton, el toque no llega a ImGui
             // v2.3: en el menu de pausa los toques son del juego; con el panel abierto, del panel (ImGui)
             if (g_paused) {
@@ -4092,7 +4185,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             // soltar (si el dedo no se movio), como el boton flotante.
             if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
                 if (WheelBtnHit(g_touchX, g_touchY, (float)w, (float)h)) {
-                    g_wheelBtnDown = true; g_wheelBtnSX = g_touchX; g_wheelBtnSY = g_touchY;
+                    g_wheelBtnDown = true; g_wheelBtnMoved = false; g_wheelBtnSX = g_touchX; g_wheelBtnSY = g_touchY;
+                    ImVec2 wp; float ws;
+                    WheelBtnGeom((float)w, (float)h, wp, ws);
+                    g_wheelDragBX = wp.x / (float)w; g_wheelDragBY = wp.y / (float)h;
                 }
             }
             // v2.2: boton flotante - un toque = siguiente estacion; dos toques = panel de personalizacion
@@ -4135,11 +4231,11 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         } else if (e.kind == 2) { if (g_open || g_preview || g_settings || g_trackList) { io.AddMouseButtonEvent(0, false); io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); }  // v2.50: con solo el boton, el toque no llega a ImGui
             // v1.9.54: el toque al boton propio de la rueda se resuelve al
             // soltar (si el dedo no se movio mas de 0.02H): abre/cierra la rueda.
+            // v1.9.55: si se movio, fue un arrastre: se guarda la posicion propia.
             if (g_wheelBtnDown) {
                 g_wheelBtnDown = false;
-                float dx = g_touchX - g_wheelBtnSX, dy = g_touchY - g_wheelBtnSY;
-                float thr = (float)h * 0.02f;
-                if (dx*dx + dy*dy <= thr*thr && !g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+                if (g_wheelBtnMoved) { SaveCfg(); Log("boton rueda movido a (%.2f, %.2f)", g_cfg.btnRuedaX, g_cfg.btnRuedaY); }
+                else if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
                     ToggleWheel("boton rueda");
                 }
             }
@@ -4237,7 +4333,21 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     static bool prevSettings = false;
     if (g_settings && !prevSettings) g_panelJustOpened = true;
     prevSettings = g_settings;
-    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && !g_trackList && g_hasRadio && g_cfg.botonVisible;
+    // v1.9.55: animacion de cierre: si la rueda estaba abierta y ahora esta
+    // cerrada volviendo al juego (no a la lista/panel/vista previa, y
+    // todavia en el vehiculo), empieza la animacion de cierre (250 ms).
+    // Si se vuelve a abrir, el cierre se cancela.
+    {
+        static bool wasOpen = false;
+        if (g_open) { wasOpen = true; g_wheelClosing = false; }
+        else if (wasOpen) {
+            wasOpen = false;
+            if (!g_preview && !g_settings && !g_trackList && g_inVehicle && !g_paused && g_cfg.animacion) {
+                g_wheelClosing = true; g_wheelCloseStart = std::chrono::steady_clock::now();
+            }
+        }
+    }
+    bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && !g_trackList && !g_wheelClosing && g_hasRadio && g_cfg.botonVisible;
     if (onlyButton && g_inited) {
         // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
         if (!DrawButtonGL((float)w, (float)h)) {
