@@ -1294,6 +1294,7 @@ typedef void (*ReportAudioEventFn)(void*, int, float, float);
 // mas abajo; sin esto el compilador falla por orden de declaracion).
 static uintptr_t UT_LibBase(const char* libName);
 static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, const char* name);
+static bool UT_WritePtr64(uintptr_t addr, uintptr_t value, const char* name);  // v1.9.48
 
 // v1.9.20 (Daniel): volcado hex para encontrar la variable de EMISORA.
 // El log de la 1.9.19 probo que EMISORA NO lee los getters ni mgr+0xAD/0xE9:
@@ -1564,6 +1565,41 @@ static void UT_AudioScreenCtor_hook(void* self) {
     }
 }
 
+// v1.9.48 (Daniel): la fila EMISORA mostraba "13" con Radio Off porque su
+// lista de nombres solo llega a la 12 (max=12) y la 13 quedaba fuera de
+// rango: SettingSelection::Render retorna sin llamar a CText::Get
+// (0x361d54 cmp w11, w12; b.gt 0x361e50). Arreglo (verificado en
+// libGTASA.so): (1) subir el max de esa fila de 12 a 13 (en los dos
+// objetos de ajustes) y (2) copiar la entrada de nombres de la 12 a la 13,
+// porque la 13 hoy es una cadena vacía (solo subir el max la dejaría en
+// blanco). Con eso la fila lee la clave y el redirect de CText::Get la
+// convierte a FEA_NON -> "RADIO OFF". La 12 sigue mostrando
+// "CANCIONES DEL USUARIO" como ahora.
+static void UT_FixEmisora13() {
+    // (1) max 12 -> 13 en los dos objetos de ajustes (elemento 14 +0x1c = MS+0x24c).
+    if (ut_mobileSettings) {
+        int* mx = (int*)((char*)ut_mobileSettings + 0x24c);
+        if (*mx == 12) { *mx = 13; Log("UT: EMISORA max 12 -> 13 (GetSym)"); }
+    }
+    if (ut_mobileSettingsReal && ut_mobileSettingsReal != ut_mobileSettings) {
+        int curReal = *(int*)((char*)ut_mobileSettingsReal + 0x240);
+        if (curReal >= 0 && curReal <= 13) {
+            int* mx = (int*)((char*)ut_mobileSettingsReal + 0x24c);
+            if (*mx == 12) { *mx = 13; Log("UT: EMISORA max 12 -> 13 (GOT)"); }
+        }
+    }
+    // (2) copiar la entrada de nombres de la 12 a la 13.
+    void* ms = ut_mobileSettingsReal ? ut_mobileSettingsReal : ut_mobileSettings;
+    if (!ms) return;
+    uintptr_t* arr = *(uintptr_t**)((char*)ms + 0x238);  // elemento 14 +0x08
+    if (!arr) { Log("UT: EMISORA nombres: sin arreglo"); return; }
+    const char* k11 = (const char*)arr[11];  // emisora 12
+    const char* k12 = (const char*)arr[12];  // emisora 13
+    if (!k11 || !k11[0]) { Log("UT: EMISORA nombres: entrada 12 vacia, no se copia"); return; }
+    if (k12 && k12[0]) { Log("UT: EMISORA nombres: entrada 13 ya tiene texto, no se copia"); return; }
+    UT_WritePtr64((uintptr_t)&arr[12], (uintptr_t)k11, "EMISORA nombre 13");
+}
+
 static void UT_RadioSelectionCtor_hook(void* self) {
     // v1.9.32: sincronizar ANTES del ctor original: el dial lee MS+0x240 al
     // construirse; si se escribe despues, nace con la emisora vieja.
@@ -1584,6 +1620,7 @@ static void UT_RadioSelectionCtor_hook(void* self) {
         ut_menuPatchesDone = true;
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x364628, 0xF1002EFF, 0xF10032FF, "menu 12 huecos A");
         UT_Patch32(UT_LibBase("libGTASA.so") + 0x3646E0, 0x7100303F, 0x7100343F, "menu 12 huecos B");
+        UT_FixEmisora13();  // v1.9.48: max 12->13 + nombre de la 13 (Radio Off)
     }
     // v1.9.17 (Daniel): sincronizar el dial con la emisora real. Al entrar
     // a opciones de sonido estando en otra emisora (p. ej. CSR 8), el dial
@@ -1819,6 +1856,46 @@ static bool UT_Patch32(uintptr_t addr, uint32_t expected, uint32_t replacement, 
     uint32_t after = *(volatile uint32_t*)addr;
     if (after != replacement) { Log("UT: parche %s: no quedo (0x%08X)", name, after); return false; }
     Log("UT: parche %s aplicado (0x%08X -> 0x%08X)", name, expected, replacement);
+    return true;
+}
+
+// v1.9.48: escribe un puntero de 64 bits con mprotect, restaurando la
+// protección ORIGINAL de la página (leída de /proc/self/maps). Para el
+// arreglo de nombres de EMISORA, que puede vivir en .rodata (solo lectura)
+// o en .data (ya escribible): restaurar a R+X a ciegas rompería una página
+// .data al quitarle la escritura.
+static bool UT_WritePtr64(uintptr_t addr, uintptr_t value, const char* name) {
+    long pg = sysconf(_SC_PAGESIZE);
+    uintptr_t page = addr & ~((uintptr_t)pg - 1);
+    int origProt = PROT_READ;  // por defecto, si no se puede leer el mapa
+    {
+        FILE* f = fopen("/proc/self/maps", "r");
+        if (f) {
+            char line[512];
+            while (fgets(line, sizeof(line), f)) {
+                uintptr_t lo = 0, hi = 0; char perms[8] = {0};
+                if (sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3) {
+                    if (addr >= lo && addr < hi) {
+                        origProt = 0;
+                        if (perms[0] == 'r') origProt |= PROT_READ;
+                        if (perms[1] == 'w') origProt |= PROT_WRITE;
+                        if (perms[2] == 'x') origProt |= PROT_EXEC;
+                        break;
+                    }
+                }
+            }
+            fclose(f);
+        }
+    }
+    if (mprotect((void*)page, (size_t)pg, origProt | PROT_WRITE) != 0) {
+        Log("UT: %s: mprotect fallo", name); return false;
+    }
+    *(volatile uintptr_t*)addr = value;
+    __builtin___clear_cache((char*)addr, (char*)addr + 8);
+    mprotect((void*)page, (size_t)pg, origProt);
+    uintptr_t after = *(volatile uintptr_t*)addr;
+    if (after != value) { Log("UT: %s: no quedo (0x%llX)", name, (unsigned long long)after); return false; }
+    Log("UT: %s aplicado", name);
     return true;
 }
 static void UT_ApplyStation12Patches() {
