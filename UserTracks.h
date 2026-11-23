@@ -284,8 +284,37 @@ static UTAudioFmt UT_AudioExt(const char* name) {
 }
 static bool UT_HasAudioExt(const char* name) { return UT_AudioExt(name) != UT_FMT_UNKNOWN; }
 
+// v1.9.72: orden natural para la lista de canciones (un usuario de Discord):
+// "2" va antes que "11" (con strcmp, "11" iba antes que "2" porque '1' < '2').
+// Cuando ambos lados tienen digitos en la misma posicion, se comparan como
+// numeros (por cantidad de digitos y luego digito a digito); el resto se
+// compara por caracteres, igual que strcmp.
+static bool UT_NaturalLess(const char* a, const char* b) {
+    const unsigned char* pa = (const unsigned char*)a;
+    const unsigned char* pb = (const unsigned char*)b;
+    while (*pa && *pb) {
+        if (*pa >= '0' && *pa <= '9' && *pb >= '0' && *pb <= '9') {
+            const unsigned char* sa = pa; while (*sa == '0') sa++;
+            const unsigned char* sb = pb; while (*sb == '0') sb++;
+            const unsigned char* ea = sa; while (*ea >= '0' && *ea <= '9') ea++;
+            const unsigned char* eb = sb; while (*eb >= '0' && *eb <= '9') eb++;
+            size_t la = (size_t)(ea - sa), lb = (size_t)(eb - sb);
+            if (la != lb) return la < lb;  // mas digitos = numero mayor
+            int c = la ? memcmp(sa, sb, la) : 0;
+            if (c != 0) return c < 0;
+            size_t za = (size_t)(sa - pa), zb = (size_t)(sb - pb);
+            if (za != zb) return za > zb;  // mismo valor: mas ceros a la izquierda va primero
+            pa = ea; pb = eb;
+        } else {
+            if (*pa != *pb) return *pa < *pb;
+            pa++; pb++;
+        }
+    }
+    return *pa == 0 && *pb != 0;
+}
+
 // Escanea las 6 carpetas GTAVRadioMusic en orden; la primera con al menos un archivo de
-// audio gana. Rellena ut_tracks (alfabetico por basename) y el orden de
+// audio gana. Rellena ut_tracks (orden natural por basename) y el orden de
 // reproduccion. Devuelve true si hay al menos una pista.
 static bool UT_ScanMusic() {
     UT_EnsureRadioMusicFolder();  // v1.4: crear GTAVRadioMusic si no existe
@@ -316,7 +345,7 @@ static bool UT_ScanMusic() {
     }
     if (ut_tracks.empty()) return false;
     std::sort(ut_tracks.begin(), ut_tracks.end(), [](const std::string& a, const std::string& b) {
-        return strcmp(UT_Basename(a.c_str()), UT_Basename(b.c_str())) < 0;
+        return UT_NaturalLess(UT_Basename(a.c_str()), UT_Basename(b.c_str()));
     });
     ut_order.resize(ut_tracks.size());
     for (size_t i = 0; i < ut_order.size(); i++) ut_order[i] = (int)i;
