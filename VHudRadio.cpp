@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.65-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.66-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.65-beta"
+#define VHUDRADIO_VERSION "1.9.66-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1105,6 +1105,29 @@ typedef void (*StartRadioAudioFn)(void*, signed char, signed char);
 static StartRadioAudioFn g_startAudio = nullptr;
 typedef void (*StartRadioTrackFn)(void*, signed char, signed char, float, unsigned char);
 static StartRadioTrackFn g_startTrack = nullptr;  // el que usa el mod GTA6Radio 4.0 en 2.10 (verificado por Probe: ok)
+
+// ---- funciones RW para crear la textura del boton nativo (v1.9.66) ----
+// El cargador de PNG de SAUtils (LoadRwTextureFromPNG) devuelve NULL con
+// un PNG valido que existe (log 1.9.65: boton_nativo.png, 19860 bytes,
+// vt33=0x27924 correcto), asi que la textura se crea directamente desde
+// los pixeles decodificados con stb_image. Nombres mangled C++ exportados
+// en libGTASA.so 2.10 (verificados con nm -D). Nunca se llaman si faltan.
+typedef void* (*RwImageCreateFn)(int, int, int);
+typedef void* (*RwImageAllocFn)(void*);
+typedef int (*RwImageFindFmtFn)(void*, int, int*, int*, int*, int*);
+typedef void* (*RwRasterCreateFn)(int, int, int, int);
+typedef void* (*RwRasterSetFromImageFn)(void*, void*);
+typedef void* (*RwTextureCreateFn)(void*);
+typedef void (*RwImageDestroyFn)(void*);
+typedef void (*RwRasterDestroyFn)(void*);
+static RwImageCreateFn g_rwImageCreate = nullptr;
+static RwImageAllocFn g_rwImageAlloc = nullptr;
+static RwImageFindFmtFn g_rwImageFindFmt = nullptr;
+static RwRasterCreateFn g_rwRasterCreate = nullptr;
+static RwRasterSetFromImageFn g_rwRasterSetFromImage = nullptr;
+static RwTextureCreateFn g_rwTextureCreate = nullptr;
+static RwImageDestroyFn g_rwImageDestroy = nullptr;
+static RwRasterDestroyFn g_rwRasterDestroy = nullptr;
 
 // ---- claxon por boton 7 directo (v1.8): CTouchInterface::m_pWidgets[7] ----
 // IsTouchDown resulto ser indice de dedo, no de boton (v1.7). El claxon es el
@@ -2097,14 +2120,21 @@ static void DoStartRadio(int id) {
     // modoCambio=2): la rueda cambia bien PERO no actualiza EMISORA (el juego
     // sigue reaplicando la guardada al abrir el dial); la 1.9.25 lo corrige
     // redirigiendo la reaplicacion en UT_DiagTick, no cambiando de via.
-    if (g_cfg.modoCambio == 2 && g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0) [modoCambio=2]", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
+    // v1.9.66: marcar el cambio como pedido por el usuario TAMBIEN en modo
+    // 2 (antes solo el modo 0 lo marcaba): sin la marca, el hook lo
+    // confunde con el Radio Off que el juego pone solo al entrar al auto
+    // y la gracia de 2 s se queda en la 12 sin parar el reproductor (log
+    // 1.9.65: "se queda en la 12 al subir al vehiculo (AudioStart pedia
+    // 13)" tras tocar el boton flotante 12 -> 13). La llamada del juego no
+    // pasa por aqui, asi que su gracia sigue intacta.
+    if (g_cfg.modoCambio == 2 && g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0) [modoCambio=2]", id, kStationName[id]); ut_userStationCmd = true; g_startAudio(g_audioEngine, (signed char)id, 0); ut_userStationCmd = false; }
     // v1.2: StartRadio primero (es el que cambia a una estacion concreta).
     // v1.3: cada llamada lleva su 'this' (el objeto global del juego).
     // v1.8: se marca que el cambio lo pidio el usuario (rueda/boton) para
     // que el hook no lo confunda con el Radio Off que el juego pone solo al
     // entrar al auto (ese NO para el reproductor: gracia de 2 s).
     else if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0) [modoCambio=%d]", id, kStationName[id], g_cfg.modoCambio); ut_userStationCmd = true; g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); ut_userStationCmd = false; }
-    else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); g_startAudio(g_audioEngine, (signed char)id, 0); }
+    else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); ut_userStationCmd = true; g_startAudio(g_audioEngine, (signed char)id, 0); ut_userStationCmd = false; }
     else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
     else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
     else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
@@ -2815,6 +2845,108 @@ static void NativeWheelLogVtable() {
         (unsigned long)((uintptr_t)g_sautilsVt[33] - base),
         (unsigned long)((uintptr_t)g_sautilsVt[35] - base));
 }
+// v1.9.66: crea una RwTexture directamente desde un archivo de imagen
+// (PNG o JPEG), sin usar LoadRwTextureFromPNG de SAUtils: ese cargador
+// devuelve NULL con un PNG valido que existe (log 1.9.65:
+// boton_nativo.png, 19860 bytes, vt33=0x27924 correcto). Pasos: stb
+// decodifica el archivo (lee cualquier formato, igual que el boton GL),
+// lineArt si no hay alfa (copia del bloque 1.9.58 de LoadPngFromMemory),
+// RwImage con los pixeles, RwImageFindRasterFormat + RwRasterCreate +
+// RwRasterSetFromImage + RwTextureCreate (mismo orden que el cargador de
+// SAUtils, pero con los pixeles ya decodificados). Devuelve la textura o
+// nullptr. Los fallos se registran una sola vez por sesion (static).
+static void* NativeWheelTextureFromFile(const std::string& src) {
+    static bool logged = false;
+    // Las funciones RW se resolvieron en UT_InstallHooks (ver el log de
+    // arranque: "ok _Z13RwImageCreateiii" etc.); si falta alguna, no se
+    // intenta nada y se cae al boton GL.
+    if (!g_rwImageCreate || !g_rwImageAlloc || !g_rwImageFindFmt ||
+        !g_rwRasterCreate || !g_rwRasterSetFromImage || !g_rwTextureCreate ||
+        !g_rwImageDestroy || !g_rwRasterDestroy) {
+        if (!logged) { logged = true; Log("  boton nativo: textura RW sin funciones RW (FALTA en el log de arranque)"); }
+        return nullptr;
+    }
+    FILE* f = fopen(src.c_str(), "rb");
+    if (!f) { if (!logged) { logged = true; Log("  boton nativo: textura RW no se pudo leer %s", src.c_str()); } return nullptr; }
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); return nullptr; }
+    std::vector<unsigned char> buf((size_t)len);
+    size_t rd = fread(buf.data(), 1, (size_t)len, f);
+    fclose(f);
+    if (rd != (size_t)len) return nullptr;
+    int w = 0, h = 0, comp = 0;
+    unsigned char* px = stbi_load_from_memory(buf.data(), (int)len, &w, &h, &comp, 4);
+    if (!px || w <= 0 || h <= 0) {
+        if (px) stbi_image_free(px);
+        if (!logged) { logged = true; Log("  boton nativo: textura RW stb no pudo decodificar %s", src.c_str()); }
+        return nullptr;
+    }
+    // lineArt (copia del bloque 1.9.58 de LoadPngFromMemory): si la imagen
+    // es opaca (JPEG con fondo blanco), quitar el fondo con flood-fill
+    // desde las esquinas y el disco gris; quedan solo los segmentos y la
+    // nota en blanco y los contornos negros, sobre transparente.
+    {
+        bool hasAlpha = false;
+        for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
+        if (!hasAlpha) {
+            std::vector<char> seen((size_t)w * h, 0);
+            std::vector<int> stack;
+            auto isBg = [&](int x, int y) {
+                unsigned char* p = px + (y * w + x) * 4;
+                return p[0] > 240 && p[1] > 240 && p[2] > 240;
+            };
+            const int sx[4] = {0, w - 1, 0, w - 1};
+            const int sy[4] = {0, 0, h - 1, h - 1};
+            for (int k = 0; k < 4; k++) {
+                int x = sx[k], y = sy[k];
+                if (isBg(x, y) && !seen[y * w + x]) { seen[y * w + x] = 1; stack.push_back(y * w + x); }
+            }
+            while (!stack.empty()) {
+                int idx = stack.back(); stack.pop_back();
+                px[idx * 4 + 3] = 0;
+                int x = idx % w, y = idx / w;
+                const int dx[4] = {1, -1, 0, 0};
+                const int dy[4] = {0, 0, 1, -1};
+                for (int d = 0; d < 4; d++) {
+                    int nx = x + dx[d], ny = y + dy[d];
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        int nidx = ny * w + nx;
+                        if (!seen[nidx] && isBg(nx, ny)) { seen[nidx] = 1; stack.push_back(nidx); }
+                    }
+                }
+            }
+            for (int i = 0; i < w * h; i++) {
+                unsigned char* p = px + i * 4;
+                if (p[3] == 0) continue;
+                int m = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
+                if (m >= 96 && m <= 240) p[3] = 0;
+            }
+        }
+    }
+    // RwImage de 32 bits con los pixeles (layout real: 40 bytes,
+    // cpPixels en +24; ver el trabajo de ARCX).
+    struct RwImageLite { int32_t flags, width, height, depth, stride; uint8_t _pad[4]; uint8_t* cpPixels; void* palette; };
+    void* img = g_rwImageCreate(w, h, 32);
+    if (!img) { stbi_image_free(px); if (!logged) { logged = true; Log("  boton nativo: textura RW RwImageCreate devolvio NULL"); } return nullptr; }
+    if (!g_rwImageAlloc(img)) { g_rwImageDestroy(img); stbi_image_free(px); if (!logged) { logged = true; Log("  boton nativo: textura RW RwImageAllocatePixels devolvio NULL"); } return nullptr; }
+    RwImageLite* im = (RwImageLite*)img;
+    if (!im->cpPixels) { g_rwImageDestroy(img); stbi_image_free(px); if (!logged) { logged = true; Log("  boton nativo: textura RW sin cpPixels"); } return nullptr; }
+    for (int y = 0; y < h; y++) memcpy(im->cpPixels + (size_t)y * (size_t)im->stride, px + (size_t)y * (size_t)w * 4, (size_t)w * 4);
+    stbi_image_free(px);
+    int fw = 0, fh = 0, fd = 0, ff = 0;
+    if (!g_rwImageFindFmt(img, 4, &fw, &fh, &fd, &ff)) { g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwImageFindRasterFormat devolvio 0"); } return nullptr; }
+    void* ras = g_rwRasterCreate(fw, fh, fd, ff);
+    if (!ras) { g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwRasterCreate devolvio NULL"); } return nullptr; }
+    if (!g_rwRasterSetFromImage(ras, img)) { g_rwRasterDestroy(ras); g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwRasterSetFromImage devolvio NULL"); } return nullptr; }
+    void* tex = g_rwTextureCreate(ras);
+    g_rwImageDestroy(img);
+    if (!tex) { g_rwRasterDestroy(ras); if (!logged) { logged = true; Log("  boton nativo: textura RW RwTextureCreate devolvio NULL"); } return nullptr; }
+    // No se destruyen ras ni tex: SetWidgetIcon copia la textura y la
+    // original se queda viva (se crea una sola vez por sesion).
+    return tex;
+}
 static bool NativeWheelCreate(float W, float H) {
     if (g_natWidget) return true;
     if (!SAUtilsGet()) return false;
@@ -2830,11 +2962,17 @@ static bool NativeWheelCreate(float W, float H) {
     // v1.9.65: diagnostico por paso, una sola vez por sesion: el log 1.9.64
     // muestra que los 3 intentos fallan pero no dice en cual paso. Cada
     // linea "diag" se registra solo la primera vez que se llega aqui.
+    // v1.9.66: si el cargador de SAUtils fallo en todo (log 1.9.65: PNG
+    // valido, loader -> 0x0), ultimo intento: crear la textura RW
+    // directamente desde los pixeles (NativeWheelTextureFromFile).
     bool diag = !g_natDiagLogged;
     if (diag) { g_natDiagLogged = true; NativeWheelLogVtable(); }
     std::string png;
+    std::string customPng;  // v1.9.66: ruta del icono propio, si existe
+    std::string embPng;     // v1.9.66: ruta del incrustado escrito, si se escribio
     void* tex = nullptr;
     if (NativeWheelCustomIconPath(png)) {
+        customPng = png;
         tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
         if (diag) Log("  boton nativo: diag propio %s -> %p", png.c_str(), tex);
         if (!tex) {
@@ -2862,6 +3000,7 @@ static bool NativeWheelCreate(float W, float H) {
     if (!tex) {
         std::string emb;
         bool embOk = NativeWheelEmbeddedIconPath(emb);
+        if (embOk) embPng = emb;
         struct stat est;
         bool embExists = embOk && (stat(emb.c_str(), &est) == 0);
         if (diag) Log("  boton nativo: diag incrustado escrito=%d existe=%d tam=%ld ruta=%s", embOk ? 1 : 0, embExists ? 1 : 0, embExists ? (long)est.st_size : 0L, emb.c_str());
@@ -2869,6 +3008,17 @@ static bool NativeWheelCreate(float W, float H) {
             tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, emb.c_str());
             if (diag) Log("  boton nativo: diag incrustado -> %p", tex);
             if (tex) png = emb;
+        }
+    }
+    // v1.9.66: el cargador de SAUtils no pudo con ningun PNG: crear la
+    // textura RW desde los pixeles del icono propio (cualquier formato,
+    // stb lo lee) o del incrustado.
+    if (!tex) {
+        std::string rwSrc = !customPng.empty() ? customPng : embPng;
+        if (!rwSrc.empty()) {
+            tex = NativeWheelTextureFromFile(rwSrc);
+            if (diag) Log("  boton nativo: diag textura RW %s -> %p", rwSrc.c_str(), tex);
+            if (tex) png = rwSrc;
         }
     }
     if (!tex) {
@@ -5123,6 +5273,15 @@ extern "C" void OnModLoad() {
     SYM(g_getStationTrack, "_ZN20CAERadioTrackManager24GetCurrentRadioStationIDEv");
     SYM(g_startAudio, "_ZN12CAudioEngine10StartRadioEaa");
     SYM(g_startTrack, "_ZN20CAERadioTrackManager10StartRadioEaafh");
+    // v1.9.66: funciones RW para la textura del boton nativo (ver arriba).
+    SYM(g_rwImageCreate, "_Z13RwImageCreateiii");
+    SYM(g_rwImageAlloc, "_Z21RwImageAllocatePixelsP7RwImage");
+    SYM(g_rwImageFindFmt, "_Z23RwImageFindRasterFormatP7RwImageiPiS1_S1_S1_");
+    SYM(g_rwRasterCreate, "_Z14RwRasterCreateiiii");
+    SYM(g_rwRasterSetFromImage, "_Z20RwRasterSetFromImageP8RwRasterP7RwImage");
+    SYM(g_rwTextureCreate, "_Z15RwTextureCreateP8RwRaster");
+    SYM(g_rwImageDestroy, "_Z14RwImageDestroyP7RwImage");
+    SYM(g_rwRasterDestroy, "_Z15RwRasterDestroyP8RwRaster");
     SYM(g_audioEngine, "AudioEngine");
     SYM(g_trackManager, "AERadioTrackManager");
     SYM(g_widgets, "_ZN15CTouchInterface10m_pWidgetsE");
