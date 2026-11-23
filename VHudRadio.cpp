@@ -2723,8 +2723,21 @@ static bool NativeWritePng(const std::string& path, const unsigned char* rgba, i
 // boton GL (1.9.58): fondo blanco conectado a las esquinas -> transparente
 // y tonos medios 96-240 -> transparente. Si ya tiene alfa, se usa tal cual.
 static bool NativeWheelConvertIcon(const std::string& src, const std::string& dst) {
+    // v1.9.64: stb_image esta compilado con STBI_NO_STDIO (linea 949), asi
+    // que stbi_load no existe: leer el archivo a memoria y usar
+    // stbi_load_from_memory, igual que LoadPngFromMemory.
+    FILE* f = fopen(src.c_str(), "rb");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len <= 0) { fclose(f); return false; }
+    std::vector<unsigned char> buf((size_t)len);
+    size_t rd = fread(buf.data(), 1, (size_t)len, f);
+    fclose(f);
+    if (rd != (size_t)len) return false;
     int w = 0, h = 0, comp = 0;
-    unsigned char* px = stbi_load(src.c_str(), &w, &h, &comp, 4);
+    unsigned char* px = stbi_load_from_memory(buf.data(), (int)len, &w, &h, &comp, 4);
     if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return false; }
     bool hasAlpha = false;
     for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
