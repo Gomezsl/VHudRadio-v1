@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.69-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.70-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.69-beta"
+#define VHUDRADIO_VERSION "1.9.70-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1851,59 +1851,67 @@ static std::vector<unsigned char> B64Decode(const char* s) {
     }
     return out;
 }
+// v1.9.70: lineArt compartido (antes habia dos copias: LoadPngFromMemory
+// para el boton GL y NativeWheelTextureFromFile para el nativo). Si la
+// imagen ya tiene transparencia se usa tal cual (1.9.58). Si es opaca, se
+// quita el fondo con flood-fill desde las esquinas: el fondo es el color
+// de la esquina (blanco, negro o de color, tolerancia 24 por canal), no
+// solo blanco >240 (1.9.58 dejaba el cuadrado en un icono opaco con fondo
+// oscuro). Y el disco gris solo se quita si el pixel es GRIS (canales
+// parecidos, tono medio 96-240): antes se quitaba cualquier pixel de tono
+// medio y un icono de color quedaba comido.
+static void ApplyWheelLineArt(unsigned char* px, int w, int h) {
+    if (!px || w <= 0 || h <= 0) return;
+    bool hasAlpha = false;
+    for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
+    if (hasAlpha) return;  // ya tiene transparencia: se usa tal cual
+    std::vector<char> seen((size_t)w * h, 0);
+    std::vector<int> stack;
+    auto closeTo = [&](int x, int y, int r, int g, int b) {
+        unsigned char* p = px + (y * w + x) * 4;
+        int dr = (int)p[0] - r, dg = (int)p[1] - g, db = (int)p[2] - b;
+        if (dr < 0) dr = -dr; if (dg < 0) dg = -dg; if (db < 0) db = -db;
+        return dr <= 24 && dg <= 24 && db <= 24;
+    };
+    const int sx[4] = {0, w - 1, 0, w - 1};
+    const int sy[4] = {0, 0, h - 1, h - 1};
+    for (int k = 0; k < 4; k++) {
+        int x0 = sx[k], y0 = sy[k];
+        unsigned char* c = px + (y0 * w + x0) * 4;
+        int sr = c[0], sg = c[1], sb = c[2];
+        if (seen[y0 * w + x0]) continue;
+        seen[y0 * w + x0] = 1; stack.push_back(y0 * w + x0);
+        while (!stack.empty()) {
+            int idx = stack.back(); stack.pop_back();
+            px[idx * 4 + 3] = 0;
+            int x = idx % w, y = idx / w;
+            const int dx[4] = {1, -1, 0, 0};
+            const int dy[4] = {0, 0, 1, -1};
+            for (int d = 0; d < 4; d++) {
+                int nx = x + dx[d], ny = y + dy[d];
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nidx = ny * w + nx;
+                    if (!seen[nidx] && closeTo(nx, ny, sr, sg, sb)) { seen[nidx] = 1; stack.push_back(nidx); }
+                }
+            }
+        }
+    }
+    // Quitar el disco gris: solo los pixeles grises (canales parecidos)
+    // de tono medio 96-240 se vuelven transparentes; quedan los segmentos
+    // y la nota en blanco y los contornos negros, sobre transparente.
+    for (int i = 0; i < w * h; i++) {
+        unsigned char* p = px + i * 4;
+        if (p[3] == 0) continue;
+        int mx = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
+        int mn = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) : (p[1] < p[2] ? p[1] : p[2]);
+        if (mx >= 96 && mx <= 240 && (mx - mn) <= 24) p[3] = 0;
+    }
+}
 static GLuint LoadPngFromMemory(const unsigned char* buf, size_t len, bool blackKey = true, bool lineArt = false) {  // v1.9.14: blackKey=false deja el icono opaco (8 y 12 a color)
     int w = 0, h = 0, ch = 0;
     unsigned char* px = stbi_load_from_memory(buf, (int)len, &w, &h, &ch, 4);
     if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return 0; }
-    // v1.9.58: lineArt (solo el icono de la rueda): si el PNG es opaco (sin
-    // transparencia, como un JPEG con fondo blanco), quitar el fondo con
-    // flood-fill desde las esquinas (solo el blanco >240 conectado a una
-    // esquina se vuelve transparente) Y quitar el disco gris (tonos medios
-    // 96-240 -> transparente). Quedan solo los segmentos y la nota en blanco
-    // y los contornos negros, sobre transparente, SIN disco: el boton NO es
-    // blanco, es transparente como el de la Definitive Edition (Daniel). Si
-    // el PNG ya tiene transparencia, se usa tal cual. La 1.9.57 dejaba el
-    // disco gris y el boton se veia blanco.
-    if (lineArt) {
-        bool hasAlpha = false;
-        for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
-        if (!hasAlpha) {
-            std::vector<char> seen((size_t)w * h, 0);
-            std::vector<int> stack;
-            auto isBg = [&](int x, int y) {
-                unsigned char* p = px + (y * w + x) * 4;
-                return p[0] > 240 && p[1] > 240 && p[2] > 240;
-            };
-            const int sx[4] = {0, w - 1, 0, w - 1};
-            const int sy[4] = {0, 0, h - 1, h - 1};
-            for (int k = 0; k < 4; k++) {
-                int x = sx[k], y = sy[k];
-                if (isBg(x, y) && !seen[y * w + x]) { seen[y * w + x] = 1; stack.push_back(y * w + x); }
-            }
-            while (!stack.empty()) {
-                int idx = stack.back(); stack.pop_back();
-                px[idx * 4 + 3] = 0;
-                int x = idx % w, y = idx / w;
-                const int dx[4] = {1, -1, 0, 0};
-                const int dy[4] = {0, 0, 1, -1};
-                for (int d = 0; d < 4; d++) {
-                    int nx = x + dx[d], ny = y + dy[d];
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                        int nidx = ny * w + nx;
-                        if (!seen[nidx] && isBg(nx, ny)) { seen[nidx] = 1; stack.push_back(nidx); }
-                    }
-                }
-            }
-            // v1.9.58: quitar el disco gris (tonos medios): solo quedan los
-            // segmentos y la nota en blanco y los contornos negros.
-            for (int i = 0; i < w * h; i++) {
-                unsigned char* p = px + i * 4;
-                if (p[3] == 0) continue;
-                int m = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
-                if (m >= 96 && m <= 240) p[3] = 0;
-            }
-        }
-    }
+    if (lineArt) ApplyWheelLineArt(px, w, h);
     // v2.35: los iconos a color son de 256x256 y se dibujan a ~94 px sin
     // mipmaps; achicarlos a 128x128 (como los normales) antes de subirlos.
     unsigned char* pxSmall = nullptr;
@@ -2748,10 +2756,10 @@ static bool NativeWritePng(const std::string& path, const unsigned char* rgba, i
     return wr == png.size();
 }
 // v1.9.64: convierte el icono propio a un PNG real que RW pueda leer.
-// Decodifica con stb_image (lee JPEG, PNG, etc.) y re-escribe PNG. Si la
-// imagen no tiene alfa (JPEG), se aplica el mismo tratamiento lineArt del
-// boton GL (1.9.58): fondo blanco conectado a las esquinas -> transparente
-// y tonos medios 96-240 -> transparente. Si ya tiene alfa, se usa tal cual.
+// Decodifica con stb_image (lee JPEG, PNG, etc.) y re-escribe PNG. El
+// tratamiento lineArt es el compartido (ApplyWheelLineArt, 1.9.70): si ya
+// tiene alfa se usa tal cual; si es opaca se quita el fondo (color de la
+// esquina) y el disco gris.
 static bool NativeWheelConvertIcon(const std::string& src, const std::string& dst) {
     // v1.9.64: stb_image esta compilado con STBI_NO_STDIO (linea 949), asi
     // que stbi_load no existe: leer el archivo a memoria y usar
@@ -2769,45 +2777,9 @@ static bool NativeWheelConvertIcon(const std::string& src, const std::string& ds
     int w = 0, h = 0, comp = 0;
     unsigned char* px = stbi_load_from_memory(buf.data(), (int)len, &w, &h, &comp, 4);
     if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return false; }
-    bool hasAlpha = false;
-    for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
-    if (!hasAlpha) {
-        // Copia del lineArt de LoadPngFromMemory (1.9.58): flood-fill de
-        // esquinas + quitar tonos medios. Sin esto, un JPEG quedaria con
-        // su fondo blanco opaco sobre el boton.
-        std::vector<char> seen((size_t)w * h, 0);
-        std::vector<int> stack;
-        auto isBg = [&](int x, int y) {
-            unsigned char* p = px + (y * w + x) * 4;
-            return p[0] > 240 && p[1] > 240 && p[2] > 240;
-        };
-        const int sx[4] = {0, w - 1, 0, w - 1};
-        const int sy[4] = {0, 0, h - 1, h - 1};
-        for (int k = 0; k < 4; k++) {
-            int x = sx[k], y = sy[k];
-            if (isBg(x, y) && !seen[y * w + x]) { seen[y * w + x] = 1; stack.push_back(y * w + x); }
-        }
-        while (!stack.empty()) {
-            int idx = stack.back(); stack.pop_back();
-            px[idx * 4 + 3] = 0;
-            int x = idx % w, y = idx / w;
-            const int dx[4] = {1, -1, 0, 0};
-            const int dy[4] = {0, 0, 1, -1};
-            for (int d = 0; d < 4; d++) {
-                int nx = x + dx[d], ny = y + dy[d];
-                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                    int nidx = ny * w + nx;
-                    if (!seen[nidx] && isBg(nx, ny)) { seen[nidx] = 1; stack.push_back(nidx); }
-                }
-            }
-        }
-        for (int i = 0; i < w * h; i++) {
-            unsigned char* p = px + i * 4;
-            if (p[3] == 0) continue;
-            int m = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
-            if (m >= 96 && m <= 240) p[3] = 0;
-        }
-    }
+    // v1.9.70: lineArt compartido (ApplyWheelLineArt): si ya tiene
+    // transparencia se usa tal cual; si es opaca se quita el fondo.
+    ApplyWheelLineArt(px, w, h);
     bool ok = NativeWritePng(dst, px, w, h);
     stbi_image_free(px);
     return ok;
@@ -2852,7 +2824,7 @@ static void NativeWheelLogVtable() {
 // RwRasterSetFromImage + RwTextureCreate (mismo orden que el cargador de
 // SAUtils, pero con los pixeles ya decodificados). Devuelve la textura o
 // nullptr. Los fallos se registran una sola vez por sesion (static).
-static void* NativeWheelTextureFromFile(const std::string& src) {
+static void* NativeWheelTextureFromFile(const std::string& src, int* outW = nullptr, int* outH = nullptr) {
     static bool logged = false;
     // Las funciones RW se resolvieron en UT_InstallHooks (ver el log de
     // arranque: "ok _Z13RwImageCreateiii" etc.); si falta alguna, no se
@@ -2880,46 +2852,34 @@ static void* NativeWheelTextureFromFile(const std::string& src) {
         if (!logged) { logged = true; Log("  boton nativo: textura RW stb no pudo decodificar %s", src.c_str()); }
         return nullptr;
     }
-    // lineArt (copia del bloque 1.9.58 de LoadPngFromMemory): si la imagen
-    // es opaca (JPEG con fondo blanco), quitar el fondo con flood-fill
-    // desde las esquinas y el disco gris; quedan solo los segmentos y la
-    // nota en blanco y los contornos negros, sobre transparente.
-    {
-        bool hasAlpha = false;
-        for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
-        if (!hasAlpha) {
-            std::vector<char> seen((size_t)w * h, 0);
-            std::vector<int> stack;
-            auto isBg = [&](int x, int y) {
-                unsigned char* p = px + (y * w + x) * 4;
-                return p[0] > 240 && p[1] > 240 && p[2] > 240;
-            };
-            const int sx[4] = {0, w - 1, 0, w - 1};
-            const int sy[4] = {0, 0, h - 1, h - 1};
-            for (int k = 0; k < 4; k++) {
-                int x = sx[k], y = sy[k];
-                if (isBg(x, y) && !seen[y * w + x]) { seen[y * w + x] = 1; stack.push_back(y * w + x); }
-            }
-            while (!stack.empty()) {
-                int idx = stack.back(); stack.pop_back();
-                px[idx * 4 + 3] = 0;
-                int x = idx % w, y = idx / w;
-                const int dx[4] = {1, -1, 0, 0};
-                const int dy[4] = {0, 0, 1, -1};
-                for (int d = 0; d < 4; d++) {
-                    int nx = x + dx[d], ny = y + dy[d];
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                        int nidx = ny * w + nx;
-                        if (!seen[nidx] && isBg(nx, ny)) { seen[nidx] = 1; stack.push_back(nidx); }
+    // v1.9.70: lineArt compartido (ApplyWheelLineArt): si ya tiene
+    // transparencia se usa tal cual; si es opaca se quita el fondo (color
+    // de la esquina, no solo blanco) y el disco gris.
+    ApplyWheelLineArt(px, w, h);
+    // v1.9.70: un icono de 1500 px no se ve mejor que uno de 512 px en un
+    // boton de ~280 px, pero ocupa 9 veces mas memoria de GPU (y el PNG
+    // convertido salia de 6 MB). Achicar a 512 px como maximo.
+    if (w > 512 || h > 512) {
+        int nw = w, nh = h;
+        if (w >= h) { nw = 512; nh = h * 512 / w; } else { nh = 512; nw = w * 512 / h; }
+        if (nw < 1) nw = 1; if (nh < 1) nh = 1;
+        unsigned char* small = (unsigned char*)malloc((size_t)nw * nh * 4);
+        if (small) {
+            for (int y = 0; y < nh; y++) {
+                for (int x = 0; x < nw; x++) {
+                    int sx = x * w / nw, sy = y * h / nh;
+                    int ex = (x + 1) * w / nw, ey = (y + 1) * h / nh;
+                    if (ex <= sx) ex = sx + 1; if (ey <= sy) ey = sy + 1;
+                    long sr = 0, sg = 0, sb = 0, sa = 0; int n = 0;
+                    for (int yy = sy; yy < ey; yy++) for (int xx = sx; xx < ex; xx++) {
+                        unsigned char* p = px + (yy * w + xx) * 4;
+                        sr += p[0]; sg += p[1]; sb += p[2]; sa += p[3]; n++;
                     }
+                    unsigned char* d = small + (y * nw + x) * 4;
+                    d[0] = (unsigned char)(sr / n); d[1] = (unsigned char)(sg / n); d[2] = (unsigned char)(sb / n); d[3] = (unsigned char)(sa / n);
                 }
             }
-            for (int i = 0; i < w * h; i++) {
-                unsigned char* p = px + i * 4;
-                if (p[3] == 0) continue;
-                int m = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
-                if (m >= 96 && m <= 240) p[3] = 0;
-            }
+            stbi_image_free(px); px = small; w = nw; h = nh;
         }
     }
     // RwImage de 32 bits con los pixeles (layout real: 40 bytes,
@@ -2940,6 +2900,7 @@ static void* NativeWheelTextureFromFile(const std::string& src) {
     void* tex = g_rwTextureCreate(ras);
     g_rwImageDestroy(img);
     if (!tex) { g_rwRasterDestroy(ras); if (!logged) { logged = true; Log("  boton nativo: textura RW RwTextureCreate devolvio NULL"); } return nullptr; }
+    if (outW) *outW = w; if (outH) *outH = h;  // v1.9.70: tamano final (tras achicar) para el diagnostico
     // No se destruyen ras ni tex: el widget usa la textura directo (o una
     // copia si habia textura previa); la original se queda viva en g_natTex.
     return tex;
@@ -3013,8 +2974,9 @@ static bool NativeWheelCreate(float W, float H) {
     if (!tex) {
         std::string rwSrc = !customPng.empty() ? customPng : embPng;
         if (!rwSrc.empty()) {
-            tex = NativeWheelTextureFromFile(rwSrc);
-            if (diag) Log("  boton nativo: diag textura RW %s -> %p", rwSrc.c_str(), tex);
+            int rwW = 0, rwH = 0;
+            tex = NativeWheelTextureFromFile(rwSrc, &rwW, &rwH);
+            if (diag) Log("  boton nativo: diag textura RW %s -> %p (%dx%d)", rwSrc.c_str(), tex, rwW, rwH);
             if (tex) png = rwSrc;
         }
     }
@@ -5028,7 +4990,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 if (seg >= 1) { g_selected = seg; g_wheelTouch = true; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
                 else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; }  // v1.2: flechas anterior/siguiente de la cancion
                 else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; }  // v1.4: boton "Lista de canciones"
-                else { g_wheelTouch = false; }  // v1.9.49: centro o fuera del anillo: al soltar se cierra sin cambiar (el centro ya no abre el panel; el panel se abre con doble toque al boton flotante)
+                else { g_wheelTouch = false; }  // v1.9.49: centro o fuera del anillo: al soltar se cierra sin cambiar (el centro ya no abre el panel; el panel se abre con doble toque al boton flotante) // v1.9.70: el centro es ahora la forma de cerrar la rueda (el icono cambia de emisora sin cerrarla)
             }
             // v1.9.54: boton propio de la rueda (encima del flotante): un toque
             // abre/cierra la rueda. El claxon ya NO abre la rueda (a peticion
@@ -5129,7 +5091,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     g_trackBtn = 0;
                 }
                 else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; g_listOpenedAt = std::chrono::steady_clock::now(); PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
-                else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda cerrada -> %d (%s)", g_selected, kStationName[g_selected]); g_open = false; }
+                else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda: cambio a %d (%s), sigue abierta (se cierra desde el centro)", g_selected, kStationName[g_selected]); }
                 else { Log("rueda cerrada sin cambiar"); g_open = false; }
             }
             mouseDown = false; }
