@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.66-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.67-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.66-beta"
+#define VHUDRADIO_VERSION "1.9.67-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2135,8 +2135,8 @@ static void DoStartRadio(int id) {
     // entrar al auto (ese NO para el reproductor: gracia de 2 s).
     else if (g_startTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::StartRadio(id,0,1.0,0) [modoCambio=%d]", id, kStationName[id], g_cfg.modoCambio); ut_userStationCmd = true; g_startTrack(g_trackManager, (signed char)id, 0, 1.0f, 0); ut_userStationCmd = false; }
     else if (g_startAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::StartRadio(id,0)", id, kStationName[id]); ut_userStationCmd = true; g_startAudio(g_audioEngine, (signed char)id, 0); ut_userStationCmd = false; }
-    else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneAudio(g_audioEngine, (signed char)id); }
-    else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); g_retuneTrack(g_trackManager, (signed char)id); }
+    else if (g_retuneAudio && g_audioEngine) { Log("cambio a %d (%s) por CAudioEngine::RetuneRadio (ultimo recurso)", id, kStationName[id]); ut_userStationCmd = true; g_retuneAudio(g_audioEngine, (signed char)id); ut_userStationCmd = false; }
+    else if (g_retuneTrack && g_trackManager) { Log("cambio a %d (%s) por CAERadioTrackManager::RetuneRadio (ultimo recurso)", id, kStationName[id]); ut_userStationCmd = true; g_retuneTrack(g_trackManager, (signed char)id); ut_userStationCmd = false; }
     else { Log("!! sin Retune/Start con su objeto global: la rueda se ve pero NO puede cambiar la estacion (ver VHudRadioProbe.txt)"); return; }
     // verificar lo que el juego dice que suena ahora (diagnostico v1.2).
     // v1.9.2: en la 12 la nativa queda en 13 (Radio Off) por diseno, asi que
@@ -2943,8 +2943,8 @@ static void* NativeWheelTextureFromFile(const std::string& src) {
     void* tex = g_rwTextureCreate(ras);
     g_rwImageDestroy(img);
     if (!tex) { g_rwRasterDestroy(ras); if (!logged) { logged = true; Log("  boton nativo: textura RW RwTextureCreate devolvio NULL"); } return nullptr; }
-    // No se destruyen ras ni tex: SetWidgetIcon copia la textura y la
-    // original se queda viva (se crea una sola vez por sesion).
+    // No se destruyen ras ni tex: el widget usa la textura directo (o una
+    // copia si habia textura previa); la original se queda viva en g_natTex.
     return tex;
 }
 static bool NativeWheelCreate(float W, float H) {
@@ -3027,7 +3027,22 @@ static bool NativeWheelCreate(float W, float H) {
     }
     void* widget = ((SA_CreateWidgetFn)g_sautilsVt[19])(g_sautils, id, (int)wx, (int)wy, sc, nullptr);
     if (!widget) { Log("  boton nativo: CreateWidget(%d) devolvio NULL", id); return false; }
-    ((SA_SetWidgetIconFn)g_sautilsVt[21])(g_sautils, widget, (uintptr_t)tex);
+    // v1.9.67: NO llamar a SetWidgetIcon si el widget no tiene textura:
+    // SAUtils 1.6 la destruye SIN comprobar NULL (SetWidgetIcon 0x275f8
+    // llama a RwTextureDestroy(widget+0x10) antes de nada) y un widget
+    // recien creado con nombre NULL tiene +0x10 = NULL: RwTextureDestroy
+    // lee el refCount en +0x64 y cae con SIGSEGV en 0x64 (crash 1.9.66 al
+    // activar el interruptor nativo; la textura RW si se habia creado
+    // bien). En ese caso se escribe la textura directo en widget+0x10
+    // (m_pTexture del sprite); si ya hay una textura, SetWidgetIcon la
+    // destruye bien y pone la copia.
+    void* oldTex = *(void**)((char*)widget + 0x10);
+    if (!oldTex) {
+        *(void**)((char*)widget + 0x10) = tex;
+        Log("  boton nativo: icono directo en widget+0x10 (sin textura previa)");
+    } else {
+        ((SA_SetWidgetIconFn)g_sautilsVt[21])(g_sautils, widget, (uintptr_t)tex);
+    }
     // Posicion exacta en flotante (CreateWidget solo admite int x/y).
     ((SA_SetWidgetPosFn)g_sautilsVt[32])(g_sautils, id, wx, wy, sc, sc);
     g_natTex = tex; g_natWidget = widget; g_natId = id;
