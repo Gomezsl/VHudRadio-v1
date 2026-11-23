@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.70-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.71-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.70-beta"
+#define VHUDRADIO_VERSION "1.9.71-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1369,6 +1369,7 @@ static float g_wheelDragBX = 0.0f, g_wheelDragBY = 0.0f;  // v1.9.55: posicion b
 static float g_dragSX = 0, g_dragSY = 0;  // v2.16: donde empezo el dedo
 static float g_dragBX = 0, g_dragBY = 0;  // v2.16: posicion del boton al empezar (fraccion de W/H)
 static bool g_wheelTouch = false;   // v1.5: el toque actual empezo/sobre el anillo de la rueda
+static bool g_wheelCenterTap = false;  // v1.9.71: el toque actual empezo en el centro de la rueda (es la unica forma de cerrarla)
 static bool g_listBtnTap = false;   // v1.4: el toque actual empezo en el boton "Lista de canciones" (abre la lista al soltar)
 static bool g_ignoreNextUp = false; // v1.5: el toque que ABRIO la rueda no debe cerrarla al soltar
 static float g_touchX = -1.0f, g_touchY = -1.0f;  // v2.18: ultima posicion de toque (io.MousePos llega con un frame de retraso y el bajar leia una posicion vieja)
@@ -1394,6 +1395,16 @@ static int SegmentAt(float x, float y, float W, float H) {
     float ang = atan2f(dy, dx) + 3.14159265f/2; if (ang < 0) ang += 2*3.14159265f;
     int seg = (int)(ang / (2*3.14159265f/13.0f)) + 1; if (seg > 13) seg = 13;
     return seg;
+}
+// v1.9.71: el centro de la rueda (el agujero interior del anillo). SegmentAt
+// devuelve 0 tanto para el centro como para fuera del anillo; para cerrar
+// SOLO desde el centro hay que distinguirlos (Daniel: la rueda se seguia
+// cerrando al tocar fuera del anillo).
+static bool CenterAt(float x, float y, float W, float H) {
+    float dx = x - W*0.5f, dy = y - H*0.5f;
+    float dist = sqrtf(dx*dx + dy*dy);
+    float Ri = WheelRi(H), s = WheelIconS(H);
+    return dist < Ri - s*1.3f;
 }
 static bool g_inVehicle = false;
 static bool g_hasRadio = true;  // v2.14: el vehiculo actual tiene radio civil (RadioType == 0); true hasta que se compruebe
@@ -4987,10 +4998,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 g_trackBtn = 0;  // un toque nuevo limpia cualquier flecha anterior
                 int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
                 int ta = 0;
-                if (seg >= 1) { g_selected = seg; g_wheelTouch = true; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
-                else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; }  // v1.2: flechas anterior/siguiente de la cancion
-                else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; }  // v1.4: boton "Lista de canciones"
-                else { g_wheelTouch = false; }  // v1.9.49: centro o fuera del anillo: al soltar se cierra sin cambiar (el centro ya no abre el panel; el panel se abre con doble toque al boton flotante) // v1.9.70: el centro es ahora la forma de cerrar la rueda (el icono cambia de emisora sin cerrarla)
+                if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_wheelCenterTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
+                else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.2: flechas anterior/siguiente de la cancion
+                else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.4: boton "Lista de canciones"
+                else { g_wheelTouch = false; g_wheelCenterTap = CenterAt(g_touchX, g_touchY, (float)w, (float)h); }  // v1.9.71: solo el centro cierra la rueda; fuera del anillo no hace nada (antes cerraba tambien)
             }
             // v1.9.54: boton propio de la rueda (encima del flotante): un toque
             // abre/cierra la rueda. El claxon ya NO abre la rueda (a peticion
@@ -5092,8 +5103,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 }
                 else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; g_listOpenedAt = std::chrono::steady_clock::now(); PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
                 else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda: cambio a %d (%s), sigue abierta (se cierra desde el centro)", g_selected, kStationName[g_selected]); }
-                else { Log("rueda cerrada sin cambiar"); g_open = false; }
+                else if (g_wheelCenterTap) { Log("rueda cerrada desde el centro"); g_open = false; }
+                else { Log("rueda: toque fuera del anillo, sigue abierta"); }
             }
+            g_wheelCenterTap = false;
             mouseDown = false; }
     }
     // v2.1: un solo toque al boton flotante = siguiente estacion (si no llega un segundo toque en 600 ms)

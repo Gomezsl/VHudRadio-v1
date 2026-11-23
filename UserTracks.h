@@ -2097,6 +2097,29 @@ static void UT_TouchDrawAll_hook(void* self, bool b) {
     if (ut_origTouchDrawAll) ut_origTouchDrawAll(self, b);
 }
 
+// v1.9.71: desactivar el cambio de radio por deslizamiento (Daniel: con la
+// rueda ya no hace falta, pero el texto del nombre de la emisora debe seguir).
+// El script (main.scm, opcodes 0A54/0A55/0A56) pregunta cada cuadro por
+// CTouchInterface::IsSwipedLeft/Right(widget 166) y si es true llama a
+// RetuneRadio. El hook devuelve false SOLO para el 166 (la region de la
+// radio); los demas widgets (cambio de arma 160/161, cuerpo a cuerpo,
+// apuntado, etc.) siguen igual. El texto no depende del swipe
+// (DisplayRadioStationName arma un temporizador), asi que sigue funcionando
+// con la rueda. Firma verificada en el binario: bool (int widgetID /*w0*/,
+// int time /*w1*/), estatica, sin this (ldr [m_pWidgets, w0, uxtw #3]).
+// NO se engancha RetuneRadio: el dial EMISORA lo usa (ver SwipeRadio-RE.md).
+typedef bool (*SwipeCheckFn)(int, int);
+static SwipeCheckFn ut_origSwipeLeft = nullptr;
+static SwipeCheckFn ut_origSwipeRight = nullptr;
+static bool UT_SwipeLeft_hook(int id, int time) {
+    if (id == 166) return false;  // region de la radio: sin cambio por deslizamiento
+    return ut_origSwipeLeft ? ut_origSwipeLeft(id, time) : false;
+}
+static bool UT_SwipeRight_hook(int id, int time) {
+    if (id == 166) return false;  // region de la radio: sin cambio por deslizamiento
+    return ut_origSwipeRight ? ut_origSwipeRight(id, time) : false;
+}
+
 static void UT_InstallHooks() {
     // v1.9.3 (Claude): si libSAUserTrack64.so esta cargado, el reproductor
     // propio NO se activa (dos reproductores + dos hooks de StartRadio =
@@ -2157,6 +2180,22 @@ static void UT_InstallHooks() {
             Log("UT: hook CTouchInterface::DrawAll %s", ut_origTouchDrawAll ? "ok (botones ocultos con la rueda)" : "no se pudo instalar");
         } else {
             Log("UT: CTouchInterface::DrawAll no resolvio (los botones no se ocultan)");
+        }
+        // v1.9.71: desactivar el cambio de radio por deslizamiento (Daniel).
+        // Solo el widget 166 (region de la radio); el resto sigue igual.
+        uintptr_t sl = aml->GetSym(h, "_ZN15CTouchInterface12IsSwipedLeftENS_9WidgetIDsEi");
+        if (sl) {
+            aml->Hook((void*)sl, (void*)UT_SwipeLeft_hook, (void**)&ut_origSwipeLeft);
+            Log("UT: hook CTouchInterface::IsSwipedLeft %s", ut_origSwipeLeft ? "ok (swipe de radio desactivado)" : "no se pudo instalar");
+        } else {
+            Log("UT: CTouchInterface::IsSwipedLeft no resolvio (el swipe seguira cambiando la radio)");
+        }
+        uintptr_t sr = aml->GetSym(h, "_ZN15CTouchInterface13IsSwipedRightENS_9WidgetIDsEi");
+        if (sr) {
+            aml->Hook((void*)sr, (void*)UT_SwipeRight_hook, (void**)&ut_origSwipeRight);
+            Log("UT: hook CTouchInterface::IsSwipedRight %s", ut_origSwipeRight ? "ok (swipe de radio desactivado)" : "no se pudo instalar");
+        } else {
+            Log("UT: CTouchInterface::IsSwipedRight no resolvio (el swipe seguira cambiando la radio)");
         }
         // v1.9: ocultar los botones del juego con la rueda abierta.
         // CTouchInterface::Draw no existe en 2.10; se sondean otros nombres
