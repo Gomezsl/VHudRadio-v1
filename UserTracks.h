@@ -226,6 +226,12 @@ static bool ut_diagDone = true;  // diagnostico: lectura nativa con retraso (una
 static SLObjectItf ut_player = nullptr;
 static SLPlayItf ut_play = nullptr;
 static SLBufferQueueItf ut_queue = nullptr;
+static SLVolumeItf ut_volume = nullptr;  // v1.9.62: volumen OpenSL (sigue el RADIO de opciones de sonido)
+// v1.9.62: volumen maestro de musica del juego (CAEAudioHardware+0x1f0, RE2
+// de SAUserTracks): el deslizador RADIO de opciones de sonido lo mueve; el
+// reproductor de User Tracks lo sigue como las radios originales.
+static void* ut_audioHw = nullptr;
+static float* ut_musicVolPtr = nullptr;
 static int16_t ut_buf[UT_NUM_BUFS][UT_BUF_SAMPLES];
 static int ut_bufIdx = 0;
 static pthread_mutex_t ut_cbMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -807,9 +813,9 @@ static bool UT_Start() {
     SLDataSource src = {&locBuf, &fmt};
     SLDataLocator_OutputMix locMix = {SL_DATALOCATOR_OUTPUTMIX, g_slMix};
     SLDataSink sink = {&locMix, nullptr};
-    const SLInterfaceID ids[1] = {SL_IID_BUFFERQUEUE};
-    const SLboolean req[1] = {SL_BOOLEAN_TRUE};
-    if ((*g_slEngineItf)->CreateAudioPlayer(g_slEngineItf, &ut_player, &src, &sink, 1, ids, req) != SL_RESULT_SUCCESS || !ut_player) {
+    const SLInterfaceID ids[2] = {SL_IID_BUFFERQUEUE, SL_IID_VOLUME};  // v1.9.62: VOLUMEN opcional (sigue el RADIO de opciones de sonido)
+    const SLboolean req[2] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_FALSE};
+    if ((*g_slEngineItf)->CreateAudioPlayer(g_slEngineItf, &ut_player, &src, &sink, 2, ids, req) != SL_RESULT_SUCCESS || !ut_player) {
         Log("UT: no se pudo crear el reproductor OpenSL");
         ut_stopThread = true; ut_ring.close();
         if (ut_threadRunning) { pthread_join(ut_thread, nullptr); ut_threadRunning = false; }
@@ -832,6 +838,13 @@ static bool UT_Start() {
         if (ut_threadRunning) { pthread_join(ut_thread, nullptr); ut_threadRunning = false; }
         ut_ring.free();
         return false;
+    }
+    // v1.9.62: VOLUMEN opcional (no fatal si el dispositivo no lo da: el
+    // reproductor sigue sonando, solo sin seguir el RADIO de sonido).
+    ut_volume = nullptr;
+    if ((*ut_player)->GetInterface(ut_player, SL_IID_VOLUME, &ut_volume) != SL_RESULT_SUCCESS) {
+        ut_volume = nullptr;
+        Log("UT: sin interfaz de volumen (el RADIO de sonido no afectara a User Tracks)");
     }
     (*ut_queue)->RegisterCallback(ut_queue, UT_BufferCallback, nullptr);
     ut_bufIdx = 0;
@@ -857,7 +870,7 @@ static void UT_Stop(const char* reason) {
         pthread_mutex_lock(&ut_cbMutex);
         if (ut_queue) (*ut_queue)->Clear(ut_queue);
         (*ut_player)->Destroy(ut_player);
-        ut_player = nullptr; ut_play = nullptr; ut_queue = nullptr;
+        ut_player = nullptr; ut_play = nullptr; ut_queue = nullptr; ut_volume = nullptr;
         pthread_mutex_unlock(&ut_cbMutex);
     }
     ut_ring.free();
@@ -1023,12 +1036,33 @@ static void UT_DiagTick() {
     if (ut_diagWatch > 0) ut_diagWatch--;
 }
 
+// v1.9.62: seguir el volumen RADIO de opciones de sonido. El juego guarda
+// el volumen maestro de musica en CAEAudioHardware+0x1f0 (float 0..1, lo mueve
+// el deslizador RADIO); se lee cada cuadro y se aplica al reproductor OpenSL
+// en milibeles (0 = maximo, SL_MILLIBEL_MIN = silencio). Solo se llama a
+// SetVolumeLevel cuando el valor cambia, para no tocar OpenSL cada cuadro.
+static void UT_ApplyGameVolume() {
+    if (!ut_volume || !ut_musicVolPtr || !ut_active) return;
+    float v = *ut_musicVolPtr;
+    if (!(v >= 0.0f) || v != v) v = 1.0f;  // NaN o negativo -> maximo
+    if (v > 1.0f) v = 1.0f;
+    SLmillibel mb;
+    if (v <= 0.001f) mb = SL_MILLIBEL_MIN;
+    else mb = (SLmillibel)(2000.0f * log10f(v));
+    static SLmillibel lastMb = 0x7fffffff;
+    if (mb != lastMb) {
+        lastMb = mb;
+        (*ut_volume)->SetVolumeLevel(ut_volume, mb);
+    }
+}
+
 static void UT_Frame() {
     UT_DiagTick();  // v1.9.24
     // v1.8: marca de tiempo del ultimo cuadro (el callback de OpenSL la usa
     // para pausar si el juego se va a fondo / pantalla de inicio).
     ut_lastFrameAt = std::chrono::steady_clock::now();
     if (!ut_active) return;
+    UT_ApplyGameVolume();  // v1.9.62: RADIO de sonido controla User Tracks
     if (ut_wantStop) { UT_Stop("sin pistas decodificables"); return; }
     // v1.7: al salir del vehiculo se PAUSA (no se para ni se sigue oyendo a
     // pie): la musica se queda en silencio y se reanuda al subir, en la
@@ -1449,6 +1483,9 @@ static bool UT_StartTrackGateClear() {
     return true;
 }
 static void UT_StartTrackPlayback_hook(void* self) {
+    // v1.9.62: capturar el CAEAudioHardware (self) para leer el volumen
+    // maestro de musica (hardware+0x1f0) y seguir el RADIO de sonido.
+    if (self && !ut_musicVolPtr) { ut_audioHw = self; ut_musicVolPtr = (float*)((char*)self + 0x1f0); }
     if (ut_active && !ut_playbackDisabled && UT_StartTrackGateClear()) return;  // nativa 12 silenciada: no suena debajo de User Tracks
     if (ut_origStartTrackPlayback) ut_origStartTrackPlayback(self);
 }
@@ -1456,6 +1493,8 @@ static void UT_StartTrackPlayback_hook(void* self) {
 typedef void (*PlayTrackFn)(void*, unsigned int, int, unsigned int, signed char, bool, bool);
 static PlayTrackFn ut_origPlayTrack = nullptr;
 static void UT_PlayTrack_hook(void* self, unsigned int a1, int a2, unsigned int a3, signed char a4, bool a5, bool a6) {
+    // v1.9.62: capturar el CAEAudioHardware (self) para el volumen maestro.
+    if (self && !ut_musicVolPtr) { ut_audioHw = self; ut_musicVolPtr = (float*)((char*)self + 0x1f0); }
     ut_playbackDisabled = (a2 == -1);
     if (ut_origPlayTrack) ut_origPlayTrack(self, a1, a2, a3, a4, a5, a6);
 }
