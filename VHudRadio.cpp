@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.62-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.63-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.62-beta"
+#define VHUDRADIO_VERSION "1.9.63-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1071,14 +1071,14 @@ static const char* kStationProgram[14] = { "", "Forth Right MC", "Mary-Beth Mayb
 enum LangId { L_ES = 0, L_EN, L_ID, L_PT, L_FR, L_DE, L_COUNT };
 static const char* kLangNames[L_COUNT] = { "Español", "English", "Bahasa Indonesia", "Portugues (BR)", "Francais", "Deutsch" };
 static const char* kLangCodes[L_COUNT] = { "es", "en", "id", "pt", "fr", "de" };
-enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_TL_BTN, STR_TL_TITLE, STR_TL_PLAYING, STR_BTN_RUEDA_SIZE, STR_BTN_RUEDA_OPAC, STR_BTN_RUEDA_LOCK, STR_COUNT };  // v1.6: lista de canciones traducida  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego
+enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_TL_BTN, STR_TL_TITLE, STR_TL_PLAYING, STR_BTN_RUEDA_SIZE, STR_BTN_RUEDA_OPAC, STR_BTN_RUEDA_LOCK, STR_BTN_NATIVO, STR_COUNT };  // v1.6: lista de canciones traducida  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego // v1.9.63: boton nativo de la rueda
 static const char* kUI[L_COUNT][STR_COUNT] = {
-    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta", "Lista de canciones", "LISTA DE CANCIONES", "SONANDO", "Tamano del boton de la rueda", "Opacidad del boton de la rueda", "Bloquear posicion del boton de la rueda" },
-    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open", "Song list", "TRACK LIST", "PLAYING", "Wheel button size", "Wheel button opacity", "Lock wheel button position" },
-    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka", "Daftar lagu", "DAFTAR LAGU", "MEMUTAR", "Ukuran tombol roda", "Opasitas tombol roda", "Kunci posisi tombol roda" },
-    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta", "Lista de músicas", "LISTA DE MÚSICAS", "TOCANDO", "Tamanho do botao da roda", "Opacidade do botao da roda", "Bloquear posicao do botao da roda" },
-    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte", "Liste des chansons", "LISTE DES CHANSONS", "EN LECTURE", "Taille du bouton de la roue", "Opacite du bouton de la roue", "Verrouiller la position du bouton de la roue" },
-    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist", "Songliste", "SONGLISTE", "LÄUFT", "Rad-Button-Grosse", "Rad-Button-Deckkraft", "Rad-Button-Position sperren" },
+    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta", "Lista de canciones", "LISTA DE CANCIONES", "SONANDO", "Tamano del boton de la rueda", "Opacidad del boton de la rueda", "Bloquear posicion del boton de la rueda", "Boton nativo de la rueda" },
+    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open", "Song list", "TRACK LIST", "PLAYING", "Wheel button size", "Wheel button opacity", "Lock wheel button position", "Native wheel button" },
+    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka", "Daftar lagu", "DAFTAR LAGU", "MEMUTAR", "Ukuran tombol roda", "Opasitas tombol roda", "Kunci posisi tombol roda", "Tombol roda asli" },
+    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta", "Lista de músicas", "LISTA DE MÚSICAS", "TOCANDO", "Tamanho do botao da roda", "Opacidade do botao da roda", "Bloquear posicao do botao da roda", "Botao nativo da roda" },
+    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte", "Liste des chansons", "LISTE DES CHANSONS", "EN LECTURE", "Taille du bouton de la roue", "Opacite du bouton de la roue", "Verrouiller la position du bouton de la roue", "Bouton natif de la roue" },
+    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist", "Songliste", "SONGLISTE", "LÄUFT", "Rad-Button-Grosse", "Rad-Button-Deckkraft", "Rad-Button-Position sperren", "Nativer Rad-Button" },
 };
 // v2.0: genero de cada estacion, para el centro de la rueda estilo GTA V
 static const char* kGenre[L_COUNT][14] = {
@@ -1147,7 +1147,7 @@ static void LoadHornPos() {
 //   (posicion del panel, fraccion de W/H; -1 = centrado) panelAncho=0.44
 //   (ancho del panel, fraccion de W, 0.36..0.70) (v2.17)
 // iconosColor=0 (0 = iconos normales de radio/, 1 = iconos a color de radio_color/) (v2.28)
-struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; float btnRuedaX = -1.0f; float btnRuedaY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int btnRuedaTam = 100; int btnRuedaOpac = 100; int btnRuedaBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
+struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; float btnRuedaX = -1.0f; float btnRuedaY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int btnRuedaTam = 100; int btnRuedaOpac = 100; int btnRuedaBloq = 0; int botonNativo = 1; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
 static WheelCfg g_cfg;
 static const char* S(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 0 || id >= STR_COUNT) return ""; return kUI[l][id]; }  // v2.16: texto del panel en el idioma elegido
 static const char* Genre(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 1 || id > 13) return ""; return kGenre[l][id]; }  // v2.16: genero en el idioma elegido
@@ -1187,6 +1187,7 @@ static void SaveCfg() {
     fprintf(f, "botonRuedaTam=%d\n", g_cfg.btnRuedaTam);  // v1.9.60
     fprintf(f, "botonRuedaOpac=%d\n", g_cfg.btnRuedaOpac);
     fprintf(f, "botonRuedaBloq=%d\n", g_cfg.btnRuedaBloq);
+    fprintf(f, "botonNativo=%d\n", g_cfg.botonNativo);  // v1.9.63
     fprintf(f, "fondoColor=%d,%d,%d\n", g_cfg.fondoR, g_cfg.fondoG, g_cfg.fondoB);
     fprintf(f, "panelX=%.3f\n", g_cfg.panelX);
     fprintf(f, "panelY=%.3f\n", g_cfg.panelY);
@@ -1206,7 +1207,7 @@ static void SaveCfg() {
     fclose(f);
 }
 static void LoadCfg() {
-    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.btnRuedaTam = 100; g_cfg.btnRuedaOpac = 100; g_cfg.btnRuedaBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
+    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.btnRuedaTam = 100; g_cfg.btnRuedaOpac = 100; g_cfg.btnRuedaBloq = 0; g_cfg.botonNativo = 1; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
     bool fromOld = false;
     FILE* f = fopen(CfgPath().c_str(), "r");
     if (!f) {
@@ -1256,6 +1257,7 @@ static void LoadCfg() {
         else if (strcmp(k, "botonRuedaTam") == 0) g_cfg.btnRuedaTam = atoi(v);  // v1.9.60
         else if (strcmp(k, "botonRuedaOpac") == 0) g_cfg.btnRuedaOpac = atoi(v);
         else if (strcmp(k, "botonRuedaBloq") == 0) g_cfg.btnRuedaBloq = atoi(v);
+        else if (strcmp(k, "botonNativo") == 0) g_cfg.botonNativo = atoi(v);  // v1.9.63
         else if (strcmp(k, "fondoColor") == 0) {
             int r = 0, g = 0, b = 0;
             if (sscanf(v, "%d,%d,%d", &r, &g, &b) == 3) { g_cfg.fondoR = r; g_cfg.fondoG = g; g_cfg.fondoB = b; }
@@ -1299,6 +1301,7 @@ static void LoadCfg() {
     if (g_cfg.btnRuedaTam < 50) g_cfg.btnRuedaTam = 50; if (g_cfg.btnRuedaTam > 200) g_cfg.btnRuedaTam = 200;  // v1.9.60
     if (g_cfg.btnRuedaOpac < 10) g_cfg.btnRuedaOpac = 10; if (g_cfg.btnRuedaOpac > 100) g_cfg.btnRuedaOpac = 100;
     if (g_cfg.btnRuedaBloq != 0 && g_cfg.btnRuedaBloq != 1) g_cfg.btnRuedaBloq = 0;
+    if (g_cfg.botonNativo != 0 && g_cfg.botonNativo != 1) g_cfg.botonNativo = 1;  // v1.9.63
     if (g_cfg.fondoR < 0) g_cfg.fondoR = 0; if (g_cfg.fondoR > 255) g_cfg.fondoR = 255;
     if (g_cfg.fondoG < 0) g_cfg.fondoG = 0; if (g_cfg.fondoG > 255) g_cfg.fondoG = 255;
     if (g_cfg.fondoB < 0) g_cfg.fondoB = 0; if (g_cfg.fondoB > 255) g_cfg.fondoB = 255;
@@ -2442,6 +2445,269 @@ static bool WheelBtnHit(float x, float y, float W, float H) {
     return x >= wp.x && x <= wp.x + ws && y >= wp.y && y <= wp.y + ws;
 }
 
+// ---- v1.9.63: boton nativo del juego (widget real via SAUtils) ----
+// El boton de la rueda pasa a ser un widget REAL del juego (como el del
+// Manual Driveby de chzbrgr), creado con SAUtils::CreateWidget (slot libre
+// 190..254) y con el icono cargado por LoadRwTextureFromPNG. No hay
+// dependencia en compilacion: todo se resuelve en runtime (dlopen
+// libAML.so -> GetInterface("SAUtils") -> vtable). Sin SAUtils, o si algo
+// falla, se usa el boton GL de siempre (el de la 1.9.54-1.9.62).
+// Datos verificados por desensamblado (NativeWidget-RE.md, 2026-11-23):
+// - vtable SAUtils (63 entradas): FindFreeWidgetId=18, CreateWidget=19,
+//   SetWidgetIcon(ptr)=21, SetWidgetPos=32, LoadRwTextureFromPNG=33.
+// - CWidget: posicion +0x18..0x27 (x,y,sx,sy en unidades 640x448 del
+//   juego: x_px = x*maxW/640, y_px = y*maxH/448), rect en pixeles
+//   +0x2c..0x38, sprite +0x10, tocado +0x54, color RGBA +0x55..0x58
+//   (alfa +0x58: 0 = no se dibuja), habilitado +0x59. El ctor deja
+//   +0x58=0 y +0x59=0: hay que ponerlos o el widget no se ve.
+// - El juego lee el arreglo de widgets por el puntero GOT base+0x850910
+//   (SAUtils lo redirige a su pNewWidgets[255]); el simbolo m_pWidgets
+//   (g_widgets) solo tiene las primeras 150 entradas tras SAUtils.
+// - SAUtils ToggleWidget escribe en +0x5C (marca de tiempo del toque en
+//   el juego), NO en +0x59: NO se usa; se escribe +0x59 directo.
+// - DrawAll NO salta los widgets con +0x59=0; el que manda es el alfa.
+// - El toque se detecta igual que el boton GL (WheelBtnHit + soltar),
+//   asi que no hace falta leer +0x54.
+static void* g_sautils = nullptr;       // ISAUtils* (runtime, puede ser NULL)
+static void** g_sautilsVt = nullptr;    // su vtable
+static void* g_natTex = nullptr;        // RwTexture* del icono
+static void* g_natWidget = nullptr;     // CWidgetButton* creado
+static int g_natId = -1;                // id en pNewWidgets (190..254)
+static bool g_natLoggedNoSA = false;    // "SAUtils no detectado" ya registrado
+static bool g_natLoggedNoTex = false;   // "sin icono PNG" ya registrado
+static bool g_natRectLogged = false;    // rect del juego ya registrado
+static float g_natX = -1e9f, g_natY = -1e9f, g_natS = -1e9f;  // ultima pos aplicada (unidades widget)
+static bool g_natShown = false;
+static uintptr_t g_gameBase = 0;        // base de libGTASA.so (para GOT)
+
+typedef int (*SA_FindFreeWidgetIdFn)(void*);
+typedef void* (*SA_CreateWidgetFn)(void*, int, int, int, float, const char*);
+typedef void (*SA_SetWidgetIconFn)(void*, void*, uintptr_t);
+typedef void (*SA_SetWidgetPosFn)(void*, int, float, float, float, float);
+typedef void* (*SA_LoadRwTextureFromPNGFn)(void*, const char*);
+
+static uintptr_t GameLibBase() {
+    if (g_gameBase) return g_gameBase;
+    struct Ctx { uintptr_t base; } c = {0};
+    dl_iterate_phdr([](struct dl_phdr_info* i, size_t, void* d) -> int {
+        Ctx* x = (Ctx*)d;
+        if (i->dlpi_name && strstr(i->dlpi_name, "libGTASA.so")) { x->base = i->dlpi_addr; return 1; }
+        return 0; }, &c);
+    g_gameBase = c.base;
+    return g_gameBase;
+}
+static void** WidgetsArrayGOT() {
+    uintptr_t b = GameLibBase();
+    if (!b) return nullptr;
+    return *(void***)(b + 0x850910);  // puntero GOT al arreglo (pNewWidgets con SAUtils)
+}
+static bool SAUtilsGet() {
+    if (g_sautils && g_sautilsVt) return true;
+    // Reintentar como mucho cada 5 s (SAUtils puede cargar despues que
+    // este mod); sin esto se haria dlopen+dlsym en cada cuadro.
+    static auto lastTry = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    auto now = std::chrono::steady_clock::now();
+    if (now - lastTry < std::chrono::seconds(5)) return false;
+    lastTry = now;
+    void* h = dlopen("libAML.so", RTLD_NOW);
+    if (!h) return false;
+    typedef void* (*GetInterfaceFn)(const char*);
+    GetInterfaceFn gi = (GetInterfaceFn)dlsym(h, "GetInterface");
+    if (!gi) return false;
+    void* sa = gi("SAUtils");
+    if (!sa) {
+        if (!g_natLoggedNoSA) { g_natLoggedNoSA = true; Log("  boton nativo: SAUtils no detectado (se usa el boton GL)"); }
+        return false;
+    }
+    g_sautils = sa;
+    g_sautilsVt = *(void***)sa;
+    Log("  boton nativo: SAUtils detectado (%p)", sa);
+    return true;
+}
+// Geometria del boton en unidades del juego (640x448): centro + escala.
+// Se calcula desde WheelBtnGeom (misma geometria que el boton GL), asi el
+// toque (WheelBtnHit) y el widget dibujado coinciden.
+static bool NativeWheelGeom(float W, float H, float maxW, float maxH, float& wx, float& wy, float& sc) {
+    if (maxW < 200.0f || maxW > 10000.0f || maxH < 200.0f || maxH > 10000.0f) return false;
+    ImVec2 wp; float ws;
+    WheelBtnGeom(W, H, wp, ws);
+    float cx = wp.x + ws * 0.5f, cy = wp.y + ws * 0.5f;
+    wx = cx * 640.0f / maxW;
+    wy = cy * 448.0f / maxH;
+    sc = (ws * 0.5f) * 640.0f / maxW;
+    return true;
+}
+// Tamano de pantalla que usa el juego para los widgets (RsGlobal via GOT:
+// +8 = ancho maximo, +12 = alto maximo, los dos valores que usa
+// CWidget::Update). Si no se puede leer, se usa el tamano de la
+// superficie (w/h de DrawFrame).
+static bool NativeScreenSize(float W, float H, float& maxW, float& maxH) {
+    uintptr_t b = GameLibBase();
+    if (b) {
+        void* rs = *(void**)(b + 0x850240);  // GOT: RsGlobal
+        if (rs) {
+            uint32_t mw = *(const uint32_t*)((const char*)rs + 8);
+            uint32_t mh = *(const uint32_t*)((const char*)rs + 12);
+            if (mw >= 200 && mw <= 10000 && mh >= 200 && mh <= 10000) { maxW = (float)mw; maxH = (float)mh; return true; }
+        }
+    }
+    maxW = W; maxH = H;
+    return false;
+}
+// Ruta del PNG del icono para el widget nativo: primero un PNG en
+// GTAVRadioMusic/boton/ (boton.png, o el primer *.png alfabetico; misma
+// regla que el boton GL), y si no hay, el icono incrustado escrito a un
+// archivo (LoadRwTextureFromPNG solo lee archivos, no memoria).
+static bool NativeWheelIconPath(std::string& out) {
+    UT_BuildMusicDirs();
+    {
+        std::string target;
+        for (int d = 0; d < UT_NUM_MUSIC_DIRS; d++) {
+            struct stat st;
+            if (stat(UT_MUSIC_DIRS[d], &st) == 0 && S_ISDIR(st.st_mode)) { target = UT_MUSIC_DIRS[d]; break; }
+        }
+        if (target.empty()) target = UT_MUSIC_DIRS[0];
+        std::string botonDir = target + "/boton";
+        struct stat bst;
+        if (stat(botonDir.c_str(), &bst) != 0) mkdir(botonDir.c_str(), 0777);
+    }
+    for (int d = 0; d < UT_NUM_MUSIC_DIRS; d++) {
+        std::string dir = std::string(UT_MUSIC_DIRS[d]) + "/boton";
+        std::string cand;
+        {
+            std::string p = dir + "/boton.png";
+            FILE* f = fopen(p.c_str(), "rb");
+            if (f) { fclose(f); cand = p; }
+        }
+        if (cand.empty()) {
+            DIR* dp = opendir(dir.c_str());
+            if (dp) {
+                std::string best;
+                struct dirent* ent;
+                while ((ent = readdir(dp)) != nullptr) {
+                    std::string n = ent->d_name;
+                    if (n.size() > 4 && n.substr(n.size() - 4) == ".png") {
+                        if (best.empty() || n < best) best = n;
+                    }
+                }
+                closedir(dp);
+                if (!best.empty()) cand = dir + "/" + best;
+            }
+        }
+        if (!cand.empty()) { out = cand; return true; }
+    }
+    std::string dir = g_gameFilesDir + "/VHudRadio";
+    mkdir(dir.c_str(), 0777);
+    std::string path = dir + "/boton_nativo.png";
+    std::vector<unsigned char> raw = B64Decode(kWheelIconB64);
+    if (raw.empty()) return false;
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) return false;
+    size_t wr = fwrite(raw.data(), 1, raw.size(), f);
+    fclose(f);
+    if (wr != raw.size()) return false;
+    out = path;
+    return true;
+}
+static void NativeWheelShow(bool show) {
+    if (!g_natWidget) return;
+    unsigned char* w = (unsigned char*)g_natWidget;
+    if (show) {
+        // El ctor deja alfa=0 y habilitado=0; sin esto el widget no se
+        // dibuja. La opacidad es la del .ini (btnRuedaOpac, 10..100%).
+        w[0x58] = (unsigned char)(255 * g_cfg.btnRuedaOpac / 100);
+        w[0x59] = 1;
+    } else {
+        w[0x58] = 0;
+        w[0x59] = 0;
+    }
+    g_natShown = show;
+}
+static bool NativeWheelCreate(float W, float H) {
+    if (g_natWidget) return true;
+    if (!SAUtilsGet()) return false;
+    float maxW = 0, maxH = 0;
+    NativeScreenSize(W, H, maxW, maxH);
+    float wx = 0, wy = 0, sc = 0;
+    if (!NativeWheelGeom(W, H, maxW, maxH, wx, wy, sc)) { Log("  boton nativo: sin tamano de pantalla valido"); return false; }
+    int id = ((SA_FindFreeWidgetIdFn)g_sautilsVt[18])(g_sautils);
+    if (id < 190 || id > 254) { Log("  boton nativo: sin slot libre (FindFreeWidgetId=%d)", id); return false; }
+    std::string png;
+    if (!NativeWheelIconPath(png)) {
+        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: sin icono PNG (se usa el boton GL)"); }
+        return false;
+    }
+    void* tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+    if (!tex) {
+        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: no se pudo cargar %s (se usa el boton GL)", png.c_str()); }
+        return false;
+    }
+    void* widget = ((SA_CreateWidgetFn)g_sautilsVt[19])(g_sautils, id, (int)wx, (int)wy, sc, nullptr);
+    if (!widget) { Log("  boton nativo: CreateWidget(%d) devolvio NULL", id); return false; }
+    ((SA_SetWidgetIconFn)g_sautilsVt[21])(g_sautils, widget, (uintptr_t)tex);
+    // Posicion exacta en flotante (CreateWidget solo admite int x/y).
+    ((SA_SetWidgetPosFn)g_sautilsVt[32])(g_sautils, id, wx, wy, sc, sc);
+    g_natTex = tex; g_natWidget = widget; g_natId = id;
+    g_natX = wx; g_natY = wy; g_natS = sc;
+    NativeWheelShow(true);
+    Log("  boton nativo: creado id=%d pos=(%.1f,%.1f) escala=%.1f png=%s", id, wx, wy, sc, png.c_str());
+    return true;
+}
+// Activo = el widget nativo existe y esta seleccionado (si no, el GL).
+static bool NativeWheelActive() { return g_cfg.botonNativo != 0 && g_natWidget != nullptr; }
+// Se llama cada cuadro desde DrawFrame (antes de decidir que dibujar).
+static void NativeWheelUpdate(float W, float H) {
+    bool want = g_cfg.botonNativo != 0 && g_inVehicle && g_hasRadio && g_cfg.botonVisible && !g_paused && !g_open && !g_preview && !g_settings && !g_trackList && !g_wheelClosing;
+    if (!g_cfg.botonNativo || !SAUtilsGet()) {
+        // Sin SAUtils o apagado: esconder el nativo si existia y usar el GL.
+        if (g_natWidget) NativeWheelShow(false);
+        return;
+    }
+    if (!g_natWidget) {
+        if (want) NativeWheelCreate(W, H);
+        return;
+    }
+    // El widget existe: verificar que sigue en el arreglo (si el juego lo
+    // borro al salir al menu, recrearlo la proxima vez que se quiera).
+    void** arr = WidgetsArrayGOT();
+    if (!arr || g_natId < 0 || g_natId > 254 || arr[g_natId] != g_natWidget) {
+        Log("  boton nativo: el widget desaparecio del arreglo (se recreara)");
+        g_natWidget = nullptr; g_natId = -1; g_natX = -1e9f; g_natShown = false;
+        return;
+    }
+    float maxW = 0, maxH = 0;
+    NativeScreenSize(W, H, maxW, maxH);
+    float wx = 0, wy = 0, sc = 0;
+    if (!NativeWheelGeom(W, H, maxW, maxH, wx, wy, sc)) return;
+    if (want) {
+        // Mover solo si cambio (tamano, opacidad o posicion) para no llamar
+        // a SetWidgetPos en cada cuadro.
+        unsigned char wantAlpha = (unsigned char)(255 * g_cfg.btnRuedaOpac / 100);
+        unsigned char* w = (unsigned char*)g_natWidget;
+        if (wx != g_natX || wy != g_natY || sc != g_natS) {
+            ((SA_SetWidgetPosFn)g_sautilsVt[32])(g_sautils, g_natId, wx, wy, sc, sc);
+            g_natX = wx; g_natY = wy; g_natS = sc;
+        }
+        if (w[0x58] != wantAlpha) w[0x58] = wantAlpha;
+        if (w[0x59] != 1) w[0x59] = 1;
+        g_natShown = true;
+        // Rectangulo real que calculo el juego (pixeles) vs geometria GL,
+        // una vez, para verificar que las unidades 640x448 son correctas
+        // en este telefono (el rect se calcula en el Update del juego, asi
+        // que en el cuadro de la creacion aun vale 0).
+        if (!g_natRectLogged) {
+            const float* r = (const float*)((const char*)g_natWidget + 0x2c);
+            if (r[2] > r[0] && r[3] > r[1]) {
+                ImVec2 wp; float ws; WheelBtnGeom(W, H, wp, ws);
+                Log("  boton nativo: rect juego=(%.0f,%.0f)-(%.0f,%.0f) rect GL=(%.0f,%.0f)-(%.0f,%.0f)", r[0], r[1], r[2], r[3], wp.x, wp.y, wp.x + ws, wp.y + ws);
+                g_natRectLogged = true;
+            }
+        }
+    } else if (g_natShown) {
+        NativeWheelShow(false);
+    }
+}
+
 // v2.33: boton flotante con OpenGL directo (sin ImGui) para no hacer un
 // cuadro ImGui cada cuadro solo por el boton. El decodificador MP3 de
 // SAUserTracks se quedaba sin CPU en el A14; ARCX no dibuja ImGui cuando
@@ -2712,7 +2978,9 @@ static bool DrawButtonGL(float W, float H) {
     if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
     // v1.9.54: boton propio de la rueda (encima del flotante): disco negro +
     // icono de rueda incrustado (si no cargo, el icono de la emisora).
-    {
+    // v1.9.63: con el boton nativo activo, el widget del juego lo dibuja y
+    // aqui no se dibuja nada (vWheel queda vacio).
+    if (!NativeWheelActive()) {
         // v1.9.60: el disco es CASI tan transparente como los botones del
         // juego (35% de la opacidad propia del boton de la rueda); el icono
         // blanco va a la opacidad propia (opRuedaF), no a la del flotante.
@@ -2812,7 +3080,8 @@ static bool DrawButtonGL(float W, float H) {
     // v1.9.54: circulo blanco alrededor del boton de la rueda (linea).
     // v1.9.60: con la opacidad propia del boton de la rueda (opRuedaF); la
     // geometria (wp/ws) ya se calculo una vez arriba (optimizar).
-    {
+    // v1.9.63: con el boton nativo activo no se dibuja (lo dibuja el juego).
+    if (!NativeWheelActive()) {
         const int SEG = 40;
         std::vector<GLBtnVert> circ;
         circ.reserve(48);
@@ -4016,6 +4285,13 @@ static void DrawSettings(float W, float H) {
         if (PanelSwitch(S(STR_BTN_RUEDA_LOCK), &bloqR, H)) { g_cfg.btnRuedaBloq = bloqR ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton de la rueda: %s", g_cfg.btnRuedaBloq ? "bloqueado" : "libre"); }
     }
     {
+        // v1.9.63: boton nativo del juego (widget real via SAUtils) o boton
+        // GL dibujado por el mod (el de la 1.9.54-1.9.62). Sin SAUtils, el
+        // interruptor no cambia nada: siempre se usa el GL.
+        bool natBtn = g_cfg.botonNativo != 0;
+        if (PanelSwitch(S(STR_BTN_NATIVO), &natBtn, H)) { g_cfg.botonNativo = natBtn ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton de la rueda: %s", g_cfg.botonNativo ? "nativo (widget del juego)" : "GL (dibujado por el mod)"); }
+    }
+    {
         // v2.23: el bloqueo es un interruptor (no un boton con ON/OFF)
         bool bloq = g_cfg.btnBloq != 0;
         if (PanelSwitch(S(STR_BTN_LOCK), &bloq, H)) { g_cfg.btnBloq = bloq ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.btnBloq ? "bloqueado" : "libre"); }
@@ -4520,6 +4796,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             }
         }
     }
+    // v1.9.63: boton nativo de la rueda (widget del juego via SAUtils):
+    // se crea/mueve/muestra aqui, antes de decidir que dibujar, para que
+    // el widget este en su sitio cuando el juego dibuje los botones.
+    NativeWheelUpdate((float)w, (float)h);
     bool onlyButton = g_inVehicle && !g_paused && !g_open && !g_preview && !g_settings && !g_trackList && !g_wheelClosing && g_hasRadio && g_cfg.botonVisible;
     if (onlyButton && g_inited) {
         // v2.33: solo el boton -> OpenGL directo, sin cuadro ImGui.
