@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.63-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.64-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.63-beta"
+#define VHUDRADIO_VERSION "1.9.64-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2475,6 +2475,7 @@ static void* g_natWidget = nullptr;     // CWidgetButton* creado
 static int g_natId = -1;                // id en pNewWidgets (190..254)
 static bool g_natLoggedNoSA = false;    // "SAUtils no detectado" ya registrado
 static bool g_natLoggedNoTex = false;   // "sin icono PNG" ya registrado
+static bool g_natLoggedConvert = false; // "icono propio convertido" ya registrado (v1.9.64)
 static bool g_natRectLogged = false;    // rect del juego ya registrado
 static float g_natX = -1e9f, g_natY = -1e9f, g_natS = -1e9f;  // ultima pos aplicada (unidades widget)
 static bool g_natShown = false;
@@ -2558,7 +2559,11 @@ static bool NativeScreenSize(float W, float H, float& maxW, float& maxH) {
 // GTAVRadioMusic/boton/ (boton.png, o el primer *.png alfabetico; misma
 // regla que el boton GL), y si no hay, el icono incrustado escrito a un
 // archivo (LoadRwTextureFromPNG solo lee archivos, no memoria).
-static bool NativeWheelIconPath(std::string& out) {
+// v1.9.64: ruta del icono PROPIO (GTAVRadioMusic/boton/*.png). Antes era
+// parte de NativeWheelIconPath; se separa del incrustado para poder
+// convertir el propio cuando RW no lo lee (JPEG con extension .png) antes
+// de rendirse al incrustado.
+static bool NativeWheelCustomIconPath(std::string& out) {
     UT_BuildMusicDirs();
     {
         std::string target;
@@ -2596,6 +2601,10 @@ static bool NativeWheelIconPath(std::string& out) {
         }
         if (!cand.empty()) { out = cand; return true; }
     }
+    return false;
+}
+// v1.9.63: escribe el icono incrustado a VHudRadio/boton_nativo.png.
+static bool NativeWheelEmbeddedIconPath(std::string& out) {
     std::string dir = g_gameFilesDir + "/VHudRadio";
     mkdir(dir.c_str(), 0777);
     std::string path = dir + "/boton_nativo.png";
@@ -2623,6 +2632,143 @@ static void NativeWheelShow(bool show) {
     }
     g_natShown = show;
 }
+// v1.9.64: escritor PNG minimo (RGBA 8 bits, sin compresion) para convertir
+// el icono propio a un PNG real que LoadRwTextureFromPNG si pueda leer.
+// RtPNGImageRead solo lee PNG de verdad; un JPEG con extension .png (como
+// radiostation.png) lo lee stb_image pero no RW. Sin dependencias externas.
+static uint32_t PngCrc32(const unsigned char* p, size_t n) {
+    static uint32_t table[256];
+    static bool init = false;
+    if (!init) {
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : (c >> 1);
+            table[i] = c;
+        }
+        init = true;
+    }
+    uint32_t c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; i++) c = table[(c ^ p[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+static void PngPut32(std::vector<unsigned char>& out, uint32_t v) {
+    out.push_back((unsigned char)((v >> 24) & 0xFF));
+    out.push_back((unsigned char)((v >> 16) & 0xFF));
+    out.push_back((unsigned char)((v >> 8) & 0xFF));
+    out.push_back((unsigned char)(v & 0xFF));
+}
+static void PngChunk(std::vector<unsigned char>& out, const char* type, const unsigned char* data, size_t len) {
+    PngPut32(out, (uint32_t)len);
+    size_t tpos = out.size();
+    out.insert(out.end(), type, type + 4);
+    if (len) out.insert(out.end(), data, data + len);
+    PngPut32(out, PngCrc32(out.data() + tpos, 4 + len));
+}
+static bool NativeWritePng(const std::string& path, const unsigned char* rgba, int w, int h) {
+    if (!rgba || w <= 0 || h <= 0) return false;
+    std::vector<unsigned char> png;
+    static const unsigned char sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+    png.insert(png.end(), sig, sig + 8);
+    unsigned char ihdr[13] = {0};
+    ihdr[0] = (unsigned char)((w >> 24) & 0xFF); ihdr[1] = (unsigned char)((w >> 16) & 0xFF);
+    ihdr[2] = (unsigned char)((w >> 8) & 0xFF); ihdr[3] = (unsigned char)(w & 0xFF);
+    ihdr[4] = (unsigned char)((h >> 24) & 0xFF); ihdr[5] = (unsigned char)((h >> 16) & 0xFF);
+    ihdr[6] = (unsigned char)((h >> 8) & 0xFF); ihdr[7] = (unsigned char)(h & 0xFF);
+    ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+    PngChunk(png, "IHDR", ihdr, 13);
+    // Datos sin filtrar: un byte 0 por fila + RGBA. zlib con bloques
+    // almacenados (sin compresion): cabecera 0x78 0x01, bloques de maximo
+    // 65535 bytes (byte final + LEN + NLEN + datos) y Adler-32 al final.
+    std::vector<unsigned char> raw;
+    raw.reserve((size_t)(w * 4 + 1) * (size_t)h);
+    for (int y = 0; y < h; y++) {
+        raw.push_back(0);
+        raw.insert(raw.end(), rgba + (size_t)y * w * 4, rgba + (size_t)(y + 1) * w * 4);
+    }
+    std::vector<unsigned char> z;
+    z.push_back(0x78); z.push_back(0x01);
+    size_t off = 0;
+    while (true) {
+        size_t chunk = raw.size() - off;
+        if (chunk > 65535) chunk = 65535;
+        bool last = (off + chunk >= raw.size());
+        z.push_back(last ? (unsigned char)1 : (unsigned char)0);
+        z.push_back((unsigned char)(chunk & 0xFF));
+        z.push_back((unsigned char)((chunk >> 8) & 0xFF));
+        uint16_t nlen = (uint16_t)~(uint16_t)chunk;
+        z.push_back((unsigned char)(nlen & 0xFF));
+        z.push_back((unsigned char)((nlen >> 8) & 0xFF));
+        z.insert(z.end(), raw.begin() + off, raw.begin() + off + chunk);
+        off += chunk;
+        if (last) break;
+    }
+    uint32_t a = 1, b = 0;
+    for (size_t i = 0; i < raw.size(); i++) { a = (a + raw[i]) % 65521; b = (b + a) % 65521; }
+    uint32_t adler = (b << 16) | a;
+    z.push_back((unsigned char)((adler >> 24) & 0xFF));
+    z.push_back((unsigned char)((adler >> 16) & 0xFF));
+    z.push_back((unsigned char)((adler >> 8) & 0xFF));
+    z.push_back((unsigned char)(adler & 0xFF));
+    PngChunk(png, "IDAT", z.data(), z.size());
+    PngChunk(png, "IEND", nullptr, 0);
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) return false;
+    size_t wr = fwrite(png.data(), 1, png.size(), f);
+    fclose(f);
+    return wr == png.size();
+}
+// v1.9.64: convierte el icono propio a un PNG real que RW pueda leer.
+// Decodifica con stb_image (lee JPEG, PNG, etc.) y re-escribe PNG. Si la
+// imagen no tiene alfa (JPEG), se aplica el mismo tratamiento lineArt del
+// boton GL (1.9.58): fondo blanco conectado a las esquinas -> transparente
+// y tonos medios 96-240 -> transparente. Si ya tiene alfa, se usa tal cual.
+static bool NativeWheelConvertIcon(const std::string& src, const std::string& dst) {
+    int w = 0, h = 0, comp = 0;
+    unsigned char* px = stbi_load(src.c_str(), &w, &h, &comp, 4);
+    if (!px || w <= 0 || h <= 0) { if (px) stbi_image_free(px); return false; }
+    bool hasAlpha = false;
+    for (int i = 0; i < w * h; i++) if (px[i * 4 + 3] < 255) { hasAlpha = true; break; }
+    if (!hasAlpha) {
+        // Copia del lineArt de LoadPngFromMemory (1.9.58): flood-fill de
+        // esquinas + quitar tonos medios. Sin esto, un JPEG quedaria con
+        // su fondo blanco opaco sobre el boton.
+        std::vector<char> seen((size_t)w * h, 0);
+        std::vector<int> stack;
+        auto isBg = [&](int x, int y) {
+            unsigned char* p = px + (y * w + x) * 4;
+            return p[0] > 240 && p[1] > 240 && p[2] > 240;
+        };
+        const int sx[4] = {0, w - 1, 0, w - 1};
+        const int sy[4] = {0, 0, h - 1, h - 1};
+        for (int k = 0; k < 4; k++) {
+            int x = sx[k], y = sy[k];
+            if (isBg(x, y) && !seen[y * w + x]) { seen[y * w + x] = 1; stack.push_back(y * w + x); }
+        }
+        while (!stack.empty()) {
+            int idx = stack.back(); stack.pop_back();
+            px[idx * 4 + 3] = 0;
+            int x = idx % w, y = idx / w;
+            const int dx[4] = {1, -1, 0, 0};
+            const int dy[4] = {0, 0, 1, -1};
+            for (int d = 0; d < 4; d++) {
+                int nx = x + dx[d], ny = y + dy[d];
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    int nidx = ny * w + nx;
+                    if (!seen[nidx] && isBg(nx, ny)) { seen[nidx] = 1; stack.push_back(nidx); }
+                }
+            }
+        }
+        for (int i = 0; i < w * h; i++) {
+            unsigned char* p = px + i * 4;
+            if (p[3] == 0) continue;
+            int m = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) : (p[1] > p[2] ? p[1] : p[2]);
+            if (m >= 96 && m <= 240) p[3] = 0;
+        }
+    }
+    bool ok = NativeWritePng(dst, px, w, h);
+    stbi_image_free(px);
+    return ok;
+}
 static bool NativeWheelCreate(float W, float H) {
     if (g_natWidget) return true;
     if (!SAUtilsGet()) return false;
@@ -2632,14 +2778,30 @@ static bool NativeWheelCreate(float W, float H) {
     if (!NativeWheelGeom(W, H, maxW, maxH, wx, wy, sc)) { Log("  boton nativo: sin tamano de pantalla valido"); return false; }
     int id = ((SA_FindFreeWidgetIdFn)g_sautilsVt[18])(g_sautils);
     if (id < 190 || id > 254) { Log("  boton nativo: sin slot libre (FindFreeWidgetId=%d)", id); return false; }
+    // v1.9.64: orden de intentos: (1) el icono propio tal cual, (2) el
+    // propio convertido a PNG real (JPEG con .png y demas), (3) el
+    // incrustado. Solo si los tres fallan se usa el boton GL.
     std::string png;
-    if (!NativeWheelIconPath(png)) {
-        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: sin icono PNG (se usa el boton GL)"); }
-        return false;
+    void* tex = nullptr;
+    if (NativeWheelCustomIconPath(png)) {
+        tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+        if (!tex) {
+            std::string conv = g_gameFilesDir + "/VHudRadio/boton_convertido.png";
+            if (NativeWheelConvertIcon(png, conv)) {
+                tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, conv.c_str());
+                if (tex) {
+                    png = conv;
+                    if (!g_natLoggedConvert) { g_natLoggedConvert = true; Log("  boton nativo: icono propio convertido a PNG real"); }
+                }
+            }
+            if (!tex && !g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: el icono propio no cargo (%s), se usa el incrustado", png.c_str()); }
+        }
     }
-    void* tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+    if (!tex && NativeWheelEmbeddedIconPath(png)) {
+        tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+    }
     if (!tex) {
-        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: no se pudo cargar %s (se usa el boton GL)", png.c_str()); }
+        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: sin icono PNG (se usa el boton GL)"); }
         return false;
     }
     void* widget = ((SA_CreateWidgetFn)g_sautilsVt[19])(g_sautils, id, (int)wx, (int)wy, sc, nullptr);
