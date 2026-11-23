@@ -18,8 +18,8 @@
 //   con las flechas del centro cuando suena la 12). El nombre de la pista
 //   actual esta en ut_curTrack / UT_TrackDisplayName().
 // - Decodificador en un hilo aparte; anillo de 512 KB; pre-llenado
-//   de ~0.5 s antes de abrir el dispositivo; OpenSL con 4 buffers x 20 ms
-//   (80 ms) en vez de 2 x 10 ms (20 ms). Al cambiar de pista NO se vacia el
+//   de ~0.75 s antes de abrir el dispositivo; OpenSL con 6 buffers x 20 ms
+//   (120 ms) en vez de 2 x 10 ms (20 ms). Al cambiar de pista NO se vacia el
 //   anillo: todo se remuestrea a 44100 Hz estereo, asi el dispositivo se crea
 //   una sola vez y nunca cambia de formato. Si la pista ya es 44100 Hz
 //   estereo, el PCM va directo al anillo sin remuestrear (via rapida).
@@ -68,11 +68,11 @@
 static const int UT_OUT_RATE = 44100;          // todo se remuestrea a 44100 Hz estereo
 static const int UT_OUT_CH = 2;
 static const size_t UT_RING_BYTES = 512 * 1024;  // anillo de 512 KB (~2.9 s)
-static const size_t UT_PREFILL_BYTES = 88200;    // ~0.5 s antes de abrir el dispositivo
+static const size_t UT_PREFILL_BYTES = 132300;   // ~0.75 s antes de abrir el dispositivo (v1.9.69: mas margen contra cortes)
 static const int UT_BUF_FRAMES = 882;            // 20 ms a 44100 Hz
 static const int UT_BUF_SAMPLES = UT_BUF_FRAMES * UT_OUT_CH;  // 1764 muestras
 static const size_t UT_BUF_BYTES = UT_BUF_SAMPLES * 2;         // 3528 bytes
-static const int UT_NUM_BUFS = 4;                // 4 buffers x 20 ms = 80 ms en cola
+static const int UT_NUM_BUFS = 6;                // 6 buffers x 20 ms = 120 ms en cola (v1.9.69: mas margen contra cortes)
 
 // ---- carpetas de musica (solo GTAVRadioMusic; se construyen en tiempo de
 // ejecucion con el paquete detectado, g_pkgName / g_gameFilesDir) ----
@@ -805,7 +805,7 @@ static bool UT_Start() {
         ut_ring.free();
         return false;
     }
-    // Crear el reproductor OpenSL (44100 Hz estereo, 4 buffers x 20 ms).
+    // Crear el reproductor OpenSL (44100 Hz estereo, 6 buffers x 20 ms).
     SLDataLocator_AndroidSimpleBufferQueue locBuf = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, (SLuint32)UT_NUM_BUFS};
     SLDataFormat_PCM fmt = {SL_DATAFORMAT_PCM, (SLuint32)UT_OUT_CH, SL_SAMPLINGRATE_44_1,
         SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,

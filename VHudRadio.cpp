@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.68-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.69-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.68-beta"
+#define VHUDRADIO_VERSION "1.9.69-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -3557,7 +3557,9 @@ static void BlurDrawBackground(float W, float H) {
     if (mw < 8) mw = 8; if (mh < 8) mh = 8;
     int qw = w / 4, qh = h / 4;  // v1.8: paso intermedio (cuarto) para la piramide por mitades
     if (qw < 8) qw = 8; if (qh < 8) qh = 8;
+    bool blurRecreated = false;  // v1.9.69: la copia es obligatoria tras recrear texturas
     if (!g_blurCopyTex || g_blurCW != w || g_blurCH != h || !g_blurSmallTex || g_blurSW != sw || g_blurSH != sh || g_blurFactor != factor || !g_blurFBO || !g_blurMidTex || g_blurMW != mw || g_blurMH != mh || !g_blurMidFBO || !g_blurQtrTex || g_blurQW != qw || g_blurQH != qh || !g_blurQtrFBO || !g_blurTmpTex || !g_blurTmpFBO) {
+        blurRecreated = true;
         if (g_blurFBO) { glDeleteFramebuffers(1, &g_blurFBO); g_blurFBO = 0; }
         if (g_blurResolveFBO) { glDeleteFramebuffers(1, &g_blurResolveFBO); g_blurResolveFBO = 0; }
         if (g_blurMidFBO) { glDeleteFramebuffers(1, &g_blurMidFBO); g_blurMidFBO = 0; }
@@ -3685,7 +3687,19 @@ static void BlurDrawBackground(float W, float H) {
     // piramide ya corrian cada cuadro, solo la copia estaba congelada, asi
     // que el unico cambio es copiar siempre. Si la copia falla, se registra
     // el error y se sigue sin desenfoque (como antes).
-    {
+    // v1.9.69 (optimizar): la copia a pantalla completa es la operacion mas
+    // cara con la rueda abierta; el juego va a 0.3x, asi que el fondo apenas
+    // se mueve: copiar 1 de cada 2 cuadros es invisible y baja el costo a la
+    // mitad. La piramide y el gaussiano siguen cada cuadro sobre la copia
+    // (de 1 cuadro de antiguedad). Tras recrear texturas o al abrir la rueda
+    // (mas de 100 ms sin llamar), la copia es obligatoria.
+    static int s_blurCopyTick = 0;
+    static auto s_blurLastCall = std::chrono::steady_clock::now();
+    auto blurNow = std::chrono::steady_clock::now();
+    bool blurGap = std::chrono::duration_cast<std::chrono::milliseconds>(blurNow - s_blurLastCall).count() > 100;
+    s_blurLastCall = blurNow;
+    bool doCopy = blurRecreated || blurGap || ((s_blurCopyTick++ & 1) == 0);
+    if (doCopy) {
         glActiveTexture(GL_TEXTURE0);  // v1.3: la copia va a la unidad 0 (antes dependia de la que dejara el juego)
         if (g_pBlitFB && g_blurResolveFBO) {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
