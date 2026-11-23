@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.64-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.65-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.64-beta"
+#define VHUDRADIO_VERSION "1.9.65-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2474,8 +2474,8 @@ static void* g_natTex = nullptr;        // RwTexture* del icono
 static void* g_natWidget = nullptr;     // CWidgetButton* creado
 static int g_natId = -1;                // id en pNewWidgets (190..254)
 static bool g_natLoggedNoSA = false;    // "SAUtils no detectado" ya registrado
-static bool g_natLoggedNoTex = false;   // "sin icono PNG" ya registrado
 static bool g_natLoggedConvert = false; // "icono propio convertido" ya registrado (v1.9.64)
+static bool g_natDiagLogged = false;    // diagnostico por paso ya registrado (v1.9.65)
 static bool g_natRectLogged = false;    // rect del juego ya registrado
 static float g_natX = -1e9f, g_natY = -1e9f, g_natS = -1e9f;  // ultima pos aplicada (unidades widget)
 static bool g_natShown = false;
@@ -2604,8 +2604,11 @@ static bool NativeWheelCustomIconPath(std::string& out) {
     return false;
 }
 // v1.9.63: escribe el icono incrustado a VHudRadio/boton_nativo.png.
+// v1.9.65: en data/ (g_gameDataDir), no en files/: el .ini y el log ya
+// escriben ahi, asi que esta carpeta esta probada como escribible; la
+// escritura a files/VHudRadio/ nunca se probo y es sospechosa del fallo.
 static bool NativeWheelEmbeddedIconPath(std::string& out) {
-    std::string dir = g_gameFilesDir + "/VHudRadio";
+    std::string dir = g_gameDataDir + "/VHudRadio";
     mkdir(dir.c_str(), 0777);
     std::string path = dir + "/boton_nativo.png";
     std::vector<unsigned char> raw = B64Decode(kWheelIconB64);
@@ -2782,6 +2785,36 @@ static bool NativeWheelConvertIcon(const std::string& src, const std::string& ds
     stbi_image_free(px);
     return ok;
 }
+// v1.9.65: base de libSAUtils64.so (mismo patron que GameLibBase) para
+// verificar los indices de la vtable contra el binario analizado.
+static uintptr_t SAUtilsLibBase() {
+    static uintptr_t base = 0;
+    if (base) return base;
+    struct Ctx { uintptr_t base; } c = {0};
+    dl_iterate_phdr([](struct dl_phdr_info* i, size_t, void* d) -> int {
+        Ctx* x = (Ctx*)d;
+        if (i->dlpi_name && strstr(i->dlpi_name, "libSAUtils64.so")) { x->base = i->dlpi_addr; return 1; }
+        return 0; }, &c);
+    base = c.base;
+    return base;
+}
+// v1.9.65: registra los desplazamientos de la vtable de SAUtils respecto a
+// su base, una sola vez. Si los indices son los correctos y el SAUtils del
+// telefono es el analizado (1.6), debe salir vt18=0x274c4 (FindFreeWidgetId),
+// vt19=0x274ec (CreateWidget), vt21=0x275f8 (SetWidgetIcon), vt33=0x27924
+// (LoadRwTextureFromPNG) y vt35=0x27b20. Cualquier otro valor dice que el
+// SAUtils instalado es otra version y los indices hay que ajustarlos.
+static void NativeWheelLogVtable() {
+    uintptr_t base = SAUtilsLibBase();
+    if (!base || !g_sautilsVt) { Log("  boton nativo: diag vtable sin base (%p) o sin vtable (%p)", (void*)base, (void*)g_sautilsVt); return; }
+    Log("  boton nativo: diag vtable base=%p vt18=0x%lx vt19=0x%lx vt21=0x%lx vt33=0x%lx vt35=0x%lx",
+        (void*)base,
+        (unsigned long)((uintptr_t)g_sautilsVt[18] - base),
+        (unsigned long)((uintptr_t)g_sautilsVt[19] - base),
+        (unsigned long)((uintptr_t)g_sautilsVt[21] - base),
+        (unsigned long)((uintptr_t)g_sautilsVt[33] - base),
+        (unsigned long)((uintptr_t)g_sautilsVt[35] - base));
+}
 static bool NativeWheelCreate(float W, float H) {
     if (g_natWidget) return true;
     if (!SAUtilsGet()) return false;
@@ -2794,27 +2827,52 @@ static bool NativeWheelCreate(float W, float H) {
     // v1.9.64: orden de intentos: (1) el icono propio tal cual, (2) el
     // propio convertido a PNG real (JPEG con .png y demas), (3) el
     // incrustado. Solo si los tres fallan se usa el boton GL.
+    // v1.9.65: diagnostico por paso, una sola vez por sesion: el log 1.9.64
+    // muestra que los 3 intentos fallan pero no dice en cual paso. Cada
+    // linea "diag" se registra solo la primera vez que se llega aqui.
+    bool diag = !g_natDiagLogged;
+    if (diag) { g_natDiagLogged = true; NativeWheelLogVtable(); }
     std::string png;
     void* tex = nullptr;
     if (NativeWheelCustomIconPath(png)) {
         tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+        if (diag) Log("  boton nativo: diag propio %s -> %p", png.c_str(), tex);
         if (!tex) {
-            std::string conv = g_gameFilesDir + "/VHudRadio/boton_convertido.png";
-            if (NativeWheelConvertIcon(png, conv)) {
+            // v1.9.65: el convertido va a data/VHudRadio/ (probado
+            // escribible: ahi viven el .ini y el log) en vez de
+            // files/VHudRadio/, cuya escritura nunca se probo.
+            std::string conv = g_gameDataDir + "/VHudRadio/boton_convertido.png";
+            bool convOk = NativeWheelConvertIcon(png, conv);
+            struct stat cst;
+            bool convExists = (stat(conv.c_str(), &cst) == 0);
+            if (diag) Log("  boton nativo: diag conversion ok=%d existe=%d tam=%ld", convOk ? 1 : 0, convExists ? 1 : 0, convExists ? (long)cst.st_size : 0L);
+            if (convOk) {
                 tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, conv.c_str());
+                if (diag) Log("  boton nativo: diag convertido -> %p", tex);
                 if (tex) {
                     png = conv;
                     if (!g_natLoggedConvert) { g_natLoggedConvert = true; Log("  boton nativo: icono propio convertido a PNG real"); }
                 }
             }
-            if (!tex && !g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: el icono propio no cargo (%s), se usa el incrustado", png.c_str()); }
+            if (!tex && diag) Log("  boton nativo: diag el propio no cargo, se usa el incrustado");
         }
-    }
-    if (!tex && NativeWheelEmbeddedIconPath(png)) {
-        tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, png.c_str());
+    } else if (diag) {
+        Log("  boton nativo: diag sin icono propio en boton/");
     }
     if (!tex) {
-        if (!g_natLoggedNoTex) { g_natLoggedNoTex = true; Log("  boton nativo: sin icono PNG (se usa el boton GL)"); }
+        std::string emb;
+        bool embOk = NativeWheelEmbeddedIconPath(emb);
+        struct stat est;
+        bool embExists = embOk && (stat(emb.c_str(), &est) == 0);
+        if (diag) Log("  boton nativo: diag incrustado escrito=%d existe=%d tam=%ld ruta=%s", embOk ? 1 : 0, embExists ? 1 : 0, embExists ? (long)est.st_size : 0L, emb.c_str());
+        if (embOk) {
+            tex = ((SA_LoadRwTextureFromPNGFn)g_sautilsVt[33])(g_sautils, emb.c_str());
+            if (diag) Log("  boton nativo: diag incrustado -> %p", tex);
+            if (tex) png = emb;
+        }
+    }
+    if (!tex) {
+        if (diag) Log("  boton nativo: sin icono PNG (se usa el boton GL)");
         return false;
     }
     void* widget = ((SA_CreateWidgetFn)g_sautilsVt[19])(g_sautils, id, (int)wx, (int)wy, sc, nullptr);
