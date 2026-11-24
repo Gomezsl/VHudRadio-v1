@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.73-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.74-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.73-beta"
+#define VHUDRADIO_VERSION "1.9.74-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1071,14 +1071,14 @@ static const char* kStationProgram[14] = { "", "Forth Right MC", "Mary-Beth Mayb
 enum LangId { L_ES = 0, L_EN, L_ID, L_PT, L_FR, L_DE, L_COUNT };
 static const char* kLangNames[L_COUNT] = { "Español", "English", "Bahasa Indonesia", "Portugues (BR)", "Francais", "Deutsch" };
 static const char* kLangCodes[L_COUNT] = { "es", "en", "id", "pt", "fr", "de" };
-enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_POPUPICONO, STR_POPUPTEXTO, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_TL_BTN, STR_TL_TITLE, STR_TL_PLAYING, STR_BTN_RUEDA_SIZE, STR_BTN_RUEDA_OPAC, STR_BTN_RUEDA_LOCK, STR_COUNT };  // v1.6: lista de canciones traducida  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego // v1.9.68: interruptor nativo eliminado, el nativo es el unico boton // v1.9.73: aviso de emisora (icono/texto)
+enum StrId { STR_TITLE, STR_HINT, STR_FONDO, STR_TAMANO, STR_ANILLO, STR_TEXTO, STR_PREVIEW, STR_RESET, STR_CLOSE, STR_PREVIEW_LABEL, STR_LANG, STR_BTN_SIZE, STR_BTN_OPAC, STR_BTN_LOCK, STR_BTN_RESET_POS, STR_FONDO_LBL, STR_DESLIZA, STR_CREDIT, STR_ICONOSCOLOR, STR_CAMARALENTA, STR_BOTONVIS, STR_SEC_RUEDA, STR_SEC_BOTON, STR_GENERO, STR_OCULTARNOMBRE, STR_POPUPICONO, STR_POPUPTEXTO, STR_POPUPTAM, STR_FONDOICONO, STR_ANIMACION, STR_BLUR, STR_BLOQUEARJUEGO, STR_TL_BTN, STR_TL_TITLE, STR_TL_PLAYING, STR_BTN_RUEDA_SIZE, STR_BTN_RUEDA_OPAC, STR_BTN_RUEDA_LOCK, STR_COUNT };  // v1.6: lista de canciones traducida  // v2.50: titulos de seccion del panel; v2.53: funciones de Discord; v2.55: sin iconos propios; v2.56: blur de fondo; v2.57: bloquear juego // v1.9.68: interruptor nativo eliminado, el nativo es el unico boton // v1.9.73: aviso de emisora (icono/texto) // v1.9.74: tamano del aviso
 static const char* kUI[L_COUNT][STR_COUNT] = {
-    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Icono en el aviso de emisora", "Texto en el aviso de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta", "Lista de canciones", "LISTA DE CANCIONES", "SONANDO", "Tamano del boton de la rueda", "Opacidad del boton de la rueda", "Bloquear posicion del boton de la rueda" },
-    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon in the station pop-up", "Text in the station pop-up", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open", "Song list", "TRACK LIST", "PLAYING", "Wheel button size", "Wheel button opacity", "Lock wheel button position" },
-    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Ikon di pop-up stasiun", "Teks di pop-up stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka", "Daftar lagu", "DAFTAR LAGU", "MEMUTAR", "Ukuran tombol roda", "Opasitas tombol roda", "Kunci posisi tombol roda" },
-    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Ícone no aviso da estação", "Texto no aviso da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta", "Lista de músicas", "LISTA DE MÚSICAS", "TOCANDO", "Tamanho do botao da roda", "Opacidade do botao da roda", "Bloquear posicao do botao da roda" },
-    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Icône dans l'avis de station", "Texte dans l'avis de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte", "Liste des chansons", "LISTE DES CHANSONS", "EN LECTURE", "Taille du bouton de la roue", "Opacite du bouton de la roue", "Verrouiller la position du bouton de la roue" },
-    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol im Sender-Popup", "Text im Sender-Popup", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist", "Songliste", "SONGLISTE", "LÄUFT", "Rad-Button-Grosse", "Rad-Button-Deckkraft", "Rad-Button-Position sperren" },
+    { "Personalizar rueda de radio", "Fondo, tamano y colores. Se guardan en configs/VHudRadio.ini", "Oscuridad del fondo", "Tamano de la rueda", "Anillo", "Texto del centro", "Vista previa de la rueda", "Restablecer todo", "Cerrar", "VISTA PREVIA", "Idioma", "Tamano del boton", "Opacidad del boton", "Bloquear posicion del boton", "Restablecer posicion del boton", "Fondo", "Desliza para ver más", "rueda de radio GTAV de Hunter09", "Iconos de las emisoras a color", "Camara lenta al abrir la rueda", "Mostrar boton flotante", "Rueda de radio", "Boton flotante", "Mostrar género en la rueda", "Ocultar ventana de emisora", "Icono en el aviso de emisora", "Texto en el aviso de emisora", "Tamaño del aviso de emisora", "Fondo de color del icono", "Animación al abrir la rueda", "Desenfoque de fondo", "Bloquear juego con la rueda abierta", "Lista de canciones", "LISTA DE CANCIONES", "SONANDO", "Tamano del boton de la rueda", "Opacidad del boton de la rueda", "Bloquear posicion del boton de la rueda" },
+    { "Customize radio wheel", "Background, size and colors. Saved in configs/VHudRadio.ini", "Background darkness", "Wheel size", "Ring", "Center text", "Preview the wheel", "Reset all", "Close", "PREVIEW", "Language", "Button size", "Button opacity", "Lock button position", "Reset button position", "Background", "Swipe to see more", "GTAV radio wheel by Hunter09", "Color radio station icons", "Slow motion when opening the wheel", "Show floating button", "Radio wheel", "Floating button", "Show genre on the wheel", "Hide station pop-up", "Icon in the station pop-up", "Text in the station pop-up", "Station pop-up size", "Icon background color", "Wheel open animation", "Background blur", "Block game input while wheel is open", "Song list", "TRACK LIST", "PLAYING", "Wheel button size", "Wheel button opacity", "Lock wheel button position" },
+    { "Sesuaikan roda radio", "Latar, ukuran dan warna. Disimpan di configs/VHudRadio.ini", "Kegelapan latar", "Ukuran roda", "Cincin", "Teks tengah", "Pratinjau roda", "Atur ulang semua", "Tutup", "PRATINJAU", "Bahasa", "Ukuran tombol", "Opasitas tombol", "Kunci posisi tombol", "Atur ulang posisi tombol", "Latar", "Geser untuk melihat lebih banyak", "roda radio GTAV oleh Hunter09", "Ikon stasiun radio berwarna", "Gerakan lambat saat membuka roda", "Tampilkan tombol melayang", "Roda radio", "Tombol melayang", "Tampilkan genre di roda", "Sembunyikan jendela stasiun", "Ikon di pop-up stasiun", "Teks di pop-up stasiun", "Ukuran pop-up stasiun", "Warna latar ikon", "Animasi buka roda", "Blur latar belakang", "Blokir input game saat roda terbuka", "Daftar lagu", "DAFTAR LAGU", "MEMUTAR", "Ukuran tombol roda", "Opasitas tombol roda", "Kunci posisi tombol roda" },
+    { "Personalizar roda de radio", "Fundo, tamanho e cores. Salvo em configs/VHudRadio.ini", "Escuridao do fundo", "Tamanho da roda", "Anel", "Texto do centro", "Pre-visualizar a roda", "Redefinir tudo", "Fechar", "PREVIA", "Idioma", "Tamanho do botao", "Opacidade do botao", "Bloquear posicao do botao", "Redefinir posicao do botao", "Fundo", "Deslize para ver mais", "roda de rádio GTAV de Hunter09", "Icones coloridos das estacoes", "Camera lenta ao abrir a roda", "Mostrar botao flutuante", "Roda de radio", "Botao flutuante", "Mostrar gênero na roda", "Ocultar janela da estação", "Ícone no aviso da estação", "Texto no aviso da estação", "Tamanho do aviso da estação", "Cor de fundo do ícone", "Animação ao abrir a roda", "Desfoque de fundo", "Bloquear jogo com a roda aberta", "Lista de músicas", "LISTA DE MÚSICAS", "TOCANDO", "Tamanho do botao da roda", "Opacidade do botao da roda", "Bloquear posicao do botao da roda" },
+    { "Personnaliser la roue radio", "Fond, taille et couleurs. Enregistre dans configs/VHudRadio.ini", "Obscurite du fond", "Taille de la roue", "Anneau", "Texte central", "Apercu de la roue", "Tout reinitialiser", "Fermer", "APERCU", "Langue", "Taille du bouton", "Opacite du bouton", "Verrouiller la position du bouton", "Reinitialiser la position du bouton", "Fond", "Faites glisser pour voir plus", "roue radio GTAV de Hunter09", "Icones de stations en couleur", "Ralenti a l'ouverture de la roue", "Afficher le bouton flottant", "Roue radio", "Bouton flottant", "Afficher le genre sur la roue", "Masquer la fenêtre de station", "Icône dans l'avis de station", "Texte dans l'avis de station", "Taille de l'avis de station", "Couleur de fond de l'icône", "Animation d'ouverture de la roue", "Flou d'arrière-plan", "Bloquer le jeu quand la roue est ouverte", "Liste des chansons", "LISTE DES CHANSONS", "EN LECTURE", "Taille du bouton de la roue", "Opacite du bouton de la roue", "Verrouiller la position du bouton de la roue" },
+    { "Radiorad anpassen", "Hintergrund, Groesse und Farben. Gespeichert in configs/VHudRadio.ini", "Hintergrund-Dunkelheit", "Radgroesse", "Ring", "Mitteltext", "Rad-Vorschau", "Alles zuruecksetzen", "Schliessen", "VORSCHAU", "Sprache", "Buttongroesse", "Button-Deckkraft", "Buttonposition sperren", "Buttonposition zuruecksetzen", "Hintergrund", "Wischen, um mehr zu sehen", "GTAV-Radiorad von Hunter09", "Farbige Radiosender-Symbole", "Zeitlupe beim Oeffnen des Rades", "Schwebenden Button anzeigen", "Radiorad", "Schwebender Button", "Genre auf dem Rad anzeigen", "Stationsfenster ausblenden", "Symbol im Sender-Popup", "Text im Sender-Popup", "Größe des Sender-Popups", "Symbol-Hintergrundfarbe", "Animation beim Öffnen des Rads", "Hintergrundunschärfe", "Spiel sperren, während das Rad offen ist", "Songliste", "SONGLISTE", "LÄUFT", "Rad-Button-Grosse", "Rad-Button-Deckkraft", "Rad-Button-Position sperren" },
 };
 // v2.0: genero de cada estacion, para el centro de la rueda estilo GTA V
 static const char* kGenre[L_COUNT][14] = {
@@ -1170,7 +1170,7 @@ static void LoadHornPos() {
 //   (posicion del panel, fraccion de W/H; -1 = centrado) panelAncho=0.44
 //   (ancho del panel, fraccion de W, 0.36..0.70) (v2.17)
 // iconosColor=0 (0 = iconos normales de radio/, 1 = iconos a color de radio_color/) (v2.28)
-struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; float btnRuedaX = -1.0f; float btnRuedaY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int btnRuedaTam = 100; int btnRuedaOpac = 100; int btnRuedaBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int popupIcono = 1; int popupTexto = 1; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
+struct WheelCfg { int fondo = 30; int tamano = 36; int ringR = 0; int ringG = 210; int ringB = 255; int textoR = 255; int textoG = 255; int textoB = 255; int idioma = 0; float btnX = -1.0f; float btnY = -1.0f; float btnRuedaX = -1.0f; float btnRuedaY = -1.0f; int btnTam = 100; int btnOpac = 100; int btnBloq = 0; int btnRuedaTam = 100; int btnRuedaOpac = 100; int btnRuedaBloq = 0; int fondoR = 0; int fondoG = 0; int fondoB = 0; float panelX = -1.0f; float panelY = -1.0f; float panelAncho = 0.44f; float panelAlto = -1.0f; int iconosColor = 0; int camaraLenta = 1; int botonVisible = 1; int mostrarGenero = 1; int ocultarNombre = 0; int popupIcono = 1; int popupTexto = 1; int popupTam = 100; int fondoIcono = 0; int fondoIconoR = 20; int fondoIconoG = 40; int fondoIconoB = 80; int animacion = 1; int blur = 0; int bloquearJuego = 1; int modoCambio = 0; };
 static WheelCfg g_cfg;
 static const char* S(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 0 || id >= STR_COUNT) return ""; return kUI[l][id]; }  // v2.16: texto del panel en el idioma elegido
 static const char* Genre(int id) { int l = g_cfg.idioma; if (l < 0 || l >= L_COUNT) l = 0; if (id < 1 || id > 13) return ""; return kGenre[l][id]; }  // v2.16: genero en el idioma elegido
@@ -1234,6 +1234,7 @@ static void SaveCfg() {
     fprintf(f, "ocultarNombre=%d\n", g_cfg.ocultarNombre);
     fprintf(f, "popupIcono=%d\n", g_cfg.popupIcono);  // v1.9.73
     fprintf(f, "popupTexto=%d\n", g_cfg.popupTexto);  // v1.9.73
+    fprintf(f, "popupTam=%d\n", g_cfg.popupTam);  // v1.9.74: tamano del aviso (50-200%)
     fprintf(f, "fondoIcono=%d\n", g_cfg.fondoIcono);
     fprintf(f, "fondoIconoColor=%d,%d,%d\n", g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB);
     fprintf(f, "animacion=%d\n", g_cfg.animacion);
@@ -1243,7 +1244,7 @@ static void SaveCfg() {
     fclose(f);
 }
 static void LoadCfg() {
-    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.btnRuedaTam = 100; g_cfg.btnRuedaOpac = 100; g_cfg.btnRuedaBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.popupIcono = 1; g_cfg.popupTexto = 1; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
+    g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255; g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnRuedaX = -1.0f; g_cfg.btnRuedaY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0; g_cfg.btnRuedaTam = 100; g_cfg.btnRuedaOpac = 100; g_cfg.btnRuedaBloq = 0; g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.popupIcono = 1; g_cfg.popupTexto = 1; g_cfg.popupTam = 100; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
     bool fromOld = false;
     FILE* f = fopen(CfgPath().c_str(), "r");
     if (!f) {
@@ -1308,6 +1309,7 @@ static void LoadCfg() {
         else if (strcmp(k, "ocultarNombre") == 0) g_cfg.ocultarNombre = atoi(v);
         else if (strcmp(k, "popupIcono") == 0) g_cfg.popupIcono = atoi(v);  // v1.9.73
         else if (strcmp(k, "popupTexto") == 0) g_cfg.popupTexto = atoi(v);  // v1.9.73
+        else if (strcmp(k, "popupTam") == 0) g_cfg.popupTam = atoi(v);  // v1.9.74
         else if (strcmp(k, "fondoIcono") == 0) g_cfg.fondoIcono = atoi(v);
         else if (strcmp(k, "fondoIconoColor") == 0) {
             int r = 20, g = 40, b = 80;
@@ -1352,6 +1354,7 @@ static void LoadCfg() {
     if (g_cfg.ocultarNombre != 0 && g_cfg.ocultarNombre != 1) g_cfg.ocultarNombre = 0;
     if (g_cfg.popupIcono != 0 && g_cfg.popupIcono != 1) g_cfg.popupIcono = 1;  // v1.9.73
     if (g_cfg.popupTexto != 0 && g_cfg.popupTexto != 1) g_cfg.popupTexto = 1;  // v1.9.73
+    if (g_cfg.popupTam < 50 || g_cfg.popupTam > 200) g_cfg.popupTam = 100;  // v1.9.74
     if (g_cfg.fondoIcono != 0 && g_cfg.fondoIcono != 1) g_cfg.fondoIcono = 0;
     if (g_cfg.fondoIconoR < 0) g_cfg.fondoIconoR = 0; if (g_cfg.fondoIconoR > 255) g_cfg.fondoIconoR = 255;
     if (g_cfg.fondoIconoG < 0) g_cfg.fondoIconoG = 0; if (g_cfg.fondoIconoG > 255) g_cfg.fondoIconoG = 255;
@@ -2153,8 +2156,9 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
     showIcon = (g_cfg.popupIcono != 0) && (IconTex(g_current) != 0);
     showText = (g_cfg.popupTexto != 0);
     if (!showIcon && !showText) return false;
-    float icon = H * 0.10f;   // tamano del icono
-    float gap = H * 0.012f;   // hueco entre icono y texto
+    float sc = g_cfg.popupTam / 100.0f;  // v1.9.74: barra de tamano (50-200%)
+    float icon = H * 0.10f * sc;   // tamano del icono
+    float gap = H * 0.012f * sc;   // hueco entre icono y texto
     if (g_advSettings) {
         // Arriba al centro, icono y texto centrados en W/2.
         float cx = W * 0.5f;
@@ -2169,7 +2173,9 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
         float textY = bottom - ns * 1.25f;
         if (showText) {
             tPos = ImVec2(x, textY);
-            if (showIcon) { float icx = x + textW / 2; i0 = ImVec2(icx - icon / 2, textY - gap - icon); i1 = ImVec2(icx + icon / 2, textY - gap); }
+            // v1.9.74: el icono va alineado a la izquierda con el texto (mas
+            // en la esquina, como el texto vainilla), no centrado sobre el.
+            if (showIcon) { i0 = ImVec2(x, textY - gap - icon); i1 = ImVec2(x + icon, textY - gap); }
             else { i0 = i1 = ImVec2(0, 0); }
         } else {
             // Solo icono: apoyado en el margen inferior, en la x del texto.
@@ -3438,13 +3444,14 @@ static bool DrawButtonGL(float W, float H) {
     // (misma textura de emisora que el boton) y el texto en vTxt (atlas).
     {
         const char* popName = kStationName[g_current];
-        float popTextW = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, popName, nullptr).x;
+        float pns = ns * g_cfg.popupTam / 100.0f;  // v1.9.74: tamano del aviso
+        float popTextW = font->CalcTextSizeA(pns, FLT_MAX, 0.0f, popName, nullptr).x;
         ImVec2 pi0, pi1, ptPos; bool popIco, popTxt;
-        if (PopupGeom(W, H, ns, popTextW, pi0, pi1, ptPos, popIco, popTxt)) {
+        if (PopupGeom(W, H, pns, popTextW, pi0, pi1, ptPos, popIco, popTxt)) {
             if (popIco) quadTo(vIco, pi0.x, pi0.y, pi1.x, pi1.y, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
             if (popTxt) {
-                drawTextTo(vTxt, popName, ptPos.x + 2.0f, ptPos.y + 2.0f, ns, 0.0f, 0.0f, 0.0f, 1.0f);
-                drawTextTo(vTxt, popName, ptPos.x, ptPos.y, ns, 1.0f, 1.0f, 1.0f, 1.0f);
+                drawTextTo(vTxt, popName, ptPos.x + 2.0f, ptPos.y + 2.0f, pns, 0.0f, 0.0f, 0.0f, 1.0f);
+                drawTextTo(vTxt, popName, ptPos.x, ptPos.y, pns, 1.0f, 1.0f, 1.0f, 1.0f);
             }
         }
     }
@@ -4760,6 +4767,7 @@ static void DrawSettings(float W, float H) {
         if (PanelSwitch(S(STR_POPUPICONO), &popIco, H)) { g_cfg.popupIcono = popIco ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("aviso de emisora: icono %s", g_cfg.popupIcono ? "visible" : "oculto"); }
         bool popTxt = g_cfg.popupTexto != 0;  // v1.9.73: texto en el aviso de emisora
         if (PanelSwitch(S(STR_POPUPTEXTO), &popTxt, H)) { g_cfg.popupTexto = popTxt ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("aviso de emisora: texto %s", g_cfg.popupTexto ? "visible" : "oculto"); }
+        if (PanelSlider(S(STR_POPUPTAM), &g_cfg.popupTam, 50, 200, "%d%%", H, IC_SIZE)) { g_cfgDirty = true; Log("aviso de emisora: tamano %d%%", g_cfg.popupTam); }  // v1.9.74: barra de tamano (vale con y sin AdvancedSettings)
     }
     // v2.23: botones en rejilla de 2 columnas con icono (como la imagen)
     {
@@ -4776,7 +4784,7 @@ static void DrawSettings(float W, float H) {
     if (PanelButtonIcon(S(STR_RESET), H, 0.0f, IC_RESET)) {
         g_cfg.fondo = 30; g_cfg.tamano = 36; g_cfg.ringR = 0; g_cfg.ringG = 210; g_cfg.ringB = 255; g_cfg.textoR = 255; g_cfg.textoG = 255; g_cfg.textoB = 255;
         g_cfg.idioma = 0; g_cfg.btnX = -1.0f; g_cfg.btnY = -1.0f; g_cfg.btnTam = 100; g_cfg.btnOpac = 100; g_cfg.btnBloq = 0;
-        g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.popupIcono = 1; g_cfg.popupTexto = 1; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
+        g_cfg.fondoR = 0; g_cfg.fondoG = 0; g_cfg.fondoB = 0; g_cfg.panelX = -1.0f; g_cfg.panelY = -1.0f; g_cfg.panelAncho = 0.44f; g_cfg.panelAlto = -1.0f; g_cfg.iconosColor = 0; g_cfg.camaraLenta = 1; g_cfg.botonVisible = 1; g_cfg.mostrarGenero = 1; g_cfg.ocultarNombre = 0; g_cfg.popupIcono = 1; g_cfg.popupTexto = 1; g_cfg.popupTam = 100; g_cfg.fondoIcono = 0; g_cfg.fondoIconoR = 20; g_cfg.fondoIconoG = 40; g_cfg.fondoIconoB = 80; g_cfg.animacion = 1; g_cfg.blur = 0; g_cfg.bloquearJuego = 1; g_cfg.modoCambio = 0;
         g_cfgDirty = false; SaveCfg();
         Log("ajustes restablecidos");
     }
@@ -4896,10 +4904,11 @@ static void DrawPopup(float W, float H) {
     ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
     if (!font) return;
     float ns, ts; BtnLabelSizes(H, ns, ts);
+    float pns = ns * g_cfg.popupTam / 100.0f;  // v1.9.74: tamano del aviso
     const char* name = kStationName[g_current];
-    float textW = font->CalcTextSizeA(ns, FLT_MAX, 0.0f, name, nullptr).x;
+    float textW = font->CalcTextSizeA(pns, FLT_MAX, 0.0f, name, nullptr).x;
     ImVec2 i0, i1, tPos; bool showIcon, showText;
-    if (!PopupGeom(W, H, ns, textW, i0, i1, tPos, showIcon, showText)) return;
+    if (!PopupGeom(W, H, pns, textW, i0, i1, tPos, showIcon, showText)) return;
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     if (showIcon) {
         GLuint it = IconTex(g_current);
@@ -4907,8 +4916,8 @@ static void DrawPopup(float W, float H) {
     }
     if (showText) {
         // Sombra negra como la del texto del juego (SetDropColor negro).
-        dl->AddText(font, ns, ImVec2(tPos.x + 2.0f, tPos.y + 2.0f), IM_COL32(0, 0, 0, 255), name);
-        dl->AddText(font, ns, tPos, IM_COL32(255, 255, 255, 255), name);
+        dl->AddText(font, pns, ImVec2(tPos.x + 2.0f, tPos.y + 2.0f), IM_COL32(0, 0, 0, 255), name);
+        dl->AddText(font, pns, tPos, IM_COL32(255, 255, 255, 255), name);
     }
 }
 
