@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.76-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.77-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.76-beta"
+#define VHUDRADIO_VERSION "1.9.77-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2999,6 +2999,12 @@ static void* NativeWheelTextureFromFile(const std::string& src, int* outW = null
     stbi_image_free(px);
     int fw = 0, fh = 0, fd = 0, ff = 0;
     if (!g_rwImageFindFmt(img, 4, &fw, &fh, &fd, &ff)) { g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwImageFindRasterFormat devolvio 0"); } return nullptr; }
+    // v1.9.77: diagnostico del crash del tester con el icono "SA DE": el
+    // formato de raster (profundidad/banderas) que RenderWare le asigna a
+    // la textura es lo unico que puede diferir entre dos PNG iguales en
+    // tamano y con alfa; se registra siempre (no solo una vez) para poder
+    // comparar el SA DE con el SA y con el incrustado.
+    Log("  boton nativo: diag textura RW formato depth=%d flags=0x%x (%dx%d)", fd, ff, fw, fh);
     void* ras = g_rwRasterCreate(fw, fh, fd, ff);
     if (!ras) { g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwRasterCreate devolvio NULL"); } return nullptr; }
     if (!g_rwRasterSetFromImage(ras, img)) { g_rwRasterDestroy(ras); g_rwImageDestroy(img); if (!logged) { logged = true; Log("  boton nativo: textura RW RwRasterSetFromImage devolvio NULL"); } return nullptr; }
