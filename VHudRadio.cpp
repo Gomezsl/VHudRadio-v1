@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.74-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.75-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.74-beta"
+#define VHUDRADIO_VERSION "1.9.75-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2140,13 +2140,15 @@ static GLuint IconTex(int i) {
     return g_tex[i];
 }
 
-// v1.9.73: geometria del aviso de emisora (icono arriba, nombre debajo).
-// Sin AdvancedSettings va abajo a la izquierda como el texto vainilla del
-// juego (x = 100/640 en pantallas anchas, ~20/448 desde abajo); con el,
-// arriba al centro como su texto. Devuelve false si no hay aviso que
-// dibujar (temporizador vencido, emisora invalida, todo apagado, o la
-// ventana oculta). i0/i1 = rect del icono, tPos = esquina del texto,
-// showIcon/showText = que partes dibujar (el icono solo si hay textura).
+// v1.9.73: geometria del aviso de emisora.
+// Con AdvancedSettings: icono arriba, nombre debajo, arriba al centro.
+// Sin el: icono a la IZQUIERDA del nombre, en la misma fila, abajo a la
+// izquierda como el texto vainilla del juego (v1.9.75: antes el icono iba
+// arriba del texto y se subia sobre los botones del dial).
+// Devuelve false si no hay aviso que dibujar (temporizador vencido,
+// emisora invalida, todo apagado, o la ventana oculta). i0/i1 = rect del
+// icono, tPos = esquina del texto, showIcon/showText = que partes dibujar
+// (el icono solo si hay textura).
 static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec2& i1, ImVec2& tPos, bool& showIcon, bool& showText) {
     showIcon = false; showText = false;
     if (g_cfg.ocultarNombre) return false;
@@ -2168,20 +2170,14 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
         tPos = ImVec2(cx - textW / 2, y);
     } else {
         // Abajo a la izquierda, como el texto vainilla del juego.
+        // v1.9.75: icono a la izquierda del texto, en la misma fila y
+        // pegados a la esquina inferior (x del juego, ~20/448 desde abajo).
         float x = (W / H > 1.9f) ? (100.0f / 640.0f) * W : 0.0f;
         float bottom = H - (20.0f / 448.0f) * H;
-        float textY = bottom - ns * 1.25f;
-        if (showText) {
-            tPos = ImVec2(x, textY);
-            // v1.9.74: el icono va alineado a la izquierda con el texto (mas
-            // en la esquina, como el texto vainilla), no centrado sobre el.
-            if (showIcon) { i0 = ImVec2(x, textY - gap - icon); i1 = ImVec2(x + icon, textY - gap); }
-            else { i0 = i1 = ImVec2(0, 0); }
-        } else {
-            // Solo icono: apoyado en el margen inferior, en la x del texto.
-            tPos = ImVec2(x, textY);
-            i0 = ImVec2(x, bottom - icon); i1 = ImVec2(x + icon, bottom);
-        }
+        if (showIcon) { i0 = ImVec2(x, bottom - icon); i1 = ImVec2(x + icon, bottom); }
+        else { i0 = i1 = ImVec2(0, 0); }
+        float tx = x + (showIcon ? icon + gap : 0.0f);
+        tPos = ImVec2(tx, bottom - ns);
     }
     return true;
 }
@@ -2858,6 +2854,32 @@ static bool NativeWheelConvertIcon(const std::string& src, const std::string& ds
     // v1.9.70: lineArt compartido (ApplyWheelLineArt): si ya tiene
     // transparencia se usa tal cual; si es opaca se quita el fondo.
     ApplyWheelLineArt(px, w, h);
+    // v1.9.75: achicar a 512 px como maximo ANTES de escribir (igual que
+    // la textura RW): el convertido salia de 6 MB con un icono de 1254 px
+    // y el cargador de SAUtils lo tiene que leer entero en memoria.
+    if (w > 512 || h > 512) {
+        int nw = w, nh = h;
+        if (w >= h) { nw = 512; nh = h * 512 / w; } else { nh = 512; nw = w * 512 / h; }
+        if (nw < 1) nw = 1; if (nh < 1) nh = 1;
+        unsigned char* small = (unsigned char*)malloc((size_t)nw * nh * 4);
+        if (small) {
+            for (int y = 0; y < nh; y++) {
+                for (int x = 0; x < nw; x++) {
+                    int sx = x * w / nw, sy = y * h / nh;
+                    int ex = (x + 1) * w / nw, ey = (y + 1) * h / nh;
+                    if (ex <= sx) ex = sx + 1; if (ey <= sy) ey = sy + 1;
+                    long sr = 0, sg = 0, sb = 0, sa = 0; int n = 0;
+                    for (int yy = sy; yy < ey; yy++) for (int xx = sx; xx < ex; xx++) {
+                        unsigned char* p = px + (yy * w + xx) * 4;
+                        sr += p[0]; sg += p[1]; sb += p[2]; sa += p[3]; n++;
+                    }
+                    unsigned char* d = small + (y * nw + x) * 4;
+                    d[0] = (unsigned char)(sr / n); d[1] = (unsigned char)(sg / n); d[2] = (unsigned char)(sb / n); d[3] = (unsigned char)(sa / n);
+                }
+            }
+            stbi_image_free(px); px = small; w = nw; h = nh;
+        }
+    }
     bool ok = NativeWritePng(dst, px, w, h);
     stbi_image_free(px);
     return ok;
