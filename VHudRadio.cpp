@@ -1192,6 +1192,7 @@ static bool g_advSettings = false;
 static std::chrono::steady_clock::time_point g_popupUntil = std::chrono::steady_clock::now();
 static int g_popupLastStation = -1;
 static bool g_popupPending = false;  // v1.9.80: cambio de emisora con la rueda abierta; el aviso se arma al cerrarla
+static bool g_open = false;  // v1.9.80: aqui (antes del hook de abajo) porque DisplayRadioStationName_hook lo usa y esta antes del bloque de estado de la rueda
 static void DisplayRadioStationName_hook(void* self) {
     if (g_cfg.ocultarNombre) return;
     if (g_cfg.popupIcono || g_cfg.popupTexto) return;  // v1.9.73: el aviso lo dibuja DrawFrame (asi AdvancedSettings tampoco dibuja el suyo: sus hooks estan dentro del original)
@@ -1377,7 +1378,6 @@ static std::string g_vhudDir;   // /storage/emulated/0/vhud
 static int g_current = 1;       // estacion actual conocida (1..13)
 static std::chrono::steady_clock::time_point g_lastStationCmd;  // v1.2: ultimo cambio pedido (para no fiarse de la lectura nativa vieja)
 static int g_selected = 1;      // segmento bajo el dedo mientras la rueda esta abierta
-static bool g_open = false;
 static std::chrono::steady_clock::time_point g_wheelAnimStart = std::chrono::steady_clock::now();  // v2.54: cuando se abrio la rueda (para la animacion)
 static bool g_wheelClosing = false;  // v1.9.55: la rueda se esta cerrando con animacion (encoge y se funde)
 static std::chrono::steady_clock::time_point g_wheelCloseStart = std::chrono::steady_clock::now();  // v1.9.55: cuando empezo a cerrarse
