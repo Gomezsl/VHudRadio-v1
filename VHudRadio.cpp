@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.78-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.79-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.78-beta"
+#define VHUDRADIO_VERSION "1.9.79-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2142,10 +2142,9 @@ static GLuint IconTex(int i) {
 
 // v1.9.73: geometria del aviso de emisora.
 // Con AdvancedSettings: icono arriba, nombre debajo, arriba al centro.
-// Sin el: el TEXTO en la x del juego y el icono a su IZQUIERDA, en la
-// misma fila, abajo a la izquierda como el texto vainilla del juego
-// (v1.9.78: antes el icono iba en la x del juego y empujaba el texto a la
-// derecha, fuera del circulo que marco Daniel).
+// Sin el: el ICONO en la esquina inferior izquierda (x=0) y el texto a
+// su DERECHA, en la misma fila (v1.9.79: opcion C del mockup, en el
+// sitio del boton de ARCX).
 // Devuelve false si no hay aviso que dibujar (temporizador vencido,
 // emisora invalida, todo apagado, o la ventana oculta). i0/i1 = rect del
 // icono, tPos = esquina del texto, showIcon/showText = que partes dibujar
@@ -2170,23 +2169,20 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
         else { i0 = i1 = ImVec2(0, 0); }
         tPos = ImVec2(cx - textW / 2, y);
     } else {
-        // Abajo a la izquierda, como el texto vainilla del juego.
-        // v1.9.78: el TEXTO va en la x del juego (100/640) y el icono a su
-        // IZQUIERDA, en la misma fila. En la 1.9.75/1.9.76 el icono iba en
-        // la x del juego y empujaba el texto a la derecha, fuera del
-        // circulo que marco Daniel; en la 1.9.73/1.9.74 el icono iba arriba
-        // del texto y se subia sobre los botones del dial. Asi el texto
-        // queda donde el juego lo pone y el icono queda en la fila, pegado
-        // a la esquina. Sin texto, el icono solo va en la x del juego.
+        // Abajo a la izquierda, pegado a la esquina.
+        // v1.9.79: opcion C del mockup (Daniel): la fila empieza en x=0,
+        // en el sitio del boton de ARCX (Daniel mueve su boton). El icono
+        // va en la esquina y el texto a su derecha. (Ojo: con el texto en
+        // x=0 el icono quedaria fuera de pantalla a la izquierda, por eso
+        // aqui el icono va primero, como en la 1.9.76, pero en x=0 en vez
+        // de en la x del juego.)
         float icon = ns * 2.5f;   // tamano del icono (ns ya trae popupTam)
-        float x = (W / H > 1.9f) ? (100.0f / 640.0f) * W : 0.0f;   // x del texto
+        float x = 0.0f;   // esquina inferior izquierda
         float bottom = H - (20.0f / 448.0f) * H;
-        if (showIcon) {
-            float ix = showText ? x - icon - gap : x;
-            i0 = ImVec2(ix, bottom - icon); i1 = ImVec2(ix + icon, bottom);
-        }
+        if (showIcon) { i0 = ImVec2(x, bottom - icon); i1 = ImVec2(x + icon, bottom); }
         else { i0 = i1 = ImVec2(0, 0); }
-        tPos = ImVec2(x, bottom - ns);
+        float tx = x + (showIcon ? icon + gap : 0.0f);
+        tPos = ImVec2(tx, bottom - ns);
     }
     return true;
 }
