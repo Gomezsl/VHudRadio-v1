@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.75-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.76-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.75-beta"
+#define VHUDRADIO_VERSION "1.9.76-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2143,8 +2143,9 @@ static GLuint IconTex(int i) {
 // v1.9.73: geometria del aviso de emisora.
 // Con AdvancedSettings: icono arriba, nombre debajo, arriba al centro.
 // Sin el: icono a la IZQUIERDA del nombre, en la misma fila, abajo a la
-// izquierda como el texto vainilla del juego (v1.9.75: antes el icono iba
-// arriba del texto y se subia sobre los botones del dial).
+// izquierda como el texto vainilla del juego (v1.9.76: icono compacto de
+// 2.5x el texto para que la fila quepa en la esquina sin subirse sobre
+// los botones del dial).
 // Devuelve false si no hay aviso que dibujar (temporizador vencido,
 // emisora invalida, todo apagado, o la ventana oculta). i0/i1 = rect del
 // icono, tPos = esquina del texto, showIcon/showText = que partes dibujar
@@ -2159,10 +2160,10 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
     showText = (g_cfg.popupTexto != 0);
     if (!showIcon && !showText) return false;
     float sc = g_cfg.popupTam / 100.0f;  // v1.9.74: barra de tamano (50-200%)
-    float icon = H * 0.10f * sc;   // tamano del icono
     float gap = H * 0.012f * sc;   // hueco entre icono y texto
     if (g_advSettings) {
         // Arriba al centro, icono y texto centrados en W/2.
+        float icon = H * 0.10f * sc;   // tamano del icono
         float cx = W * 0.5f;
         float y = H * 0.03f;
         if (showIcon) { i0 = ImVec2(cx - icon / 2, y); i1 = ImVec2(cx + icon / 2, y + icon); y += icon + gap; }
@@ -2170,8 +2171,12 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
         tPos = ImVec2(cx - textW / 2, y);
     } else {
         // Abajo a la izquierda, como el texto vainilla del juego.
-        // v1.9.75: icono a la izquierda del texto, en la misma fila y
-        // pegados a la esquina inferior (x del juego, ~20/448 desde abajo).
+        // v1.9.76: icono compacto (2.5x el texto) a la izquierda del nombre,
+        // en una fila pegada a la esquina: con H*0.10 el icono era tan alto
+        // que se subia sobre los botones del dial y el aviso no quedaba en
+        // la esquina que marco Daniel. La barra de tamano sigue escalando
+        // icono y texto juntos.
+        float icon = ns * 2.5f;   // tamano del icono (ns ya trae popupTam)
         float x = (W / H > 1.9f) ? (100.0f / 640.0f) * W : 0.0f;
         float bottom = H - (20.0f / 448.0f) * H;
         if (showIcon) { i0 = ImVec2(x, bottom - icon); i1 = ImVec2(x + icon, bottom); }
