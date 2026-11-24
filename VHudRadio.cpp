@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.79-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.80-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.79-beta"
+#define VHUDRADIO_VERSION "1.9.80-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1191,9 +1191,11 @@ static void (*DisplayRadioStationName_orig)(void* self) = nullptr;
 static bool g_advSettings = false;
 static std::chrono::steady_clock::time_point g_popupUntil = std::chrono::steady_clock::now();
 static int g_popupLastStation = -1;
+static bool g_popupPending = false;  // v1.9.80: cambio de emisora con la rueda abierta; el aviso se arma al cerrarla
 static void DisplayRadioStationName_hook(void* self) {
     if (g_cfg.ocultarNombre) return;
     if (g_cfg.popupIcono || g_cfg.popupTexto) return;  // v1.9.73: el aviso lo dibuja DrawFrame (asi AdvancedSettings tampoco dibuja el suyo: sus hooks estan dentro del original)
+    if (g_open) return;  // v1.9.80: con la rueda abierta el texto vainilla no se muestra (el flag [tm+1] queda pendiente en el juego y el original lo dibuja al cerrar la rueda: arma su temporizador de 2.5 s al ver el flag)
     if (DisplayRadioStationName_orig) DisplayRadioStationName_orig(self);
 }
 static bool g_settings = false;   // v2.2: panel de personalizacion abierto
@@ -2155,6 +2157,7 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
     if (!g_cfg.popupIcono && !g_cfg.popupTexto) return false;
     if (g_current < 1 || g_current > 13) return false;
     if (std::chrono::steady_clock::now() >= g_popupUntil) return false;
+    if (g_open) return false;  // v1.9.80: el aviso no se dibuja con la rueda abierta (se muestra al cerrarla)
     showIcon = (g_cfg.popupIcono != 0) && (IconTex(g_current) != 0);
     showText = (g_cfg.popupTexto != 0);
     if (!showIcon && !showText) return false;
@@ -2182,7 +2185,10 @@ static bool PopupGeom(float W, float H, float ns, float textW, ImVec2& i0, ImVec
         if (showIcon) { i0 = ImVec2(x, bottom - icon); i1 = ImVec2(x + icon, bottom); }
         else { i0 = i1 = ImVec2(0, 0); }
         float tx = x + (showIcon ? icon + gap : 0.0f);
-        tPos = ImVec2(tx, bottom - ns);
+        // v1.9.80: el texto va centrado verticalmente con el icono (antes
+        // iba pegado abajo y el icono quedaba mas arriba que el texto).
+        float textY = showIcon ? (bottom - icon / 2.0f - ns / 2.0f) : (bottom - ns);
+        tPos = ImVec2(tx, textY);
     }
     return true;
 }
@@ -5321,12 +5327,22 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     // dura el texto del juego). g_current lo actualizan los hooks de
     // StartRadio/RetuneRadio y DoStartRadio; solo en cambio real, no al
     // arrancar (la primera vez que se ve, g_popupLastStation es -1).
+    // v1.9.80: con la rueda abierta NO se arma (el aviso se muestra al
+    // cerrarla, no al elegir la emisora dentro de la rueda); el cambio
+    // queda pendiente y se arma cuando la rueda se cierra.
     // AdvancedSettings se re-chequea aqui por si cargo despues que este mod.
     if (g_current != g_popupLastStation) {
         bool firstSeen = (g_popupLastStation == -1);
         g_popupLastStation = g_current;
         if (!firstSeen && !g_advSettings) g_advSettings = (dlopen("libAdvancedSettings.SA64.so", RTLD_NOLOAD | RTLD_NOW) != nullptr);
-        if (!firstSeen && g_current >= 1 && g_current <= 13 && (g_cfg.popupIcono || g_cfg.popupTexto) && !g_cfg.ocultarNombre)
+        if (!firstSeen && g_current >= 1 && g_current <= 13 && (g_cfg.popupIcono || g_cfg.popupTexto) && !g_cfg.ocultarNombre) {
+            if (g_open) g_popupPending = true;
+            else g_popupUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+        }
+    }
+    if (g_popupPending && !g_open) {  // v1.9.80: rueda cerrada -> armar el aviso pendiente
+        g_popupPending = false;
+        if (g_current >= 1 && g_current <= 13 && (g_cfg.popupIcono || g_cfg.popupTexto) && !g_cfg.ocultarNombre)
             g_popupUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
     }
     // v1.9.63: boton nativo de la rueda (widget del juego via SAUtils):
