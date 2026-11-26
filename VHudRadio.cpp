@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.81-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.82-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.81-beta"
+#define VHUDRADIO_VERSION "1.9.82-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -4035,13 +4035,15 @@ static void DrawWheel(float W, float H) {
         if (g_cfg.fondoIcono) dl->AddCircleFilled(p, si, IM_COL32(g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB, (int)(255 * anim)));  // v2.53: fondo de color del icono
         if (it) {
             ImVec4 tint = sel ? ImVec4(1, 1, 1, anim) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f * anim);
-            // v1.9.14 (Daniel): las emisoras 8 (CSR) y 12 (User tracks) quedan
-            // NORMALES, sin transparencia: su centro negro (User Track) y
-            // morado (CSR) no se transparenta, y detras va el color de
-            // fondoIcono. Se dibujan un poco mas chicas para que el color se
-            // vea como anillo detras del icono opaco. (La 1.9.13 las teñia;
-            // eso era lo contrario: el logo debe quedar con sus colores.)
-            float siIcon = (g_cfg.fondoIcono && g_cfg.iconosColor && (i == 8 || i == 12)) ? si * 0.85f : si;
+            // v1.9.82: los iconos a color (Void) llenan casi todo el lienzo
+            // (el logo ocupa ~93% del ancho, contra el distintivo redondo
+            // slotrad que llevaba el logo mas chico dentro del circulo), asi
+            // que a tamano completo se ven enormes y pegados al borde del
+            // circulo. Con iconosColor se dibujan al 80% para que quede un
+            // margen (anillo del fondoIcono o del segmento) como antes.
+            // (La excepcion 0.85x de la 1.9.14 para CSR/User Track era para
+            // los slotrad; con Void todos los iconos llevan el mismo trato.)
+            float siIcon = g_cfg.iconosColor ? si * 0.8f : si;
             // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
             // un cuadrado y se notaba el cuadrado de la imagen.
             dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), siIcon);
