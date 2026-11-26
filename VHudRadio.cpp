@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.83-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.84-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.83-beta"
+#define VHUDRADIO_VERSION "1.9.84-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -4015,7 +4015,7 @@ static void DrawWheel(float W, float H) {
             // v2.55: disco negro detras del icono de la emisora (el fondo negro
             // que siempre tuvo el boton; con el fondo de color encendido el icono
             // queda transparente y sin esto se veria el fondo del boton).
-            { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); float fi = (g_cfg.iconosColor && g_cfg.fondoIcono) ? bs * 0.1f : 0.0f; dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(bp.x + fi, bp.y + fi), ImVec2(bp.x + bs - fi, bp.y + bs - fi), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2 - fi); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }  // v1.9.83: el icono Void tambien se veia grande en el boton flotante; con color+fondoIcono se dibuja al 80% (margen de 10% por lado sobre el disco negro)
+            { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); if (g_cfg.iconosColor && g_cfg.fondoIcono) { float fi = bs * 0.15f; dl->AddImage((ImTextureID)(uintptr_t)it, ImVec2(bp.x + fi, bp.y + fi), ImVec2(bp.x + bs - fi, bp.y + bs - fi), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op)); } else dl->AddImageRounded((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }  // v1.9.84: el Void sin recorte circular (le cortaba las esquinas, como en la rueda) y al 70% para que el cuadrado quepa dentro del disco negro (esquinas a 0.495x bs)
             dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
             // v1.5: flechas anterior/siguiente DENTRO de la etiqueta (solo en la 12),
             // a los lados del nombre de la cancion.
@@ -4060,9 +4060,20 @@ static void DrawWheel(float W, float H) {
             // completo como siempre. (El 80% de la 1.9.82 seguia viendose
             // grande, segun Daniel.)
             float siIcon = (g_cfg.iconosColor && g_cfg.fondoIcono) ? si * 0.7f : si;
-            // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
-            // un cuadrado y se notaba el cuadrado de la imagen.
-            dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), siIcon);
+            if (g_cfg.iconosColor && g_cfg.fondoIcono) {
+                // v1.9.84: el Void es un logo cuadrado sin fondo; el recorte
+                // circular (v2.56) le cortaba las esquinas (TPLAYER, K-ROSE,
+                // MASTER: esquinas a 150-176px del centro, el circulo solo
+                // tiene 128px). Sin recorte, a 0.7x el cuadrado cabe justo
+                // dentro del circulo de fondo (esquinas a 0.99x si) y el
+                // logo ya no se recorta. El PNG es transparente fuera del
+                // logo, asi que no se nota el cuadrado.
+                dl->AddImage((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint));
+            } else {
+                // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
+                // un cuadrado y se notaba el cuadrado de la imagen.
+                dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), siIcon);
+            }
         } else dl->AddCircleFilled(p, si*0.5f, IM_COL32(255,255,255,(int)(120 * anim)));
         if (sel) dl->AddCircle(p, si, RingColor(anim), 48, 3.5f);  // anillo de seleccion (color ajustable, v1.9.60: con anim)
         else if (i == g_current) dl->AddCircle(p, si, IM_COL32(255, 255, 255, (int)(220 * anim)), 48, 2.0f);  // v1.9.60: con anim
@@ -4466,6 +4477,7 @@ static void DrawTrackList(float W, float H) {
     ImGui::SameLine(ImGui::GetWindowWidth() - H * 0.05f);
     if (ImGui::Button("X", ImVec2(H * 0.04f, H * 0.04f))) { g_trackList = false; Log("lista de canciones cerrada"); }
     ImGui::Separator();
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, H * 0.03f);  // v1.9.84: barra mas gruesa para agarrarla con el dedo (Daniel)
     ImGui::BeginChild("##tracks", ImVec2(0, 0), false);
     ImDrawList* dlc = ImGui::GetWindowDrawList();  // v1.9.8: la del HIJO, con recorte; la de fuera (dl) no recorta y las filas traspasaban el encabezado
     // v1.9.6 (Daniel): la lista se desliza con el dedo si hay muchas canciones.
@@ -4503,20 +4515,29 @@ static void DrawTrackList(float W, float H) {
     // poner el titulo en blanco y el artista en gris.
     float rowH = H * 0.085f;
     float numW = H * 0.045f;
-    for (size_t i = 0; i < ut_tracks.size(); i++) {
-        const char* nm = UT_TrackNameFor((int)i);
-        bool isCur = ((int)i == cur);
+    // v1.9.84: con mas de 50 canciones la lista dibujaba TODAS las filas cada
+    // cuadro (titulo + artista + boton), aunque solo se ven 7-8. El clipper
+    // solo procesa las filas visibles, asi que el costo ya no depende del
+    // total de canciones. El scroll manual (arrastre + inercia) sigue igual:
+    // el clipper lee la posicion de scroll actual. El paso es fila + el
+    // espaciado vertical del estilo, para que las filas queden donde van.
+    ImGuiListClipper clipper;
+    clipper.Begin((int)ut_tracks.size(), rowH + ImGui::GetStyle().ItemSpacing.y);
+    while (clipper.Step()) {
+    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+        const char* nm = UT_TrackNameFor(i);
+        bool isCur = (i == cur);
         char artist[256], title[256];
         SplitArtistTitle(nm, artist, sizeof artist, title, sizeof title);
         char id[32];
-        snprintf(id, sizeof id, "##trk%zu", i);
+        snprintf(id, sizeof id, "##trk%d", i);
         ImGui::InvisibleButton(id, ImVec2(ImGui::GetContentRegionAvail().x, rowH));
         bool clicked = ImGui::IsItemClicked();
         ImVec2 rMin = ImGui::GetItemRectMin(), rMax = ImGui::GetItemRectMax();
         if (isCur) dlc->AddRectFilled(rMin, rMax, IM_COL32(10, 60, 140, 255));
         else if (ImGui::IsItemHovered()) dlc->AddRectFilled(rMin, rMax, IM_COL32(255, 255, 255, 18));
         char num[8];
-        snprintf(num, sizeof num, "%d", (int)i + 1);
+        snprintf(num, sizeof num, "%d", i + 1);
         float tx = rMin.x + H * 0.012f;
         float ty = rMin.y + H * 0.010f;
         dlc->AddText(ImVec2(tx, ty), isCur ? IM_COL32(255, 200, 40, 255) : IM_COL32(150, 150, 150, 255), num);
@@ -4534,10 +4555,12 @@ static void DrawTrackList(float W, float H) {
         // Division entre canciones (linea fina, como en la imagen).
         dlc->AddLine(ImVec2(rMin.x + H * 0.004f, rMax.y), ImVec2(rMax.x - H * 0.004f, rMax.y), IM_COL32(255, 255, 255, 35));
         if (clicked && !listScrolled && std::chrono::steady_clock::now() - g_listOpenedAt > std::chrono::milliseconds(300)) {  // v1.9.7: el primer toque (el que abre la lista) no cambia la cancion
-            if (UT_JumpToTrack((int)i)) Log("lista de canciones: saltar a %s", nm);
+            if (UT_JumpToTrack(i)) Log("lista de canciones: saltar a %s", nm);
         }
     }
+    }
     ImGui::EndChild();
+    ImGui::PopStyleVar();  // ScrollbarSize (v1.9.84)
     ImGui::End();
     if (g_fontUI) ImGui::PopFont();
     ImGui::PopStyleColor(6);
@@ -4809,10 +4832,9 @@ static void DrawSettings(float W, float H) {
         bool bloqR = g_cfg.btnRuedaBloq != 0;
         if (PanelSwitch(S(STR_BTN_RUEDA_LOCK), &bloqR, H)) { g_cfg.btnRuedaBloq = bloqR ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton de la rueda: %s", g_cfg.btnRuedaBloq ? "bloqueado" : "libre"); }
     }
-    {  // v1.9.81: visibilidad propia del boton de la rueda (Rehan: al apagar "Floating button" desaparecia tambien el de la rueda; ahora son independientes)
-        bool visR = g_cfg.botonRuedaVisible != 0;
-        if (PanelSwitch(S(STR_BOTONRUEDAVIS), &visR, H)) { g_cfg.botonRuedaVisible = visR ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton de la rueda: %s", g_cfg.botonRuedaVisible ? "visible" : "oculto"); }
-    }
+    // v1.9.84: el interruptor "Mostrar boton de la rueda" se quito del panel
+    // (Daniel); el boton queda siempre visible. La clave botonRuedaVisible
+    // del .ini sigue funcionando por si se quiere ocultar a mano.
     {
         // v2.23: el bloqueo es un interruptor (no un boton con ON/OFF)
         bool bloq = g_cfg.btnBloq != 0;
@@ -4823,8 +4845,9 @@ static void DrawSettings(float W, float H) {
         // su seccion; el de iconos propios se quito).
         // v2.56: "Ocultar ventana de emisora" va aqui (la ventana es la
         // etiqueta junto al boton chiquito, no de la rueda).
-        bool btnVis = g_cfg.botonVisible != 0;
-        if (PanelSwitch(S(STR_BOTONVIS), &btnVis, H)) { g_cfg.botonVisible = btnVis ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.botonVisible ? "visible" : "oculto"); }
+        // v1.9.84: el interruptor "Floating button" se quito del panel
+        // (Daniel); el boton queda siempre visible. La clave botonVisible
+        // del .ini sigue funcionando por si se quiere ocultar a mano.
         bool ocNom = g_cfg.ocultarNombre != 0;
         if (PanelSwitch(S(STR_OCULTARNOMBRE), &ocNom, H)) { g_cfg.ocultarNombre = ocNom ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("ventana de emisora: %s", g_cfg.ocultarNombre ? "oculta" : "visible"); }
         bool popIco = g_cfg.popupIcono != 0;  // v1.9.73: icono en el aviso de emisora
