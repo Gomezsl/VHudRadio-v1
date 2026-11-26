@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.82-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.83-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.82-beta"
+#define VHUDRADIO_VERSION "1.9.83-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1513,6 +1513,7 @@ static void* ResolveMenuManager(void* sym) {
 // ---- texturas ImGui de los iconos (se crean en el primer frame, con contexto GL) ----
 static GLuint g_tex[14] = {0};  // 1..13 + radio_current en [0] como marco
 static GLuint g_texColor[14] = {0};  // v2.28: a color (radio_color/), 1..13 + radio_current en [0]
+static GLuint g_texVoid[14] = {0};  // v1.9.83: a color Void (set 2), solo con fondoIcono encendido
 // v1.9.54: icono del boton de la rueda (rueda con nota, 128x128, fondo
 // transparente). PNG incrustado en base64 (de la imagen que mando Daniel).
 static const char kWheelIconB64[] =
@@ -2012,7 +2013,12 @@ static GLuint LoadIconFileOrEmbedded(int set, int idx, const char** srcOut) {
     const char* b64 = EmbeddedIconB64(set, idx);
     if (b64) {
         std::vector<unsigned char> raw = B64Decode(b64);
-        if (!raw.empty()) t = LoadPngFromMemory(raw.data(), raw.size(), set != 1);  // v1.9.81: set 1 (Void) con blackKey=false SIEMPRE: los logos tienen borde negro propio y el paso blackKey lo volveria transparente; antes solo se exceptuaban CSR (8) y User Track (12)
+        // v1.9.83: blackKey=false para set 2 (Void: el borde negro es parte
+        // del logo) y para set 1 idx 8/12 (slotrad CSR/User Track: su centro
+        // negro/morado no se transparenta); el resto de set 1 (y set 0) con
+        // blackKey=true para que el fondo negro se quite con fondoIcono.
+        bool bk = !(set == 2 || (set == 1 && (idx == 8 || idx == 12)));
+        if (!raw.empty()) t = LoadPngFromMemory(raw.data(), raw.size(), bk);
     }
     if (t) { if (srcOut) *srcOut = "en el .so"; return t; }
     if (srcOut) *srcOut = "-";
@@ -2113,6 +2119,10 @@ static void LoadRadioTextures() {
     // normal de esa emisora para que la rueda no se rompa.
     LoadIconSet(g_texColor, "a color", 1);
     for (int i = 0; i <= 13; i++) if (!g_texColor[i]) g_texColor[i] = g_tex[i];
+    // v1.9.83: iconos Void (set 2, solo con fondoIcono encendido); si a
+    // alguno le falta, se usa el de color (slotrad) de esa emisora.
+    LoadIconSet(g_texVoid, "a color Void", 2);
+    for (int i = 0; i <= 13; i++) if (!g_texVoid[i]) g_texVoid[i] = g_texColor[i];
     int ok = 0; for (int i = 1; i <= 13; i++) if (g_tex[i]) ok++;
     if (ok == 0) Log("  !! sin iconos incrustados en el .so (no deberia pasar)");
     // v1.9.54: icono del boton de la rueda (incrustado, no de archivo).
@@ -2135,13 +2145,20 @@ static void ReloadIcons() {
     for (int i = 0; i < 14; i++) {
         if (g_tex[i]) { glDeleteTextures(1, &g_tex[i]); g_tex[i] = 0; }
         if (g_texColor[i]) { glDeleteTextures(1, &g_texColor[i]); g_texColor[i] = 0; }
+        if (g_texVoid[i]) { glDeleteTextures(1, &g_texVoid[i]); g_texVoid[i] = 0; }  // v1.9.83
     }
     g_texTried = false;
 }
 // v2.28: el icono que se dibuja segun el interruptor (a color si esta activo y existe)
+// v1.9.83: con iconosColor, el Void (set 2) SOLO cuando fondoIcono esta
+// encendido (sobre el circulo de color); con fondoIcono apagado va el
+// slotrad (set 1, distintivo negro propio). Sin iconosColor, el blanco.
 static GLuint IconTex(int i) {
     if (i < 0 || i > 13) return 0;
-    if (g_cfg.iconosColor && g_texColor[i]) return g_texColor[i];
+    if (g_cfg.iconosColor) {
+        if (g_cfg.fondoIcono && g_texVoid[i]) return g_texVoid[i];
+        if (g_texColor[i]) return g_texColor[i];
+    }
     return g_tex[i];
 }
 
@@ -3998,7 +4015,7 @@ static void DrawWheel(float W, float H) {
             // v2.55: disco negro detras del icono de la emisora (el fondo negro
             // que siempre tuvo el boton; con el fondo de color encendido el icono
             // queda transparente y sin esto se veria el fondo del boton).
-            { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); dl->AddImageRounded((ImTextureID)(uintptr_t)it, bp, ImVec2(bp.x + bs, bp.y + bs), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }
+            { GLuint it = IconTex(g_current); if (it) { dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(0, 0, 0, op)); float fi = (g_cfg.iconosColor && g_cfg.fondoIcono) ? bs * 0.1f : 0.0f; dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(bp.x + fi, bp.y + fi), ImVec2(bp.x + bs - fi, bp.y + bs - fi), ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, op), bs/2 - fi); } else dl->AddCircleFilled(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(30,30,40,220 * op / 255)); }  // v1.9.83: el icono Void tambien se veia grande en el boton flotante; con color+fondoIcono se dibuja al 80% (margen de 10% por lado sobre el disco negro)
             dl->AddCircle(ImVec2(bp.x + bs/2, bp.y + bs/2), bs/2, IM_COL32(255,255,255,200 * op / 255), 0, 2.0f);
             // v1.5: flechas anterior/siguiente DENTRO de la etiqueta (solo en la 12),
             // a los lados del nombre de la cancion.
@@ -4035,15 +4052,14 @@ static void DrawWheel(float W, float H) {
         if (g_cfg.fondoIcono) dl->AddCircleFilled(p, si, IM_COL32(g_cfg.fondoIconoR, g_cfg.fondoIconoG, g_cfg.fondoIconoB, (int)(255 * anim)));  // v2.53: fondo de color del icono
         if (it) {
             ImVec4 tint = sel ? ImVec4(1, 1, 1, anim) : ImVec4(0.55f, 0.55f, 0.55f, 0.75f * anim);
-            // v1.9.82: los iconos a color (Void) llenan casi todo el lienzo
-            // (el logo ocupa ~93% del ancho, contra el distintivo redondo
-            // slotrad que llevaba el logo mas chico dentro del circulo), asi
-            // que a tamano completo se ven enormes y pegados al borde del
-            // circulo. Con iconosColor se dibujan al 80% para que quede un
-            // margen (anillo del fondoIcono o del segmento) como antes.
-            // (La excepcion 0.85x de la 1.9.14 para CSR/User Track era para
-            // los slotrad; con Void todos los iconos llevan el mismo trato.)
-            float siIcon = g_cfg.iconosColor ? si * 0.8f : si;
+            // v1.9.83: los iconos Void (color + fondoIcono) llenan casi todo
+            // el lienzo (el logo ocupa ~93% del ancho), asi que a tamano
+            // completo se ven enormes; se dibujan al 70% para que quede un
+            // margen como tenia el logo dentro del distintivo slotrad. Con
+            // fondoIcono apagado (slotrad) o sin color (blancos), tamano
+            // completo como siempre. (El 80% de la 1.9.82 seguia viendose
+            // grande, segun Daniel.)
+            float siIcon = (g_cfg.iconosColor && g_cfg.fondoIcono) ? si * 0.7f : si;
             // v2.56: icono en CIRCULO (redondeo = mitad del lado): antes era
             // un cuadrado y se notaba el cuadrado de la imagen.
             dl->AddImageRounded((ImTextureID)(uintptr_t)it, ImVec2(p.x-siIcon, p.y-siIcon), ImVec2(p.x+siIcon, p.y+siIcon), ImVec2(0, 0), ImVec2(1, 1), ImColor(tint), siIcon);
