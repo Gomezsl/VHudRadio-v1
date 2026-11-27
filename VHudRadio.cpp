@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.84-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.85-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.84-beta"
+#define VHUDRADIO_VERSION "1.9.85-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -3469,7 +3469,15 @@ static bool DrawButtonGL(float W, float H) {
     // color encendido). v2.56: DISCO negro (no cuadro: se notaba el cuadrado).
     circleTo(vBg, bp.x + bs / 2, bp.y + bs / 2, bs / 2, 0.0f, 0.0f, 0.0f, opF);
     GLuint it = IconTex(g_current);
-    if (it) quadTo(vIco, bp.x, bp.y, bp.x + bs, bp.y + bs, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
+    if (it) {
+        // v1.9.85: el icono Void es un logo cuadrado sin fondo; a tamano
+        // completo el cuadrado se salia del disco (esquinas a 0.707x bs,
+        // el disco solo tiene 0.5x bs). Al 70% cabe dentro del disco
+        // (esquinas a 0.495x bs) y ya no se sale. (La 1.9.84 arreglo solo
+        // el camino ImGui; el boton que se ve en el juego es este camino GL.)
+        float fi = (g_cfg.iconosColor && g_cfg.fondoIcono) ? bs * 0.15f : 0.0f;
+        quadTo(vIco, bp.x + fi, bp.y + fi, bp.x + bs - fi, bp.y + bs - fi, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, opF);
+    }
     // v1.9.54: boton propio de la rueda (encima del flotante): disco negro +
     // icono de rueda incrustado (si no cargo, el icono de la emisora).
     // v1.9.63: con el boton nativo activo, el widget del juego lo dibuja y
@@ -4486,12 +4494,19 @@ static void DrawTrackList(float W, float H) {
     // desplazar, con inercia al soltar. Un toque (sin arrastre) salta a la
     // cancion; un arrastre solo desplaza, no salta.
     ImGuiIO& lio = ImGui::GetIO();
+    float rowH = H * 0.085f;
+    float numW = H * 0.045f;
     static bool listScrolling = false; static bool listScrollDecided = false;
     static ImVec2 listScrollStart; static float listScrollStartY = 0.0f; static float listScrollVel = 0.0f;
     static bool listScrolled = false;
+    static bool listOnScrollbar = false;  // v1.9.85: el arrastre empezo sobre la barra
     if (lio.MouseClicked[0]) {
         listScrollStart = lio.MousePos; listScrollDecided = false; listScrolling = false; listScrollVel = 0.0f; listScrolled = false;
         listScrollStartY = ImGui::GetScrollY();
+        // v1.9.85: si el toque cae sobre la barra (borde derecho del hijo),
+        // el arrastre mueve la barra, no el contenido.
+        ImVec2 cpos = ImGui::GetWindowPos(); ImVec2 csize = ImGui::GetWindowSize();
+        listOnScrollbar = (lio.MousePos.x >= cpos.x + csize.x - H * 0.04f);
     }
     if (lio.MouseDown[0] && !listScrollDecided) {
         float ldx = lio.MousePos.x - listScrollStart.x, ldy = lio.MousePos.y - listScrollStart.y;
@@ -4500,8 +4515,20 @@ static void DrawTrackList(float W, float H) {
     }
     if (!lio.MouseDown[0]) { listScrolling = false; listScrollDecided = false; }
     if (listScrolling) {
-        ImGui::SetScrollY(listScrollStartY - (lio.MousePos.y - listScrollStart.y));
-        listScrollVel = -lio.MouseDelta.y;
+        if (listOnScrollbar) {
+            // Barra: bajar el dedo baja la lista (como una barra normal), en
+            // proporcion al contenido (el contenido es mucho mas alto que la
+            // ventana). Sin inercia al soltar: la barra queda donde se deja.
+            float contentH = (float)ut_tracks.size() * (rowH + ImGui::GetStyle().ItemSpacing.y);
+            float trackH = ImGui::GetWindowHeight();
+            float factor = (trackH > 0.0f) ? contentH / trackH : 1.0f;
+            if (factor < 1.0f) factor = 1.0f;
+            ImGui::SetScrollY(listScrollStartY + (lio.MousePos.y - listScrollStart.y) * factor);
+            listScrollVel = 0.0f;
+        } else {
+            ImGui::SetScrollY(listScrollStartY - (lio.MousePos.y - listScrollStart.y));
+            listScrollVel = -lio.MouseDelta.y;
+        }
     }
     if (!lio.MouseDown[0] && fabsf(listScrollVel) > 0.4f) {
         ImGui::SetScrollY(ImGui::GetScrollY() + listScrollVel);
@@ -4513,8 +4540,8 @@ static void DrawTrackList(float W, float H) {
     // v1.6: cada fila es titulo + artista debajo, con linea divisora entre
     // canciones (como en la imagen de GTA V). Se dibuja a mano para poder
     // poner el titulo en blanco y el artista en gris.
-    float rowH = H * 0.085f;
-    float numW = H * 0.045f;
+    // (rowH/numW se definen arriba, antes del scroll, porque el arrastre de
+    // la barra los usa para la proporcion.)
     // v1.9.84: con mas de 50 canciones la lista dibujaba TODAS las filas cada
     // cuadro (titulo + artista + boton), aunque solo se ven 7-8. El clipper
     // solo procesa las filas visibles, asi que el costo ya no depende del
