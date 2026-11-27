@@ -218,6 +218,10 @@ static pthread_t ut_thread;
 static char ut_curTrack[256] = "";           // basename de la pista actual
 static int ut_underruns = 0;                 // callbacks cortos (ring vacio) desde el inicio
 static bool* ut_loadingActive = nullptr;     // CLoadingScreen::m_bActive (si resuelve)
+// v1.9.86 (Rehan): CHud::m_BigMessage+0x200 es el hueco 2 del mensaje grande
+// ("BUSTED"/"WASTED"); distinto de 0 mientras el juego muestra ese aviso.
+// Leerlo cada cuadro pausa User Tracks en busted/wasted, como las demas radios.
+static uint16_t* ut_wastedBustedMsg = nullptr;
 static std::chrono::steady_clock::time_point ut_lastStatus = std::chrono::steady_clock::now();
 static std::chrono::steady_clock::time_point ut_startedAt = std::chrono::steady_clock::now();
 static bool ut_diagDone = true;  // diagnostico: lectura nativa con retraso (una vez por arranque)
@@ -227,6 +231,7 @@ static SLObjectItf ut_player = nullptr;
 static SLPlayItf ut_play = nullptr;
 static SLBufferQueueItf ut_queue = nullptr;
 static SLVolumeItf ut_volume = nullptr;  // v1.9.62: volumen OpenSL (sigue el RADIO de opciones de sonido)
+static float ut_volUser = 1.0f;  // v1.9.86: volumen propio de User Tracks (0..1), lo pone VHudRadio.cpp desde g_cfg.volUT; multiplica al RADIO del juego.
 // v1.9.62: volumen maestro de musica del juego (CAEAudioHardware+0x1f0, RE2
 // de SAUserTracks): el deslizador RADIO de opciones de sonido lo mueve; el
 // reproductor de User Tracks lo sigue como las radios originales.
@@ -1072,7 +1077,7 @@ static void UT_DiagTick() {
 // SetVolumeLevel cuando el valor cambia, para no tocar OpenSL cada cuadro.
 static void UT_ApplyGameVolume() {
     if (!ut_volume || !ut_musicVolPtr || !ut_active) return;
-    float v = *ut_musicVolPtr;
+    float v = *ut_musicVolPtr * ut_volUser;  // v1.9.86: RADIO del juego x volumen propio de User Tracks
     if (!(v >= 0.0f) || v != v) v = 1.0f;  // NaN o negativo -> maximo
     if (v > 1.0f) v = 1.0f;
     SLmillibel mb;
@@ -1112,7 +1117,7 @@ static void UT_Frame() {
         ut_resumeAt = std::chrono::steady_clock::now();  // v1.8: gracia de 2 s (el juego pide Radio Off DESPUES de esto)
         Log("UT: reanudado al subir al vehiculo");
     }
-    bool paused = (g_paused && !ut_menuPreview) || (ut_loadingActive && *ut_loadingActive) || (ut_pausedByExit && !ut_menuPreview);  // v1.9.13: el preview tambien salta la pausa por salir del vehiculo (en el menu de inicio no hay vehiculo)
+    bool paused = (g_paused && !ut_menuPreview) || (ut_loadingActive && *ut_loadingActive) || (ut_pausedByExit && !ut_menuPreview) || (ut_wastedBustedMsg && *ut_wastedBustedMsg != 0);  // v1.9.13: el preview tambien salta la pausa por salir del vehiculo (en el menu de inicio no hay vehiculo). v1.9.86: busted/wasted pausa User Tracks como las demas radios (Rehan).
     UT_PauseDevice(paused);
     auto now = std::chrono::steady_clock::now();
     if (!ut_diagDone && now - ut_startedAt > std::chrono::seconds(3)) {
@@ -2170,6 +2175,9 @@ static void UT_InstallHooks() {
     if (h) {
         ut_loadingActive = (bool*)aml->GetSym(h, "_ZN14CLoadingScreen9m_bActiveE");
         Log("UT: CLoadingScreen::m_bActive %s", ut_loadingActive ? "ok" : "no resolvio (sin pausa en carga)");
+        uintptr_t bigMsg = aml->GetSym(h, "_ZN4CHud12m_BigMessageE");
+        ut_wastedBustedMsg = bigMsg ? (uint16_t*)(bigMsg + 0x200) : nullptr;
+        Log("UT: CHud::m_BigMessage %s", ut_wastedBustedMsg ? "ok" : "no resolvio (User Tracks seguira sonando en busted/wasted)");
         // v1.9: StopRadio (para cortar la emisora anterior sin estatica) y
         // RetuneRadio (el juego cambia con el cuando se usa su radio
         // original). Como SAUserTracks.
