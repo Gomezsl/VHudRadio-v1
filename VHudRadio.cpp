@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.88-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.89-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.88-beta"
+#define VHUDRADIO_VERSION "1.9.89-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2437,6 +2437,26 @@ static bool PatchGot(const char* libName, const char* sym, void* repl, void** or
             *orig = *slot; *slot = repl; return true; }
         return false; };
     return scan(jmprel, jmpsz) || scan(rela, relasz);
+}
+
+// v1.9.89: en algunos telefonos (Android 10, Honor) el eglSwapBuffers que
+// devuelve dlsym vive en una pagina de solo ejecucion (sin lectura): el
+// instalador de hooks de AML lee la direccion para ver si es un salto y
+// el proceso muere con SIGSEGV al cargar. Se verifica que la direccion
+// este en una zona legible antes de enganchar.
+static bool IsReadableAddr(void* p) {
+    uintptr_t a = (uintptr_t)p;
+    FILE* f = fopen("/proc/self/maps", "r");
+    if (!f) return false;
+    char line[512];
+    bool ok = false;
+    while (fgets(line, sizeof(line), f)) {
+        unsigned long lo = 0, hi = 0; char perms[5] = {0};
+        if (sscanf(line, "%lx-%lx %4s", &lo, &hi, perms) != 3) continue;
+        if (a >= lo && a < hi) { ok = (perms[0] == 'r'); break; }
+    }
+    fclose(f);
+    return ok;
 }
 
 static ImFont* g_fontTitle = nullptr;  // v2.1: letra del centro (Roboto Condensed negrita del sistema)
@@ -5646,7 +5666,8 @@ extern "C" void OnModLoad() {
     Log("  eglSwapBuffers por GOT: %s", got ? "ok" : "no encontrado");
     if (!got) {
         void* fn = dlsym(RTLD_DEFAULT, "eglSwapBuffers");
-        if (fn) { aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig); Log("  eglSwapBuffers por hook directo"); }
+        if (fn && IsReadableAddr(fn)) { aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig); Log("  eglSwapBuffers por hook directo"); }
+        else if (fn) Log("  !! eglSwapBuffers en pagina no legible (%p): sin hook, la rueda no se dibujara", fn);
         else Log("  !! no se pudo enganchar eglSwapBuffers: la rueda no se dibujara");
     }
 }
