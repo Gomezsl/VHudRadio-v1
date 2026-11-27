@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.89-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.90-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.89-beta"
+#define VHUDRADIO_VERSION "1.9.90-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1452,6 +1452,12 @@ static bool* g_slowActive = nullptr;  // CTimer::bSlowMotionActive (slow-motion 
 static float* g_slowScale = nullptr;  // CTimer::ms_fSlowMotionScale
 static float* g_timeScale = nullptr;  // CTimer::ms_fTimeScale (respaldo si no hay slow-motion)
 static bool* g_loadingActive = nullptr;  // v2.48: CLoadingScreen::m_bActive (true mientras carga la partida)
+// v1.9.90: respaldo de dibujo cuando eglSwapBuffers no se pudo enganchar
+// (pagina no legible en algunos telefonos): si el hook de swap no se
+// instalo, DrawFrame se llama desde CTouchInterface::DrawAll, que corre
+// cada cuadro con contexto GL activo. Solo corre en ese caso.
+static bool g_swapHooked = false;
+static void UT_DrawFallback();
 // v1: reproductor de User Tracks propio (minimp3 + OpenSL). Se incluye aqui
 // porque usa las globales de arriba (g_startTrack, g_userPause, g_inVehicle...).
 #include "UserTracks.h"
@@ -5552,6 +5558,16 @@ static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
     return Swap_orig(d, s);
 }
 
+// v1.9.90: respaldo de dibujo cuando eglSwapBuffers no se pudo enganchar
+// (pagina no legible). Se llama desde CTouchInterface::DrawAll, que corre
+// cada cuadro con contexto GL activo; se usa el display/surface actuales,
+// los mismos que el juego esta renderizando.
+static void UT_DrawFallback() {
+    EGLDisplay dpy = eglGetCurrentDisplay();
+    EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    if (dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE) DrawFrame(dpy, surf);
+}
+
 extern "C" void OnModLoad() {
     // v1.9.14: el paquete se detecta del proceso (Rehan usa uno
     // personalizado, p. ej. com.rockstargames.gtasa2; antes estaba fijo a
@@ -5667,7 +5683,9 @@ extern "C" void OnModLoad() {
     if (!got) {
         void* fn = dlsym(RTLD_DEFAULT, "eglSwapBuffers");
         if (fn && IsReadableAddr(fn)) { aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig); Log("  eglSwapBuffers por hook directo"); }
-        else if (fn) Log("  !! eglSwapBuffers en pagina no legible (%p): sin hook, la rueda no se dibujara", fn);
-        else Log("  !! no se pudo enganchar eglSwapBuffers: la rueda no se dibujara");
+        else if (fn) Log("  !! eglSwapBuffers en pagina no legible (%p): sin hook, dibujo por respaldo DrawAll", fn);
+        else Log("  !! no se pudo enganchar eglSwapBuffers: dibujo por respaldo DrawAll");
     }
+    g_swapHooked = (Swap_orig != nullptr);
+    Log("  dibujo por: %s", g_swapHooked ? "eglSwapBuffers" : "respaldo DrawAll");
 }

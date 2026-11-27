@@ -2151,9 +2151,15 @@ static void UT_TouchDrawAll_hook(void* self, bool b) {
     if (g_open || g_settings || g_trackList) {  // rueda/panel/lista abiertos: sin botones
         static bool logged = false;
         if (!logged) { logged = true; Log("UT: DrawAll oculto (rueda abierta)"); }  // v1.9.16: diagnostico
-        return;
+        // no orig: botones ocultos, pero la rueda/panel SI se dibuja abajo
+    } else {
+        if (ut_origTouchDrawAll) ut_origTouchDrawAll(self, b);
     }
-    if (ut_origTouchDrawAll) ut_origTouchDrawAll(self, b);
+    // v1.9.90: respaldo de dibujo cuando eglSwapBuffers no se engancho
+    // (pagina no legible): DrawAll corre cada cuadro con contexto GL
+    // activo y va despues de los botones del juego, asi la rueda queda
+    // encima. Solo corre si el hook de swap no se instalo.
+    if (!g_swapHooked) UT_DrawFallback();
 }
 
 // v1.9.71: desactivar el cambio de radio por deslizamiento (Daniel: con la
