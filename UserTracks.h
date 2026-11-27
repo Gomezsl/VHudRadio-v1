@@ -407,6 +407,20 @@ static const char* UT_TrackDisplayName() {
     // pero nunca se lee fuera del buffer.
     strncpy(tmp, ut_curTrack, sizeof tmp - 1);
     tmp[sizeof tmp - 1] = '\0';
+    // v1.9.88: si aun no suena ninguna pista (el reproductor esta arrancando
+    // o la rueda se abrio antes de que cargara la primera), mostrar la pista
+    // que va a sonar (la siguiente en el orden) para que el nombre, las
+    // flechas y el boton de la lista no salgan en blanco mientras carga.
+    if (tmp[0] == '\0' && !ut_tracks.empty()) {
+        int idx = -1;
+        if (!ut_order.empty() && ut_orderPos >= 0 && ut_orderPos < (int)ut_order.size()) idx = ut_order[ut_orderPos];
+        else if (!ut_order.empty()) idx = ut_order[0];
+        else idx = 0;
+        if (idx >= 0 && idx < (int)ut_tracks.size()) {
+            strncpy(tmp, ut_tracks[idx].c_str(), sizeof tmp - 1);
+            tmp[sizeof tmp - 1] = '\0';
+        }
+    }
     const char* base = UT_Basename(tmp);
     size_t n = strlen(base);
     const char* dot = strrchr(base, '.');
@@ -1081,18 +1095,17 @@ static void UT_DiagTick() {
 // v1.9.87: el volumen propio (volUT) ahora es dB LINEAL (100% = 0 dB,
 // 50% = -10 dB, o sea la mitad de fuerte): antes era multiplicador lineal y
 // de 100% a 80% apenas se notaba (-1.9 dB), por eso "no se sentia que bajo".
+// v1.9.88 (Daniel): el volumen propio de User Tracks tiene PRIORIDAD sobre
+// el RADIO de opciones de sonido: el volumen lo manda volUT y el RADIO del
+// juego ya no lo baja (antes RADIO x volUT, asi que con RADIO bajo ni al
+// 100% sonaba fuerte).
 static void UT_ApplyGameVolume() {
-    if (!ut_volume || !ut_musicVolPtr || !ut_active) return;
-    float radioV = *ut_musicVolPtr;
-    if (!(radioV >= 0.0f) || radioV != radioV) radioV = 1.0f;  // NaN o negativo -> maximo
-    if (radioV > 1.0f) radioV = 1.0f;
+    if (!ut_volume || !ut_active) return;
     SLmillibel mb;
-    if (radioV <= 0.001f || ut_volUser <= 0.001f) {
+    if (ut_volUser <= 0.001f) {
         mb = SL_MILLIBEL_MIN;
     } else {
-        SLmillibel radioMb = (SLmillibel)(2000.0f * log10f(radioV));
-        SLmillibel userMb = (SLmillibel)((ut_volUser - 1.0f) * 2000.0f);  // v1.9.87: dB lineal
-        mb = radioMb + userMb;
+        mb = (SLmillibel)((ut_volUser - 1.0f) * 2000.0f);  // v1.9.87: dB lineal, solo volUT
         if (mb < SL_MILLIBEL_MIN) mb = SL_MILLIBEL_MIN;
         if (mb > 0) mb = 0;
     }

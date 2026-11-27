@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.87-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.88-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.87-beta"
+#define VHUDRADIO_VERSION "1.9.88-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -2539,7 +2539,10 @@ static void FloatBtnGeom(float W, float H, ImVec2& iconPos, ImVec2& labelPos, Im
     if (iconPos.x < W * 0.5f) labelPos = ImVec2(iconPos.x + bs + H * 0.015f, iconPos.y + bs * 0.5f - lh * 0.5f);
     else labelPos = ImVec2(iconPos.x - H * 0.015f - lw, iconPos.y + bs * 0.5f - lh * 0.5f);
     // Geometria de las flechas dentro de la etiqueta (para dibujarlas y tocarlas).
-    g_lblArrows = (g_current == 12 && ut_active && !g_cfg.ocultarNombre);  // v1.8: las flechas de la 12 NO dependen de mostrarGenero (cambian la cancion, no son genero)
+    // v1.9.88 (Daniel): igual que el centro de la rueda, las flechas de la
+    // etiqueta aparecen en cuanto la carpeta esta escaneada, sin esperar a
+    // que el reproductor este activo.
+    g_lblArrows = (g_current == 12 && !ut_tracks.empty() && !g_cfg.ocultarNombre);  // v1.8: las flechas de la 12 NO dependen de mostrarGenero (cambian la cancion, no son genero)
     if (g_lblArrows) {
         g_lblArrowR = ar;
         float subY = labelPos.y + H * 0.008f + ns;  // Y de la linea 2 (la cancion)
@@ -4153,7 +4156,12 @@ static void DrawWheel(float W, float H) {
     // desplaza (marquesina) entre las flechas si no cabe.
     // v1.4: en las demas emisoras, el programa/locutor que se esta
     // transmitiendo (como en la radio de GTA V).
-    bool showTrack = (g_selected == 12 && ut_active);
+    // v1.9.88 (Daniel): el centro de la 12 (flechas, nombre y boton de la
+    // lista) ya no espera a que el reproductor este activo: basta con que
+    // la carpeta este escaneada (ut_tracks), asi aparecen al abrir la rueda
+    // sin esperar a que cargue la primera pista; el nombre lo da
+    // UT_TrackDisplayName (la que suena, o la siguiente si aun no arranco).
+    bool showTrack = (g_selected == 12 && !ut_tracks.empty());
     bool showProg = (g_selected >= 1 && g_selected <= 11 && g_cfg.mostrarGenero);
     float nameDy = 0.0f;
     if (g_cfg.mostrarGenero) nameDy -= H*0.015f;
@@ -5568,6 +5576,7 @@ extern "C" void OnModLoad() {
     // como respaldo si existen, pero tampoco se crean.
     LoadCfg();
     ut_volUser = g_cfg.volUT / 100.0f;  // v1.9.86: volumen propio de User Tracks (LoadCfg ya lo limita a 0-100)
+    UT_ScanMusic();  // v1.9.88: escanear la carpeta al arrancar para que el centro de la rueda (flechas, nombre, boton de la lista) tenga las pistas desde antes de sonar la 12
     SAUtilsRegisterSettings();  // v1.9.86: pestana VHudRadio en Ajustes (si SAUtils ya cargo; si no, DrawFrame reintenta)
     LoadHornPos();
     Log("  centro del claxon: (%.3f, %.3f)", g_hornCx, g_hornCy);
