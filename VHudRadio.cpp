@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.90-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.91-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.90-beta"
+#define VHUDRADIO_VERSION "1.9.91-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5122,9 +5122,15 @@ static void DrawPopup(float W, float H) {
 }
 
 static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
-    if (g_failed) return;
+    // v1.9.91: diagnostico (una sola vez por motivo) para saber por que no
+    // se dibuja en telefonos donde eglSwapBuffers no se engancho.
+    if (g_failed) { static bool l = false; if (!l) { l = true; Log("  diag DrawFrame: g_failed, sin dibujo"); } return; }
     EGLContext ctx = eglGetCurrentContext();
-    if (ctx == EGL_NO_CONTEXT) return;
+    if (ctx == EGL_NO_CONTEXT) { static bool l = false; if (!l) { l = true; Log("  diag DrawFrame: sin contexto GL"); } return; }
+    // v1.9.91: latido cada 600 cuadros para saber si DrawFrame corre y si el
+    // jugador esta en vehiculo (sin esto no se distingue "no corre" de
+    // "corre pero a pie").
+    { static int tick = 0; if ((++tick % 600) == 0) Log("  diag DrawFrame vivo: inited=%d vehiculo=%d radio=%d", g_inited ? 1 : 0, g_inVehicle ? 1 : 0, g_hasRadio ? 1 : 0); }
     // v1: durante la pantalla de carga no hacer nada (ni leer el vehiculo ni
     // dibujar): el juego esta cargando texturas y la rueda/boton no se ven.
     // ut_loadingActive es CLoadingScreen::m_bActive (resuelto en UT_InstallHooks).
@@ -5227,7 +5233,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         // iconos: las subidas de textura en plena carga ensucian el estado GL
         // del juego y se ven texturas del juego a pantalla completa al reanudar.
         if (g_loadingActive && *g_loadingActive) return;
-        if (!FindPlayerPed || !FindPlayerPed(-1)) return;
+        if (!FindPlayerPed || !FindPlayerPed(-1)) { static bool l = false; if (!l) { l = true; Log("  diag DrawFrame: sin jugador (FindPlayerPed null), init en espera"); } return; }
         ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO();
         io.IniFilename = nullptr; io.LogFilename = nullptr;
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
@@ -5565,6 +5571,8 @@ static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
 static void UT_DrawFallback() {
     EGLDisplay dpy = eglGetCurrentDisplay();
     EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
+    EGLContext ctx = eglGetCurrentContext();
+    { static bool l = false; if (!l) { l = true; Log("  diag respaldo DrawAll: dpy=%p surf=%p ctx=%p", (void*)dpy, (void*)surf, (void*)ctx); } }
     if (dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE) DrawFrame(dpy, surf);
 }
 
