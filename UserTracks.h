@@ -231,6 +231,7 @@ static SLObjectItf ut_player = nullptr;
 static SLPlayItf ut_play = nullptr;
 static SLBufferQueueItf ut_queue = nullptr;
 static SLVolumeItf ut_volume = nullptr;  // v1.9.62: volumen OpenSL (sigue el RADIO de opciones de sonido)
+static SLmillibel ut_lastMb = 0x7fffffff;  // v1.9.87: ultimo nivel aplicado (se reinicia al crear el reproductor, porque la interfaz nueva arranca a maximo y el viejo estatico impedia re-aplicar el volumen)
 static float ut_volUser = 1.0f;  // v1.9.86: volumen propio de User Tracks (0..1), lo pone VHudRadio.cpp desde g_cfg.volUT; multiplica al RADIO del juego.
 // v1.9.62: volumen maestro de musica del juego (CAEAudioHardware+0x1f0, RE2
 // de SAUserTracks): el deslizador RADIO de opciones de sonido lo mueve; el
@@ -880,6 +881,7 @@ static bool UT_Start() {
         ut_volume = nullptr;
         Log("UT: sin interfaz de volumen (el RADIO de sonido no afectara a User Tracks)");
     }
+    ut_lastMb = 0x7fffffff;  // v1.9.87: la interfaz nueva arranca a maximo; forzar que UT_ApplyGameVolume re-aplique el volumen (antes el estatico viejo lo impedia y quedaba a tope tras reiniciar el reproductor)
     (*ut_queue)->RegisterCallback(ut_queue, UT_BufferCallback, nullptr);
     ut_bufIdx = 0;
     for (int i = 0; i < UT_NUM_BUFS; i++) {
@@ -905,6 +907,7 @@ static void UT_Stop(const char* reason) {
         if (ut_queue) (*ut_queue)->Clear(ut_queue);
         (*ut_player)->Destroy(ut_player);
         ut_player = nullptr; ut_play = nullptr; ut_queue = nullptr; ut_volume = nullptr;
+        ut_lastMb = 0x7fffffff;  // v1.9.87: reiniciar tambien al parar, por si se crea otro reproductor despues
         pthread_mutex_unlock(&ut_cbMutex);
     }
     ut_ring.free();
@@ -1075,17 +1078,26 @@ static void UT_DiagTick() {
 // el deslizador RADIO); se lee cada cuadro y se aplica al reproductor OpenSL
 // en milibeles (0 = maximo, SL_MILLIBEL_MIN = silencio). Solo se llama a
 // SetVolumeLevel cuando el valor cambia, para no tocar OpenSL cada cuadro.
+// v1.9.87: el volumen propio (volUT) ahora es dB LINEAL (100% = 0 dB,
+// 50% = -10 dB, o sea la mitad de fuerte): antes era multiplicador lineal y
+// de 100% a 80% apenas se notaba (-1.9 dB), por eso "no se sentia que bajo".
 static void UT_ApplyGameVolume() {
     if (!ut_volume || !ut_musicVolPtr || !ut_active) return;
-    float v = *ut_musicVolPtr * ut_volUser;  // v1.9.86: RADIO del juego x volumen propio de User Tracks
-    if (!(v >= 0.0f) || v != v) v = 1.0f;  // NaN o negativo -> maximo
-    if (v > 1.0f) v = 1.0f;
+    float radioV = *ut_musicVolPtr;
+    if (!(radioV >= 0.0f) || radioV != radioV) radioV = 1.0f;  // NaN o negativo -> maximo
+    if (radioV > 1.0f) radioV = 1.0f;
     SLmillibel mb;
-    if (v <= 0.001f) mb = SL_MILLIBEL_MIN;
-    else mb = (SLmillibel)(2000.0f * log10f(v));
-    static SLmillibel lastMb = 0x7fffffff;
-    if (mb != lastMb) {
-        lastMb = mb;
+    if (radioV <= 0.001f || ut_volUser <= 0.001f) {
+        mb = SL_MILLIBEL_MIN;
+    } else {
+        SLmillibel radioMb = (SLmillibel)(2000.0f * log10f(radioV));
+        SLmillibel userMb = (SLmillibel)((ut_volUser - 1.0f) * 2000.0f);  // v1.9.87: dB lineal
+        mb = radioMb + userMb;
+        if (mb < SL_MILLIBEL_MIN) mb = SL_MILLIBEL_MIN;
+        if (mb > 0) mb = 0;
+    }
+    if (mb != ut_lastMb) {
+        ut_lastMb = mb;
         (*ut_volume)->SetVolumeLevel(ut_volume, mb);
     }
 }

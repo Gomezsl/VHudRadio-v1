@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.86-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.87-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.86-beta"
+#define VHUDRADIO_VERSION "1.9.87-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5391,7 +5391,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                     Log("rueda: %s cancion", g_trackBtn < 0 ? "anterior" : "siguiente");
                     g_trackBtn = 0;
                 }
-                else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; g_trackList = true; g_listOpenedAt = std::chrono::steady_clock::now(); PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda
+                else if (g_listBtnTap) { g_listBtnTap = false; g_open = false; if (ut_tracks.empty()) UT_ScanMusic(); g_trackList = true; g_listOpenedAt = std::chrono::steady_clock::now(); PlayClick(false); Log("lista de canciones abierta"); }  // v1.4: boton "Lista de canciones" de la rueda; v1.9.87: si la lista esta vacia (el reproductor aun no arranco), escanear la carpeta para que las canciones y sus nombres carguen al abrir
                 else if (g_wheelTouch) { ApplyStation(g_selected); Log("rueda: cambio a %d (%s), sigue abierta (se cierra desde el centro)", g_selected, kStationName[g_selected]); }
                 else if (g_wheelCenterTap) { Log("rueda cerrada desde el centro"); g_open = false; }
                 else { Log("rueda: toque fuera del anillo, sigue abierta"); }
