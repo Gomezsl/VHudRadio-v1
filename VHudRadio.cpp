@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.98-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.99-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.98-beta"
+#define VHUDRADIO_VERSION "1.9.99-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -4068,6 +4068,15 @@ blur_restore:
     glViewport(vp[0], vp[1], vp[2], vp[3]);
 }
 
+// v1.9.99: engranaje de ajustes en la esquina superior izquierda (lo marco
+// Daniel en captura): solo cuando el boton flotante esta oculto y la rueda
+// esta abierta. Toca el engranaje para abrir el panel de personalizacion.
+static void GearGeom(float W, float H, float& cx, float& cy, float& r) {
+    r = H * 0.04f;
+    cx = W * 0.035f;
+    cy = H * 0.065f;
+}
+
 static void DrawWheel(float W, float H) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImFont* font = g_fontTitle ? g_fontTitle : ImGui::GetFont();
@@ -4296,6 +4305,24 @@ static void DrawWheel(float W, float H) {
         dl->AddText(font, H * 0.03f, ImVec2(c.x - ps.x*0.5f, H * 0.03f), IM_COL32(255,255,255,230), pv);
     }
     if (g_open || g_wheelClosing) drawFloatBtn();  // v1.9.60: lo que suena, encima de la rueda
+    // v1.9.99: engranaje de ajustes (boton flotante oculto): en la esquina
+    // superior izquierda, encima de la rueda. No sale en la vista previa
+    // (ahi ya se esta en el panel).
+    if (g_open && !g_preview && !g_cfg.botonVisible) {
+        float gx, gy, gr; GearGeom(W, H, gx, gy, gr);
+        ImVec2 gc(gx, gy);
+        dl->AddCircleFilled(gc, gr, IM_COL32(0, 0, 0, (int)(170 * anim)));
+        for (int i = 0; i < 8; i++) {
+            float a = (float)i * 3.14159265f / 4.0f;
+            float dx = cosf(a), dy = sinf(a);
+            dl->AddLine(ImVec2(gc.x + dx * gr * 0.85f, gc.y + dy * gr * 0.85f),
+                        ImVec2(gc.x + dx * gr * 1.25f, gc.y + dy * gr * 1.25f),
+                        IM_COL32(255, 255, 255, (int)(230 * anim)), gr * 0.18f);
+        }
+        dl->AddCircle(gc, gr, IM_COL32(255, 255, 255, (int)(230 * anim)), 0, 2.0f);
+        dl->AddCircleFilled(gc, gr * 0.45f, IM_COL32(0, 0, 0, (int)(200 * anim)));
+        dl->AddCircle(gc, gr * 0.45f, IM_COL32(255, 255, 255, (int)(230 * anim)), 0, 1.5f);
+    }
 }
 
 // ---- diseno del panel (azul casi oscuro + degradado azul -> azul claro) --------
@@ -4838,7 +4865,13 @@ static void DrawSettings(float W, float H) {
     // v2.56: barra del blur de fondo (0 = apagado)
     if (PanelSlider(S(STR_BLUR), &g_cfg.blur, 0, 100, "%d%%", H, IC_SUN)) { g_cfgDirty = true; Log("desenfoque de fondo: %d%%", g_cfg.blur); }
     // v1.9.86 (Rehan): volumen propio de User Tracks (multiplica al RADIO del juego)
-    if (PanelSlider(S(STR_VOLUT), &g_cfg.volUT, 0, 100, "%d%%", H, IC_OPAC)) { g_cfgDirty = true; ut_volUser = g_cfg.volUT / 100.0f; if (g_saVolPtr) *g_saVolPtr = g_cfg.volUT; Log("volumen User Tracks: %d%%", g_cfg.volUT); }
+    // v1.9.99: la barra de volumen solo sale en el panel si SAUtils NO la
+    // tiene en Ajustes (Daniel: salia en los dos sitios). Con SAUtils, el
+    // volumen se cambia en la pestana VHudRadio de Ajustes; sin SAUtils,
+    // sigue aqui. g_saVolId >= 0 solo cuando el deslizador se registro.
+    if (g_saVolId < 0) {
+        if (PanelSlider(S(STR_VOLUT), &g_cfg.volUT, 0, 100, "%d%%", H, IC_OPAC)) { g_cfgDirty = true; ut_volUser = g_cfg.volUT / 100.0f; if (g_saVolPtr) *g_saVolPtr = g_cfg.volUT; Log("volumen User Tracks: %d%%", g_cfg.volUT); }
+    }
     if (PanelSlider(S(STR_TAMANO), &g_cfg.tamano, 25, 45, "%d%%", H, IC_SIZE)) g_cfgDirty = true;
     // recuadros de color: al tocar uno se abre el panel RGB para ese color
     ImGui::BeginGroup();
@@ -4996,9 +5029,11 @@ static void DrawSettings(float W, float H) {
         // su seccion; el de iconos propios se quito).
         // v2.56: "Ocultar ventana de emisora" va aqui (la ventana es la
         // etiqueta junto al boton chiquito, no de la rueda).
-        // v1.9.84: el interruptor "Floating button" se quito del panel
-        // (Daniel); el boton queda siempre visible. La clave botonVisible
-        // del .ini sigue funcionando por si se quiere ocultar a mano.
+        // v1.9.99: el interruptor "Mostrar boton flotante" vuelve al panel
+        // (Daniel): al ocultarlo, el panel se abre desde el engranaje de la
+        // esquina de la rueda (no como antes, que no habia forma de abrirlo).
+        bool btnVis = g_cfg.botonVisible != 0;
+        if (PanelSwitch(S(STR_BOTONVIS), &btnVis, H)) { g_cfg.botonVisible = btnVis ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("boton flotante: %s", g_cfg.botonVisible ? "visible" : "oculto"); }
         bool ocNom = g_cfg.ocultarNombre != 0;
         if (PanelSwitch(S(STR_OCULTARNOMBRE), &ocNom, H)) { g_cfg.ocultarNombre = ocNom ? 1 : 0; g_cfgDirty = false; SaveCfg(); PlayClick(false); Log("ventana de emisora: %s", g_cfg.ocultarNombre ? "oculta" : "visible"); }
         bool popIco = g_cfg.popupIcono != 0;  // v1.9.73: icono en el aviso de emisora
@@ -5357,14 +5392,26 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
                 if (seg >= 1) { g_selected = seg; g_wheelTouch = true; }
                 else { g_preview = false; g_open = false; g_settings = true; Log("vista previa cerrada"); }
             } else if (g_open) {
-                // v1.5: tocar un segmento lo elige al instante (antes solo el arrastre elegia)
-                g_trackBtn = 0;  // un toque nuevo limpia cualquier flecha anterior
-                int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
-                int ta = 0;
-                if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_wheelCenterTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
-                else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.2: flechas anterior/siguiente de la cancion
-                else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.4: boton "Lista de canciones"
-                else { g_wheelTouch = false; g_wheelCenterTap = CenterAt(g_touchX, g_touchY, (float)w, (float)h); }  // v1.9.71: solo el centro cierra la rueda; fuera del anillo no hace nada (antes cerraba tambien)
+                // v1.9.99: engranaje de ajustes (boton flotante oculto): abre el panel
+                bool gearHit = false;
+                if (!g_cfg.botonVisible) {
+                    float gx, gy, gr; GearGeom((float)w, (float)h, gx, gy, gr);
+                    float dx = g_touchX - gx, dy = g_touchY - gy;
+                    gearHit = (dx*dx + dy*dy <= (gr * 1.35f) * (gr * 1.35f));
+                }
+                if (gearHit) {
+                    g_open = false; g_settings = true; PlayClick(false);
+                    Log("engranaje: panel de personalizacion abierto");
+                } else {
+                    // v1.5: tocar un segmento lo elige al instante (antes solo el arrastre elegia)
+                    g_trackBtn = 0;  // un toque nuevo limpia cualquier flecha anterior
+                    int seg = SegmentAt(g_touchX, g_touchY, (float)w, (float)h);
+                    int ta = 0;
+                    if (seg >= 1) { g_selected = seg; g_wheelTouch = true; g_wheelCenterTap = false; PlayClick(true); Log("rueda: segmento %d (%s) [toque]", seg, kStationName[seg]); }
+                    else if ((ta = TrackArrowAt(g_touchX, g_touchY)) != 0) { g_trackBtn = ta; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.2: flechas anterior/siguiente de la cancion
+                    else if (g_listBtn && g_touchX >= g_listBtnRect.x && g_touchX <= g_listBtnRect.x + g_listBtnRect.z && g_touchY >= g_listBtnRect.y && g_touchY <= g_listBtnRect.y + g_listBtnRect.w) { g_listBtnTap = true; g_wheelTouch = false; g_wheelCenterTap = false; }  // v1.4: boton "Lista de canciones"
+                    else { g_wheelTouch = false; g_wheelCenterTap = CenterAt(g_touchX, g_touchY, (float)w, (float)h); }  // v1.9.71: solo el centro cierra la rueda; fuera del anillo no hace nada (antes cerraba tambien)
+                }
             }
             // v1.9.54: boton propio de la rueda (encima del flotante): un toque
             // abre/cierra la rueda. El claxon ya NO abre la rueda (a peticion
