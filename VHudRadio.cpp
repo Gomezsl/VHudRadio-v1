@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.99-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.100-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.99-beta"
+#define VHUDRADIO_VERSION "1.9.100-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5417,7 +5417,10 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             // abre/cierra la rueda. El claxon ya NO abre la rueda (a peticion
             // de Daniel: la rueda tiene su propio boton). Se resuelve al
             // soltar (si el dedo no se movio), como el boton flotante.
-            if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+            // v1.9.100: el toque se resuelve con botonRuedaVisible (el propio
+            // del boton de la rueda), NO con botonVisible (el flotante): al
+            // ocultar el flotante la rueda ya no abria.
+            if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonRuedaVisible) {
                 if (WheelBtnHit(g_touchX, g_touchY, (float)w, (float)h)) {
                     g_wheelBtnDown = true; g_wheelBtnMoved = false; g_wheelBtnSX = g_touchX; g_wheelBtnSY = g_touchY;
                     ImVec2 wp; float ws;
@@ -5469,7 +5472,7 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
             if (g_wheelBtnDown) {
                 g_wheelBtnDown = false;
                 if (g_wheelBtnMoved) { SaveCfg(); Log("boton rueda movido a (%.2f, %.2f)", g_cfg.btnRuedaX, g_cfg.btnRuedaY); }
-                else if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonVisible) {
+                else if (!g_open && !g_preview && !g_settings && !g_trackList && !g_paused && g_inVehicle && g_hasRadio && g_cfg.botonRuedaVisible) {  // v1.9.100: botonRuedaVisible, no botonVisible (ver arriba)
                     ToggleWheel("boton rueda");
                 }
             }
