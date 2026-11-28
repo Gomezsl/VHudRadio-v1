@@ -1472,6 +1472,7 @@ static void UT_DrawFallback(const char* tag);
 // nada que limpiar y se salta el original (el material se esta destruyendo
 // de todos modos). Si el global es valido, se llama al original tal cual,
 // asi que fuera del apagado el comportamiento es identico.
+static uintptr_t GameLibBase();  // se define mas abajo (linea ~2670)
 static void (*EnvMatDtor_orig)(void*, int, int) = nullptr;
 static void EnvMatDtor_hook(void* data, int a, int b) {
     uintptr_t base = GameLibBase();
