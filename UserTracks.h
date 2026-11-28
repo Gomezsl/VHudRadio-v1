@@ -2117,7 +2117,7 @@ static void UT_HudDraw_hook(void* self) {
     // GL en este telefono (dpy/surf/ctx = 0x0, log 1.9.91); CHud::Draw dibuja
     // el HUD con RenderWare, asi que el contexto SI esta activo aqui. Solo
     // corre si el hook de swap no se instalo.
-    if (!g_swapHooked) UT_DrawFallback();
+    if (!g_swapHooked) UT_DrawFallback("CHudDraw");
 }
 
 // v1.9.4 (AdvancedSettings de Daniel): los elementos del HUD son widgets
@@ -2165,7 +2165,7 @@ static void UT_TouchDrawAll_hook(void* self, bool b) {
     // (pagina no legible): DrawAll corre cada cuadro con contexto GL
     // activo y va despues de los botones del juego, asi la rueda queda
     // encima. Solo corre si el hook de swap no se instalo.
-    if (!g_swapHooked) UT_DrawFallback();
+    if (!g_swapHooked) UT_DrawFallback("DrawAll");
 }
 
 // v1.9.71: desactivar el cambio de radio por deslizamiento (Daniel: con la

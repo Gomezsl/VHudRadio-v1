@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.92-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.93-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.92-beta"
+#define VHUDRADIO_VERSION "1.9.93-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1457,7 +1457,7 @@ static bool* g_loadingActive = nullptr;  // v2.48: CLoadingScreen::m_bActive (tr
 // instalo, DrawFrame se llama desde CTouchInterface::DrawAll, que corre
 // cada cuadro con contexto GL activo. Solo corre en ese caso.
 static bool g_swapHooked = false;
-static void UT_DrawFallback();
+static void UT_DrawFallback(const char* tag);
 // v1: reproductor de User Tracks propio (minimp3 + OpenSL). Se incluye aqui
 // porque usa las globales de arriba (g_startTrack, g_userPause, g_inVehicle...).
 #include "UserTracks.h"
@@ -5568,13 +5568,16 @@ static EGLBoolean Swap_hook(EGLDisplay d, EGLSurface s) {
 // (pagina no legible). Se llama desde CTouchInterface::DrawAll, que corre
 // cada cuadro con contexto GL activo; se usa el display/surface actuales,
 // los mismos que el juego esta renderizando.
-static void UT_DrawFallback() {
+static void UT_DrawFallback(const char* tag) {
     EGLDisplay dpy = eglGetCurrentDisplay();
     EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
     EGLContext ctx = eglGetCurrentContext();
-    { static bool l = false; if (!l) { l = true; Log("  diag respaldo DrawAll: dpy=%p surf=%p ctx=%p", (void*)dpy, (void*)surf, (void*)ctx); } }
-    // v1.9.92: avisa la primera vez que el respaldo SI tiene contexto GL
-    // (la linea de arriba ya se gasto en DrawAll con todo en 0x0).
+    // v1.9.93: registra el estado una vez por cada punto de disparo, para
+    // distinguir "el hook nunca corre" de "corre sin contexto GL".
+    { static bool lDA = false, lHD = false;
+      bool& l = (tag && tag[0] == 'C') ? lHD : lDA;  // "CHudDraw" vs "DrawAll"
+      if (!l) { l = true; Log("  diag respaldo %s: dpy=%p surf=%p ctx=%p", tag, (void*)dpy, (void*)surf, (void*)ctx); } }
+    // v1.9.92: avisa la primera vez que el respaldo SI tiene contexto GL.
     { static bool l2 = false; if (!l2 && dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE && ctx != EGL_NO_CONTEXT) { l2 = true; Log("  diag respaldo con contexto: dpy=%p surf=%p ctx=%p", (void*)dpy, (void*)surf, (void*)ctx); } }
     if (dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE) DrawFrame(dpy, surf);
 }
