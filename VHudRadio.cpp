@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.94-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.95-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.94-beta"
+#define VHUDRADIO_VERSION "1.9.95-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5137,18 +5137,13 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
     // Va ANTES del cambio aplazado para que este espere a que termine la carga.
     if (ut_loadingActive && *ut_loadingActive) return;
     // v1.9.86: pestana VHudRadio en Ajustes (SAUtils) + volumen en vivo desde
-    // Ajustes. El callback de SAUtils solo llega al cerrar Ajustes, asi que
-    // mientras el juego esta en pausa (menu abierto) se sondea el valor y se
-    // aplica al reproductor; el panel propio no se toca mientras hay pausa.
+    // Ajustes. 1.9.95: el sondeo por cuadro de ValueOfSettingsItem (vt[2])
+    // mientras el juego esta en pausa se quito: en el telefono Honor el
+    // juego moria al abrir el menu de pausa y esa llamada a SAUtils en cada
+    // cuadro era el unico codigo ajeno del camino de pausa. El volumen
+    // sigue funcionando: SA_OnVolChanged lo guarda en el INI al cerrar
+    // Ajustes. El panel propio no se toca mientras hay pausa.
     SAUtilsRegisterSettings();
-    if (g_saVolId >= 0 && g_sautilsVt && g_paused) {
-        int v = ((SA_ValueOfSettingsItemFn)g_sautilsVt[2])(g_sautils, g_saVolId);
-        if (v >= 0 && v <= 100 && v != g_cfg.volUT) {
-            g_cfg.volUT = v;
-            ut_volUser = v / 100.0f;
-            g_cfgDirty = true;
-        }
-    }
     // v2.59: cambio de estacion aplazado (modoCambio=1): 3 cuadros despues
     // de cerrar la rueda, sin UI ni camara lenta.
     if (g_pendingStation != 0 && --g_pendingFrames <= 0) {
