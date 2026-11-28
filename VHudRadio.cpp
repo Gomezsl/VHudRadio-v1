@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.97-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.98-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.97-beta"
+#define VHUDRADIO_VERSION "1.9.98-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1464,7 +1464,7 @@ static void UT_DrawFallback(const char* tag);
 // v1.9.96: guarda del destructor de env-map de vehiculos personalizados.
 // El juego muere al salir (RwEngineStop -> RpClumpDestroy -> RpMaterialDestroy
 // -> CCustomCarEnvMapPipeline::pluginEnvMatDestructorCB) porque esa funcion
-// carga un global (libGTASA+0xC39558), lo desreferencia dos veces y el
+// carga un global (libGTASA+0x84B558), lo desreferencia dos veces y el
 // segundo valor es nulo cuando el motor ya se esta desmontando; el
 // desensamblado lo confirma: ldp x11,x12,[x10] con x10=0 en libGTASA+0x38E1B8.
 // La funcion ya revisa si el dato del material es nulo, pero no revisa el
@@ -1477,7 +1477,7 @@ static void (*EnvMatDtor_orig)(void*, int, int) = nullptr;
 static void EnvMatDtor_hook(void* data, int a, int b) {
     uintptr_t base = GameLibBase();
     if (base) {
-        void* const* g = (void* const*)(base + 0xC39558);
+        void* const* g = (void* const*)(base + 0x84B558);
         void* p = *g;
         if (!p || !*(void* const*)p) return;  // global desmontado: sin limpieza
     }
@@ -1487,13 +1487,13 @@ static void EnvMatDtor_hook(void* data, int a, int b) {
 // cierre ya no muere en env-map pero avanza al siguiente destructor del
 // material: MatFXMaterialDestructor llama a _rwFreeListFreeReal con una
 // lista nula (fault 0x10 en libGTASA+0x27F70C, ldr x0,[x8,#0x10]! con x8=0).
-// La lista es *( *(libGTASA+0xAA6EEB8) + 8 ); si es nula se salta el
+// La lista es *( *(libGTASA+0x84DEB8) + 8 ); si es nula se salta el
 // original, igual que la guarda de env-map. Fuera del apagado no cambia nada.
 static void (*MatFXDtor_orig)(void*, int, int) = nullptr;
 static void MatFXDtor_hook(void* data, int a, int b) {
     uintptr_t base = GameLibBase();
     if (base) {
-        void* const* g = (void* const*)(base + 0xAA6EEB8);
+        void* const* g = (void* const*)(base + 0x84DEB8);
         void* p = *g;
         if (!p || !*(void* const*)((uintptr_t)p + 8)) return;  // lista MatFX desmontada
     }
