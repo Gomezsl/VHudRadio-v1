@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.95-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.96-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.95-beta"
+#define VHUDRADIO_VERSION "1.9.96-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1461,6 +1461,27 @@ static void UT_DrawFallback(const char* tag);
 // v1: reproductor de User Tracks propio (minimp3 + OpenSL). Se incluye aqui
 // porque usa las globales de arriba (g_startTrack, g_userPause, g_inVehicle...).
 #include "UserTracks.h"
+// v1.9.96: guarda del destructor de env-map de vehiculos personalizados.
+// El juego muere al salir (RwEngineStop -> RpClumpDestroy -> RpMaterialDestroy
+// -> CCustomCarEnvMapPipeline::pluginEnvMatDestructorCB) porque esa funcion
+// carga un global (libGTASA+0xC39558), lo desreferencia dos veces y el
+// segundo valor es nulo cuando el motor ya se esta desmontando; el
+// desensamblado lo confirma: ldp x11,x12,[x10] con x10=0 en libGTASA+0x38E1B8.
+// La funcion ya revisa si el dato del material es nulo, pero no revisa el
+// global. Este hook agrega justo esa revision: si el global es nulo, no hay
+// nada que limpiar y se salta el original (el material se esta destruyendo
+// de todos modos). Si el global es valido, se llama al original tal cual,
+// asi que fuera del apagado el comportamiento es identico.
+static void (*EnvMatDtor_orig)(void*, int, int) = nullptr;
+static void EnvMatDtor_hook(void* data, int a, int b) {
+    uintptr_t base = GameLibBase();
+    if (base) {
+        void* const* g = (void* const*)(base + 0xC39558);
+        void* p = *g;
+        if (!p || !*(void* const*)p) return;  // global desmontado: sin limpieza
+    }
+    if (EnvMatDtor_orig) EnvMatDtor_orig(data, a, b);
+}
 static void (*DrawFrontEnd_orig)() = nullptr;
 static void DrawFrontEnd_hook() {
     g_menuDrawn = true;
@@ -5672,6 +5693,13 @@ extern "C" void OnModLoad() {
     void* drsn = (void*)aml->GetSym(h, "_ZN20CAERadioTrackManager23DisplayRadioStationNameEv");
     Log("  %s CAERadioTrackManager::DisplayRadioStationName", drsn ? "ok" : "FALTA");
     if (drsn) aml->Hook(drsn, (void*)DisplayRadioStationName_hook, (void**)&DisplayRadioStationName_orig);
+    // v1.9.96: guarda del destructor de env-map (cierre al salir con vehiculos HD).
+    uintptr_t gbase = GameLibBase();
+    if (gbase) {
+        void* envDtor = (void*)(gbase + 0x38E190);
+        aml->Hook(envDtor, (void*)EnvMatDtor_hook, (void**)&EnvMatDtor_orig);
+        Log("  ok CCustomCarEnvMapPipeline::pluginEnvMatDestructorCB (guarda nulo)");
+    } else Log("  !! sin base de libGTASA: sin guarda de env-map");
     // v1.9.73: AdvancedSettings (mueve el texto de emisora arriba al centro):
     // se detecta por SONAME, sin cargarlo (RTLD_NOLOAD solo lo busca).
     void* adv = dlopen("libAdvancedSettings.SA64.so", RTLD_NOLOAD | RTLD_NOW);
