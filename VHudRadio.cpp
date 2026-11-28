@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.93-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.94-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.93-beta"
+#define VHUDRADIO_VERSION "1.9.94-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5697,9 +5697,19 @@ extern "C" void OnModLoad() {
     if (!got) {
         void* fn = dlsym(RTLD_DEFAULT, "eglSwapBuffers");
         if (fn && IsReadableAddr(fn)) { aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig); Log("  eglSwapBuffers por hook directo"); }
-        else if (fn) Log("  !! eglSwapBuffers en pagina no legible (%p): sin hook, dibujo por respaldo DrawAll", fn);
-        else Log("  !! no se pudo enganchar eglSwapBuffers: dibujo por respaldo DrawAll");
+        else if (fn) {
+            // v1.9.94: la pagina es de solo ejecucion (sin lectura) y AML no
+            // puede engancharla porque lee la direccion. Se le agrega lectura
+            // (se mantiene la ejecucion) con mprotect y se reintenta; si el
+            // sistema lo niega, se queda el respaldo por DrawAll/CHudDraw.
+            long pg = sysconf(_SC_PAGESIZE); uintptr_t page = (uintptr_t)fn & ~((uintptr_t)pg - 1);
+            if (mprotect((void*)page, (size_t)pg, PROT_READ | PROT_EXEC) == 0 && IsReadableAddr(fn)) {
+                aml->Hook(fn, (void*)Swap_hook, (void**)&Swap_orig);
+                Log("  eglSwapBuffers por hook directo (tras mprotect)");
+            } else Log("  !! eglSwapBuffers en pagina no legible (%p): sin hook, dibujo por respaldo", fn);
+        }
+        else Log("  !! no se pudo enganchar eglSwapBuffers: dibujo por respaldo");
     }
     g_swapHooked = (Swap_orig != nullptr);
-    Log("  dibujo por: %s", g_swapHooked ? "eglSwapBuffers" : "respaldo DrawAll");
+    Log("  dibujo por: %s", g_swapHooked ? "eglSwapBuffers" : "respaldo DrawAll/CHudDraw");
 }
