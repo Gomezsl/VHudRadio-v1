@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.100-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.101-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.100-beta"
+#define VHUDRADIO_VERSION "1.9.101-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5625,7 +5625,12 @@ static void DrawFrame(EGLDisplay dpy, EGLSurface surf) {
         }
         return;
     }
-    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_cfg.botonVisible)) || ((g_settings || g_trackList) && !g_paused);
+    // v1.9.101: g_wheelClosing va en needDraw: con el boton flotante oculto,
+    // al cerrar la rueda DrawWheel no se llamaba y la animacion de cierre
+    // nunca terminaba (g_wheelClosing quedaba en true para siempre): la
+    // camara lenta no se restauraba, el desenfoque se quedaba y el boton
+    // de la rueda no volvia (NativeWheelUpdate pide !g_wheelClosing).
+    bool needDraw = (g_inVehicle && !g_paused && (g_open || g_preview || g_wheelClosing || g_cfg.botonVisible)) || ((g_settings || g_trackList) && !g_paused);
     if (needDraw) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         // v2.49: en el primer cuadro del panel el raton va limpio (sin el clic
