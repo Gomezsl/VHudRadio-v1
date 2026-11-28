@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.96-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.97-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.96-beta"
+#define VHUDRADIO_VERSION "1.9.97-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -1482,6 +1482,22 @@ static void EnvMatDtor_hook(void* data, int a, int b) {
         if (!p || !*(void* const*)p) return;  // global desmontado: sin limpieza
     }
     if (EnvMatDtor_orig) EnvMatDtor_orig(data, a, b);
+}
+// v1.9.97: mismo patron para MatFXMaterialDestructor. Con la 1.9.96 el
+// cierre ya no muere en env-map pero avanza al siguiente destructor del
+// material: MatFXMaterialDestructor llama a _rwFreeListFreeReal con una
+// lista nula (fault 0x10 en libGTASA+0x27F70C, ldr x0,[x8,#0x10]! con x8=0).
+// La lista es *( *(libGTASA+0xAA6EEB8) + 8 ); si es nula se salta el
+// original, igual que la guarda de env-map. Fuera del apagado no cambia nada.
+static void (*MatFXDtor_orig)(void*, int, int) = nullptr;
+static void MatFXDtor_hook(void* data, int a, int b) {
+    uintptr_t base = GameLibBase();
+    if (base) {
+        void* const* g = (void* const*)(base + 0xAA6EEB8);
+        void* p = *g;
+        if (!p || !*(void* const*)((uintptr_t)p + 8)) return;  // lista MatFX desmontada
+    }
+    if (MatFXDtor_orig) MatFXDtor_orig(data, a, b);
 }
 static void (*DrawFrontEnd_orig)() = nullptr;
 static void DrawFrontEnd_hook() {
@@ -5700,6 +5716,10 @@ extern "C" void OnModLoad() {
         void* envDtor = (void*)(gbase + 0x38E190);
         aml->Hook(envDtor, (void*)EnvMatDtor_hook, (void**)&EnvMatDtor_orig);
         Log("  ok CCustomCarEnvMapPipeline::pluginEnvMatDestructorCB (guarda nulo)");
+        // v1.9.97: guarda de MatFXMaterialDestructor (misma causa, siguiente destructor).
+        void* matfxDtor = (void*)(gbase + 0x259E24);
+        aml->Hook(matfxDtor, (void*)MatFXDtor_hook, (void**)&MatFXDtor_orig);
+        Log("  ok MatFXMaterialDestructor (guarda nulo)");
     } else Log("  !! sin base de libGTASA: sin guarda de env-map");
     // v1.9.73: AdvancedSettings (mueve el texto de emisora arriba al centro):
     // se detecta por SONAME, sin cargarlo (RTLD_NOLOAD solo lo busca).
