@@ -2109,9 +2109,15 @@ static void UT_HudDraw_hook(void* self) {
     if (g_open || g_settings || g_trackList) {  // rueda/panel/lista abiertos: sin HUD
         static bool logged = false;
         if (!logged) { logged = true; Log("UT: CHud::Draw oculto (rueda abierta)"); }  // v1.9.16: diagnostico (el hook dice ok pero Daniel ve el HUD)
-        return;
+        // no orig: HUD oculto, pero la rueda/panel SI se dibuja abajo
+    } else {
+        if (ut_origHudDraw) ut_origHudDraw(self);
     }
-    if (ut_origHudDraw) ut_origHudDraw(self);
+    // v1.9.92: respaldo de dibujo por CHud::Draw. DrawAll corre sin contexto
+    // GL en este telefono (dpy/surf/ctx = 0x0, log 1.9.91); CHud::Draw dibuja
+    // el HUD con RenderWare, asi que el contexto SI esta activo aqui. Solo
+    // corre si el hook de swap no se instalo.
+    if (!g_swapHooked) UT_DrawFallback();
 }
 
 // v1.9.4 (AdvancedSettings de Daniel): los elementos del HUD son widgets

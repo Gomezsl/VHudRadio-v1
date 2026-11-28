@@ -952,9 +952,9 @@
 #include "stb_image.h"
 #include "icons_embedded.h"  // v2.29: PNGs incrustados en el .so (base64)
 
-MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.91-beta, Hunter09)
+MYMODCFG(net.hunter09.vhudradio, VHud Radio Wheel, 1.9.92-beta, Hunter09)
 NEEDGAME(com.rockstargames.gtasa)
-#define VHUDRADIO_VERSION "1.9.91-beta"
+#define VHUDRADIO_VERSION "1.9.92-beta"
 
 // ---- log: VHudRadioLog.txt junto al .ini (en VHudRadio/) ----
 static std::string g_logPath;
@@ -5573,6 +5573,9 @@ static void UT_DrawFallback() {
     EGLSurface surf = eglGetCurrentSurface(EGL_DRAW);
     EGLContext ctx = eglGetCurrentContext();
     { static bool l = false; if (!l) { l = true; Log("  diag respaldo DrawAll: dpy=%p surf=%p ctx=%p", (void*)dpy, (void*)surf, (void*)ctx); } }
+    // v1.9.92: avisa la primera vez que el respaldo SI tiene contexto GL
+    // (la linea de arriba ya se gasto en DrawAll con todo en 0x0).
+    { static bool l2 = false; if (!l2 && dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE && ctx != EGL_NO_CONTEXT) { l2 = true; Log("  diag respaldo con contexto: dpy=%p surf=%p ctx=%p", (void*)dpy, (void*)surf, (void*)ctx); } }
     if (dpy != EGL_NO_DISPLAY && surf != EGL_NO_SURFACE) DrawFrame(dpy, surf);
 }
 
